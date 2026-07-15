@@ -2,7 +2,7 @@
 
 ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 두 대의 TurtleBot3를 단독 bringup부터 시작해 상태 수집, 안전 제어, 웹 관제, 자율주행, 작업 할당과 장애 복구까지 단계적으로 구현한다.
 
-> 현재 상태: 개발 중. Phase 1의 TB1 단독 bringup과 LDS-02 데이터 수신을 검증했으며, 다음 단계는 저속 수동 제어와 안전 정지다.
+> 현재 상태: 개발 중. Phase 2의 safety watchdog 구현과 자동 테스트 13개를 완료했으며, TB1 저속 실차 검증을 진행한다.
 
 ## 프로젝트 목표
 
@@ -34,7 +34,7 @@ ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 
 | --- | --- | --- |
 | Phase 0 | 환경 조사, ROS 2·Docker·GitHub 개발환경 준비 | 완료 |
 | Phase 1 | TB1 단독 bringup, OpenCR·LiDAR·주요 토픽 검증 | 완료, 설정 일반화 필요 |
-| Phase 2 | TB1 저속 수동 제어, 정지와 watchdog | 다음 작업 |
+| Phase 2 | TB1 저속 수동 제어, 정지와 watchdog | 구현·자동 테스트 완료, 실차 검증 중 |
 | Phase 3 | TB1 Robot Agent와 상태 메시지 | 대기 |
 | Phase 4 | 단일 로봇 웹 관제 | 대기 |
 | Phase 5 이후 | Nav2, 로그, 장애 감지, TB2와 플릿 관리 | 대기 |
@@ -82,6 +82,7 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 
 - [Phase 1 대표 장애 해결 사례](docs/case-studies/lds02-scan-data-recovery.md)
 - [TB1 Bringup 운영 절차](docs/setup/tb1-bringup.md)
+- [TB1 안전 수동주행 및 Watchdog 검증 절차](docs/setup/tb1-safe-teleoperation.md)
 - [Git 작업 흐름](docs/git-workflow.md)
 
 ### 공부와 면접 준비
@@ -121,8 +122,8 @@ main 최신화
 
 ## 다음 작업
 
-1. Phase 1 브랜치를 GitHub Draft PR로 게시한다.
-2. TB1 전용 LiDAR 포트 하드코딩을 ROS 2 launch 설정으로 일반화한다.
-3. Phase 2에서 낮은 속도의 직진·회전·정지를 직접 검증한다.
-4. 명령이 끊기면 자동 정지하는 watchdog을 설계한다.
+1. Phase 2 safety watchdog을 TB1에 배포한다.
+2. 속도 제한, timeout 정지, 비상정지와 중립 재무장을 실차 검증한다.
+3. Phase 2 측정 결과와 필수 개념·면접 답변을 문서화한다.
+4. TB1 전용 LiDAR 포트 하드코딩을 ROS 2 launch 설정으로 일반화한다.
 5. 임시 GPIO 점퍼를 진동에 견디는 하네스로 교체한다.
