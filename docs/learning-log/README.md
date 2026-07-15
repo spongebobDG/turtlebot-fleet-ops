@@ -2,6 +2,16 @@
 
 각 작은 작업이 끝날 때 `YYYY-MM-DD-주제.md` 형식으로 기록한다. 같은 날짜에 여러 작업이 있으면 주제가 겹치지 않도록 구체적인 이름을 사용한다.
 
+## 단계별 주요 기록
+
+- Phase 0: [환경 조사](2026-07-15-phase-0-environment-survey.md)
+- Phase 0: [ROS 2 Humble 설치](2026-07-15-wsl-ros2-humble-install.md)
+- Phase 0: [Docker Desktop 및 WSL 통합](2026-07-15-docker-desktop-wsl-install.md)
+- Phase 0: [Git 작업 방식과 첫 브랜치](2026-07-15-git-workflow-and-first-branch.md)
+- Phase 0: [GitHub 원격 저장소 구성](2026-07-15-github-cli-and-remote-repository.md)
+- Phase 0: [PR 검토와 main 보호](2026-07-15-github-pr-review-and-main-ruleset.md)
+- Phase 1: [TB1 Bringup과 LDS-02 GPIO UART 복구](2026-07-15-phase-1-tb1-bringup-and-lds02-gpio-uart.md)
+
 ## 기록 원칙
 
 - 실제 실행한 명령과 실제 결과만 기록한다.
