@@ -11,6 +11,7 @@
 - Phase 0: [GitHub 원격 저장소 구성](2026-07-15-github-cli-and-remote-repository.md)
 - Phase 0: [PR 검토와 main 보호](2026-07-15-github-pr-review-and-main-ruleset.md)
 - Phase 1: [TB1 Bringup과 LDS-02 GPIO UART 복구](2026-07-15-phase-1-tb1-bringup-and-lds02-gpio-uart.md)
+- Phase 2: [TB1 Safety Watchdog 배포](2026-07-15-phase-2-tb1-watchdog-deployment.md)
 
 ## 공부와 면접용 문서
 
