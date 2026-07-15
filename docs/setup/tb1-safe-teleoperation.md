@@ -89,7 +89,7 @@ git pull --ff-only
 git log -2 --oneline --decorate
 ```
 
-예상되는 최신 커밋은 다음 두 개다.
+이력에 다음 기능 커밋들이 포함되어 있어야 한다.
 
 ```text
 4630820 fix: require neutral command after emergency stop
