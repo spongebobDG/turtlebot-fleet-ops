@@ -2,7 +2,7 @@
 
 ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 두 대의 TurtleBot3를 단독 bringup부터 시작해 상태 수집, 안전 제어, 웹 관제, 자율주행, 작업 할당과 장애 복구까지 단계적으로 구현한다.
 
-> 현재 상태: 개발 중. Phase 1의 TB1 단독 bringup과 LDS-02 데이터 수신을 검증했으며, 다음 단계는 저속 수동 제어와 안전 정지다.
+> 현재 상태: 개발 중. Phase 2의 TB1 안전 수동 제어와 watchdog 실차 검증을 완료했으며, 다음 단계는 구조화된 Robot Agent 상태 메시지다.
 
 ## 프로젝트 목표
 
@@ -34,8 +34,8 @@ ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 
 | --- | --- | --- |
 | Phase 0 | 환경 조사, ROS 2·Docker·GitHub 개발환경 준비 | 완료 |
 | Phase 1 | TB1 단독 bringup, OpenCR·LiDAR·주요 토픽 검증 | 완료, 설정 일반화 필요 |
-| Phase 2 | TB1 저속 수동 제어, 정지와 watchdog | 다음 작업 |
-| Phase 3 | TB1 Robot Agent와 상태 메시지 | 대기 |
+| Phase 2 | TB1 저속 수동 제어, 정지와 watchdog | 완료 |
+| Phase 3 | TB1 Robot Agent와 상태 메시지 | 다음 작업 |
 | Phase 4 | 단일 로봇 웹 관제 | 대기 |
 | Phase 5 이후 | Nav2, 로그, 장애 감지, TB2와 플릿 관리 | 대기 |
 
@@ -82,17 +82,21 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 
 - [Phase 1 대표 장애 해결 사례](docs/case-studies/lds02-scan-data-recovery.md)
 - [TB1 Bringup 운영 절차](docs/setup/tb1-bringup.md)
+- [TB1 안전 수동주행 및 Watchdog 검증 절차](docs/setup/tb1-safe-teleoperation.md)
 - [Git 작업 흐름](docs/git-workflow.md)
 
 ### 공부와 면접 준비
 
 - [공부 문서 운영 방식](docs/study/README.md)
 - [Phase 1 필수 개념과 모범 답변](docs/study/phase-1-tb1-bringup.md)
+- [Phase 2 안전 제어 필수 개념과 모범 답변](docs/study/phase-2-safe-teleoperation.md)
+- [비상정지 중립 재무장 설계 사례](docs/case-studies/safety-watchdog-neutral-rearm.md)
 
 ### 실제 작업 이력
 
 - [학습 일지 목록](docs/learning-log/README.md)
 - [Phase 1 TB1 Bringup 학습 일지](docs/learning-log/2026-07-15-phase-1-tb1-bringup-and-lds02-gpio-uart.md)
+- [Phase 2 TB1 Safety Watchdog 학습 일지](docs/learning-log/2026-07-15-phase-2-tb1-watchdog-deployment.md)
 
 ## 개발 원칙
 
@@ -121,8 +125,8 @@ main 최신화
 
 ## 다음 작업
 
-1. Phase 1 브랜치를 GitHub Draft PR로 게시한다.
-2. TB1 전용 LiDAR 포트 하드코딩을 ROS 2 launch 설정으로 일반화한다.
-3. Phase 2에서 낮은 속도의 직진·회전·정지를 직접 검증한다.
-4. 명령이 끊기면 자동 정지하는 watchdog을 설계한다.
+1. Phase 2 Draft PR을 최종 검토하고 `main`에 squash merge한다.
+2. Phase 3에서 TB1 상태를 구조화하는 Robot Agent를 설계한다.
+3. battery, odom, scan freshness와 시스템 자원을 상태 메시지로 통합한다.
+4. TB1 전용 LiDAR 포트 하드코딩을 ROS 2 launch 설정으로 일반화한다.
 5. 임시 GPIO 점퍼를 진동에 견디는 하네스로 교체한다.
