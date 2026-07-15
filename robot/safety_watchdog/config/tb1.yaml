@@ -1,0 +1,8 @@
+safety_watchdog:
+  ros__parameters:
+    input_topic: /safety/cmd_vel_in
+    output_topic: /cmd_vel
+    timeout_sec: 0.5
+    max_linear_x: 0.05
+    max_angular_z: 0.3
+    publish_rate_hz: 20.0
