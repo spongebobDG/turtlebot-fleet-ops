@@ -343,7 +343,7 @@ ros2 topic pub --once \
 - [x] 비상정지 중 입력 차단 확인
 - [x] 비상정지 해제 후 중립 재무장 확인
 - [x] 측정 결과와 발생한 문제를 학습 일지에 기록
-- [ ] keyboard teleop remap과 정지 확인
+- [x] keyboard teleop remap과 정지 확인
 
 ## 문제가 발생하면 확인할 순서
 
