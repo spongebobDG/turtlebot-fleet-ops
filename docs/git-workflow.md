@@ -137,4 +137,5 @@ gh pr create `
 - 현재 작업 브랜치: `chore/phase-0-dev-environment`
 - 현재 목표: Phase 0 관제 개발환경 조사, ROS 2 Humble와 Docker 구성 문서화
 - 원격 저장소: `origin`으로 GitHub Public 저장소 연결 완료
-- 원격 브랜치와 Pull Request: 아직 생성하지 않음
+- 원격 브랜치: `main`, `chore/phase-0-dev-environment` 게시 완료
+- Pull Request: [Draft PR #1](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/1) 자체 리뷰 대기
