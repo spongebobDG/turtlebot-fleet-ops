@@ -131,7 +131,7 @@ colcon test-result --verbose
 
 ```text
 Summary: 1 package finished
-Summary: 13 tests, 0 errors, 0 failures, 0 skipped
+Summary: 18 tests, 0 errors, 0 failures, 0 skipped
 ```
 
 `SelectableGroups dict interface is deprecated` 경고는 Humble에 설치된 lint 도구의
@@ -332,7 +332,7 @@ ros2 topic pub --once \
 ## 완료 체크리스트
 
 - [x] WSL Humble `colcon build` 성공
-- [x] WSL 격리 도메인에서 자동 테스트 13개 통과
+- [x] WSL 격리 도메인에서 최종 자동 테스트 18개 통과
 - [x] `rosdep check` 통과
 - [x] TB1에서 패키지 build와 자동 테스트 통과
 - [x] 시작 직후 0 속도 출력 확인

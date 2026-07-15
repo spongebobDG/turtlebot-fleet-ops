@@ -1,5 +1,6 @@
 """ROS graph integration test for watchdog output and emergency stop."""
 
+import math
 import time
 from typing import Callable, List
 
@@ -109,6 +110,19 @@ def test_watchdog_ros_flow() -> None:
         _spin_until(executor, future.done)
         assert future.result().success
         assert "neutral command" in future.result().message
+
+        outputs.clear()
+        publisher.publish(unsafe_command)
+        _spin_until(executor, lambda: len(outputs) >= 2)
+        assert all(message.linear.x == 0.0 for message in outputs)
+        assert all(message.angular.z == 0.0 for message in outputs)
+
+        outputs.clear()
+        invalid_command = Twist()
+        invalid_command.linear.x = math.nan
+        publisher.publish(invalid_command)
+        _spin_until(executor, lambda: len(outputs) >= 2)
+        assert all(message.linear.x == 0.0 for message in outputs)
 
         outputs.clear()
         publisher.publish(unsafe_command)

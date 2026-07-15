@@ -40,6 +40,19 @@ def sanitize_planar_command(
     )
 
 
+def command_is_neutral(
+    linear_x: float,
+    angular_z: float,
+    epsilon: float,
+) -> bool:
+    """Return whether a valid planar command is within the neutral band."""
+    if not math.isfinite(epsilon) or epsilon < 0.0:
+        raise ValueError("epsilon must be a finite non-negative value")
+    if not math.isfinite(linear_x) or not math.isfinite(angular_z):
+        return False
+    return abs(linear_x) <= epsilon and abs(angular_z) <= epsilon
+
+
 def command_is_fresh(
     last_received_at: Optional[float],
     now: float,

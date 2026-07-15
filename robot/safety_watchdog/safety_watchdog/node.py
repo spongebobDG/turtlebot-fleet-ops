@@ -11,6 +11,7 @@ from std_srvs.srv import SetBool
 
 from safety_watchdog.policy import (
     SafetyLimits,
+    command_is_neutral,
     command_is_fresh,
     sanitize_planar_command,
 )
@@ -94,16 +95,11 @@ class SafetyWatchdog(Node):
         if self._estop_active:
             return
 
-        command = sanitize_planar_command(
-            message.linear.x,
-            message.angular.z,
-            self._limits,
-        )
-
         if self._awaiting_neutral:
-            if (
-                abs(command[0]) <= self._neutral_epsilon
-                and abs(command[1]) <= self._neutral_epsilon
+            if command_is_neutral(
+                message.linear.x,
+                message.angular.z,
+                self._neutral_epsilon,
             ):
                 self._awaiting_neutral = False
                 self._last_command = (0.0, 0.0)
@@ -112,6 +108,12 @@ class SafetyWatchdog(Node):
                     "Neutral command received; motion re-armed"
                 )
             return
+
+        command = sanitize_planar_command(
+            message.linear.x,
+            message.angular.z,
+            self._limits,
+        )
 
         self._last_command = command
         self._last_received_at = time.monotonic()
