@@ -62,9 +62,9 @@ OpenCR은 USB VID/PID `0483:5740`과 `ROBOTIS OpenCR Virtual ComPort` 정보로 
 | 배포판 | 확인된 Python | 기타 결과 |
 | --- | --- | --- |
 | `Ubuntu` | Python 3.14.4 | WSL 커널 `6.18.33.2`; OS 및 ROS 출력 불완전 |
-| `Ubuntu-22.04` | Python 3.10.12 | WSL 커널 `6.18.33.2`; OS 및 ROS 출력 불완전 |
+| `Ubuntu-22.04` | Python 3.10.12 | ROS 2 Humble Desktop 및 Docker Desktop WSL 통합 완료 |
 
-명령 출력에서 `OS=`가 비어 있었고 ROS 이후 출력이 완전하지 않았다. 따라서 WSL의 ROS 및 Docker 설치 상태를 아직 확정하지 않는다.
+관제 개발환경은 `Ubuntu-22.04`로 선택했다. ROS 2 Humble의 C++/Python 노드 통신과 Docker Linux 컨테이너 실행을 검증했다. Python 3.14가 설치된 일반 `Ubuntu` 배포판은 이 프로젝트에 사용하지 않는다.
 
 ## 확인된 차이와 주의사항
 
@@ -76,9 +76,9 @@ OpenCR은 USB VID/PID `0483:5740`과 `ROBOTIS OpenCR Virtual ComPort` 정보로 
 
 ## 남은 Phase 0 확인 항목
 
-- [ ] `Ubuntu`와 `Ubuntu-22.04`의 정확한 OS 버전
-- [ ] 두 WSL 배포판의 ROS 2 및 Docker 설치 상태
-- [ ] 관제용 WSL 배포판 선택
+- [ ] 일반 `Ubuntu` 배포판의 정확한 OS 버전 확인 또는 제거 여부 결정
+- [x] `Ubuntu-22.04`의 ROS 2 및 Docker 설치 상태 확인
+- [x] 관제용 WSL 배포판을 `Ubuntu-22.04`로 선택
 - [ ] WSL 내부에서 tb1, tb2 네트워크 연결 확인
 - [ ] tb1, tb2 실제 SSH 인증 확인
 - [ ] TurtleBot 모델을 제품 라벨 또는 사진으로 확인
