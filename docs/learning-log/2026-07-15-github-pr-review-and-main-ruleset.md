@@ -4,7 +4,7 @@
 
 단계: Phase 0 - GitHub 협업 환경 구성
 
-진행 상태: Ruleset 구성 완료, Draft PR 최종 갱신 대기
+진행 상태: Ruleset 구성과 Ready for review 전환 완료, squash merge 대기
 
 ## 오늘의 목표
 
@@ -92,8 +92,8 @@ required status checks=disabled
 - [x] 강제 push와 삭제 차단
 - [x] 선형 이력과 대화 해결 필수 설정
 - [x] API로 실제 적용값 검증
-- [ ] 기록 커밋을 Draft PR에 push
-- [ ] Ready for review 전환
+- [x] 기록 커밋을 Draft PR에 push
+- [x] Ready for review 전환
 - [ ] squash merge
 
 ## 복습 문제와 정답
@@ -136,8 +136,12 @@ required status checks=disabled
 
 ## 다음에 할 일
 
-이 기록을 작업 브랜치에 커밋하고 push한다. Draft PR의 전체 변경을 최종 확인한 뒤 Ready for review로 전환하고 squash merge한다.
+PR #1의 전체 변경을 최종 확인하고 Ready for review로 전환했다. GitHub에서 `MERGEABLE`, `CLEAN` 상태를 확인했으므로 다음으로 squash merge한다.
 
 ## 관련 Pull Request
 
 - [PR #1: docs: prepare Phase 0 development environment](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/1)
+
+## 관련 커밋
+
+- `a2c30fa docs: record main branch protection`
