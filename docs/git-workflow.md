@@ -103,9 +103,38 @@ chore: configure repository workflow
 - [ ] 관련 학습 일지를 작성했다.
 - [ ] `main`과의 차이를 직접 검토했다.
 
+## 원격 저장소 게시 명령
+
+Windows PowerShell에서 GitHub CLI로 인증 상태를 확인한다.
+
+```powershell
+gh auth status
+```
+
+최초 한 번만 로컬 `main`과 작업 브랜치를 원격에 게시한다.
+
+```powershell
+git push -u origin main
+git push -u origin chore/phase-0-dev-environment
+```
+
+`-u`는 로컬 브랜치와 원격 추적 브랜치를 연결한다. 이후 같은 브랜치에서는 보통 `git push`와 `git pull`만 사용해도 된다.
+
+작업 브랜치는 먼저 Draft Pull Request로 공유한다.
+
+```powershell
+gh pr create `
+  --draft `
+  --base main `
+  --head chore/phase-0-dev-environment `
+  --title "docs: prepare Phase 0 development environment"
+```
+
+저장소의 `.github/pull_request_template.md`를 기준으로 변경 내용, 이유, 직접 검증과 미확인 항목을 작성한다. Draft PR은 아직 병합 준비가 끝나지 않았음을 표시한다. 검증과 자체 리뷰가 끝난 뒤 Ready for review로 전환한다.
+
 ## 현재 적용 범위
 
-- 현재 작업 브랜치: `chore/phase-0-wsl-audit`
-- 현재 목표: WSL 관제 환경의 OS, ROS 2, Docker와 로봇 네트워크 상태 확인
-- 원격 저장소: 아직 연결되지 않음
-- 브랜치 보호와 Pull Request: 원격 저장소 연결 후 적용
+- 현재 작업 브랜치: `chore/phase-0-dev-environment`
+- 현재 목표: Phase 0 관제 개발환경 조사, ROS 2 Humble와 Docker 구성 문서화
+- 원격 저장소: `origin`으로 GitHub Public 저장소 연결 완료
+- 원격 브랜치와 Pull Request: 아직 생성하지 않음
