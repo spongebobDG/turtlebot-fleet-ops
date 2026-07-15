@@ -36,6 +36,7 @@ def test_watchdog_ros_flow() -> None:
             Parameter("publish_rate_hz", value=50.0),
             Parameter("max_linear_x", value=0.05),
             Parameter("max_angular_z", value=0.3),
+            Parameter("neutral_epsilon", value=0.001),
         ]
     )
     probe = Node("safety_watchdog_test_probe")
@@ -107,12 +108,24 @@ def test_watchdog_ros_flow() -> None:
         future = estop_client.call_async(request)
         _spin_until(executor, future.done)
         assert future.result().success
-        assert "fresh command" in future.result().message
+        assert "neutral command" in future.result().message
 
         outputs.clear()
+        publisher.publish(unsafe_command)
         _spin_until(executor, lambda: len(outputs) >= 2)
         assert all(message.linear.x == 0.0 for message in outputs)
         assert all(message.angular.z == 0.0 for message in outputs)
+
+        neutral_command = Twist()
+        publisher.publish(neutral_command)
+        _spin_until(executor, lambda: len(outputs) >= 3)
+
+        outputs.clear()
+        publisher.publish(unsafe_command)
+        _spin_until(
+            executor,
+            lambda: any(message.linear.x == 0.05 for message in outputs),
+        )
     finally:
         probe.destroy_subscription(subscription)
         executor.remove_node(probe)

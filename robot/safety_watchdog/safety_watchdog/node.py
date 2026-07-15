@@ -27,12 +27,16 @@ class SafetyWatchdog(Node):
         self.declare_parameter("timeout_sec", 0.5)
         self.declare_parameter("max_linear_x", 0.05)
         self.declare_parameter("max_angular_z", 0.3)
+        self.declare_parameter("neutral_epsilon", 0.001)
         self.declare_parameter("publish_rate_hz", 20.0)
 
         input_topic = self.get_parameter("input_topic").value
         output_topic = self.get_parameter("output_topic").value
         self._timeout_sec = float(self.get_parameter("timeout_sec").value)
         publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
+        self._neutral_epsilon = float(
+            self.get_parameter("neutral_epsilon").value
+        )
         self._limits = SafetyLimits(
             max_linear_x=float(self.get_parameter("max_linear_x").value),
             max_angular_z=float(self.get_parameter("max_angular_z").value),
@@ -48,10 +52,16 @@ class SafetyWatchdog(Node):
             raise ValueError("timeout_sec must be a positive finite value")
         if not math.isfinite(publish_rate_hz) or publish_rate_hz <= 0.0:
             raise ValueError("publish_rate_hz must be a positive finite value")
+        if (
+            not math.isfinite(self._neutral_epsilon)
+            or self._neutral_epsilon < 0.0
+        ):
+            raise ValueError("neutral_epsilon must be a finite non-negative value")
 
         self._last_command: Tuple[float, float] = (0.0, 0.0)
         self._last_received_at: Optional[float] = None
         self._estop_active = False
+        self._awaiting_neutral = False
         self._last_mode: Optional[str] = None
 
         self._publisher = self.create_publisher(Twist, output_topic, 10)
@@ -84,11 +94,26 @@ class SafetyWatchdog(Node):
         if self._estop_active:
             return
 
-        self._last_command = sanitize_planar_command(
+        command = sanitize_planar_command(
             message.linear.x,
             message.angular.z,
             self._limits,
         )
+
+        if self._awaiting_neutral:
+            if (
+                abs(command[0]) <= self._neutral_epsilon
+                and abs(command[1]) <= self._neutral_epsilon
+            ):
+                self._awaiting_neutral = False
+                self._last_command = (0.0, 0.0)
+                self._last_received_at = time.monotonic()
+                self.get_logger().info(
+                    "Neutral command received; motion re-armed"
+                )
+            return
+
+        self._last_command = command
         self._last_received_at = time.monotonic()
 
     def _on_timer(self) -> None:
@@ -96,6 +121,9 @@ class SafetyWatchdog(Node):
 
         if self._estop_active:
             mode = "ESTOP"
+            command = (0.0, 0.0)
+        elif self._awaiting_neutral:
+            mode = "WAITING_NEUTRAL"
             command = (0.0, 0.0)
         elif command_is_fresh(
             self._last_received_at,
@@ -117,6 +145,7 @@ class SafetyWatchdog(Node):
         response: SetBool.Response,
     ) -> SetBool.Response:
         self._estop_active = bool(request.data)
+        self._awaiting_neutral = not self._estop_active
         self._last_command = (0.0, 0.0)
         self._last_received_at = None
         self.publish_stop()
@@ -126,7 +155,7 @@ class SafetyWatchdog(Node):
             response.message = "Emergency stop activated"
         else:
             response.message = (
-                "Emergency stop released; waiting for a fresh command"
+                "Emergency stop released; waiting for a neutral command"
             )
         return response
 
@@ -149,6 +178,10 @@ class SafetyWatchdog(Node):
             self.get_logger().info("Fresh command received; motion enabled")
         elif mode == "ESTOP":
             self.get_logger().error("Emergency stop active; publishing zero")
+        elif mode == "WAITING_NEUTRAL":
+            self.get_logger().warning(
+                "Emergency stop released; waiting for neutral command"
+            )
         else:
             self.get_logger().warning(
                 "Command timeout; publishing zero velocity"

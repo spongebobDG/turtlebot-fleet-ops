@@ -5,4 +5,5 @@ safety_watchdog:
     timeout_sec: 0.5
     max_linear_x: 0.05
     max_angular_z: 0.3
+    neutral_epsilon: 0.001
     publish_rate_hz: 20.0
