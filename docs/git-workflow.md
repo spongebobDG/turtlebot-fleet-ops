@@ -132,6 +132,27 @@ gh pr create `
 
 저장소의 `.github/pull_request_template.md`를 기준으로 변경 내용, 이유, 직접 검증과 미확인 항목을 작성한다. Draft PR은 아직 병합 준비가 끝나지 않았음을 표시한다. 검증과 자체 리뷰가 끝난 뒤 Ready for review로 전환한다.
 
+## `main` 보호와 병합 정책
+
+GitHub의 `protect-main` branch ruleset을 기본 브랜치에 적용한다.
+
+| 설정 | 값 | 목적 |
+| --- | --- | --- |
+| Enforcement | Active | 규칙을 즉시 적용 |
+| Bypass | 없음 | 저장소 관리자도 같은 흐름을 연습 |
+| Restrict deletions | ON | `main` 삭제 방지 |
+| Block force pushes | ON | 공유 이력 재작성 방지 |
+| Require linear history | ON | merge commit 없이 단순한 이력 유지 |
+| Require pull request | ON | `main` 직접 변경 방지 |
+| Required approvals | 0 | 1인 저장소에서 자기 승인으로 막히지 않게 함 |
+| Resolve review conversations | ON | 미해결 검토 의견을 남긴 채 병합하지 않음 |
+| Allowed merge method | Squash | 작업 브랜치의 여러 커밋을 하나로 통합 |
+| Required status checks | OFF | CI 작업을 추가한 뒤 활성화 |
+
+저장소 전체 병합 설정도 squash만 허용한다. merge commit과 rebase merge는 비활성화하고, 병합된 작업 브랜치는 자동 삭제한다.
+
+팀원이 참여하면 필수 승인 수를 1명 이상으로 변경한다. CI가 생기면 테스트와 문서 검사를 required status check로 등록한다.
+
 ## 현재 적용 범위
 
 - 현재 작업 브랜치: `chore/phase-0-dev-environment`
@@ -139,3 +160,4 @@ gh pr create `
 - 원격 저장소: `origin`으로 GitHub Public 저장소 연결 완료
 - 원격 브랜치: `main`, `chore/phase-0-dev-environment` 게시 완료
 - Pull Request: [Draft PR #1](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/1) 자체 리뷰 대기
+- `main` 보호: `protect-main` Ruleset 활성화
