@@ -155,9 +155,10 @@ GitHub의 `protect-main` branch ruleset을 기본 브랜치에 적용한다.
 
 ## 현재 적용 범위
 
-- 현재 작업 브랜치: `chore/phase-0-dev-environment`
-- 현재 목표: Phase 0 관제 개발환경 조사, ROS 2 Humble와 Docker 구성 문서화
+- 현재 작업 브랜치: `feat/phase-1-tb1-bringup`
+- 현재 목표: TB1 단독 bringup, LDS-02 복구와 Phase 1 증거 문서화
 - 원격 저장소: `origin`으로 GitHub Public 저장소 연결 완료
-- 원격 브랜치: `main`, `chore/phase-0-dev-environment` 게시 완료
-- Pull Request: [PR #1](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/1) Ready for review, squash merge 대기
+- 원격 `main`: Phase 0 PR #1 squash merge 완료
+- Phase 1 작업 브랜치: 로컬 커밋 완료, 원격 게시와 Draft PR 대기
+- Pull Request: [PR #1](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/1) 병합 완료
 - `main` 보호: `protect-main` Ruleset 활성화

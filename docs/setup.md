@@ -1,5 +1,7 @@
 # Phase 0 환경 조사 기록
 
+> 후속 설정 문서: [TB1 ROS 2 Bringup 및 LDS-02 GPIO UART 구성](setup/tb1-bringup.md)
+
 조사일: 2026-07-15
 
 상태: 진행 중
