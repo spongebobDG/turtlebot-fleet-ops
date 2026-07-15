@@ -1,0 +1,25 @@
+# Local generated artifacts
+/tmp/
+/output/
+
+# ROS 2 / colcon build artifacts
+/build/
+/install/
+/log/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
