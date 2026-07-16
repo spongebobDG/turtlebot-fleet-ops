@@ -349,8 +349,24 @@ map occupied cells: 108
 ```
 
 지도 격자 범위가 이동에 따라 확장되어 unknown 비율만 단순 비교하지 않고, known·occupied
-cell 수와 지도 이미지 품질을 함께 판단한다. 두 번째 구간의 사용자 물리 확인 전에는 다음
-이동을 실행하지 않는다.
+cell 수와 지도 이미지 품질을 함께 판단한다. 사용자는 두 번째 10cm 전진과 방향이 정상이고
+충돌과 케이블 이상이 없다고 확인했다.
+
+세 번째 10cm 구간은 30회 전방 최소 여유 `0.737m`에서 실행했다.
+
+```text
+guard progress: 0.1002 m
+guard elapsed: 5.34 s
+독립 odom delta x: 0.105311 m
+독립 odom delta y: 0.004762 m
+종료 e-stop: true
+종료 /cmd_vel: linear.x=0.0, angular.z=0.0
+map known cells: 618
+map occupied cells: 108
+```
+
+같은 직선 방향을 반복한 뒤 known cell이 늘지 않았으므로 다음 물리 확인 뒤에는 추가 직진보다
+새 각도의 스캔을 얻는 방향 전환을 우선한다.
 
 ## 병렬 CI 테스트 격리
 
@@ -459,7 +475,9 @@ GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜
 - [x] 재배치 후 SLAM 재시작과 클린 맵 첫 10cm 시스템 측정
 - [x] 클린 맵 첫 10cm 사용자 물리 관찰 확인
 - [x] 클린 맵 두 번째 10cm 시스템 측정
-- [ ] 클린 맵 두 번째 10cm 사용자 물리 관찰 확인
+- [x] 클린 맵 두 번째 10cm 사용자 물리 관찰 확인
+- [x] 클린 맵 세 번째 10cm 시스템 측정
+- [ ] 클린 맵 세 번째 10cm 사용자 물리 관찰 확인
 - [ ] 깨끗한 지도 저장 및 시각 검수
 
 ## 관련 커밋
@@ -474,6 +492,6 @@ GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜
 
 ## 다음에 할 일
 
-1. 클린 맵 두 번째 10cm의 사용자 물리 관찰을 확인한다.
-2. 짧은 보호 이동만 사용해 깨끗한 지도를 작성한다.
+1. 클린 맵 세 번째 10cm의 사용자 물리 관찰을 확인한다.
+2. 방향을 전환해 새 각도의 스캔으로 지도를 확장한다.
 3. 지도와 pose graph를 저장하고 시각 품질을 검수한다.
