@@ -3,7 +3,7 @@
 ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 두 대의 TurtleBot3를 단독 bringup부터 시작해 상태 수집, 안전 제어, 웹 관제, 자율주행, 작업 할당과 장애 복구까지 단계적으로 구현한다.
 
 > 현재 상태: 개발 중. Phase 4 TB1 실시간 웹 관제를 PR #5로 `main`에 병합했으며,
-> Phase 5 TB1 SLAM·Nav2 안전 통합과 실차 검증을 진행 중이다.
+> Phase 5 TB1 무이동 SLAM·Nav2 안전 통합을 검증하고 실제 공간 매핑을 준비 중이다.
 
 ## 프로젝트 목표
 
@@ -38,7 +38,7 @@ ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 
 | Phase 2 | TB1 저속 수동 제어, 정지와 watchdog | 완료 |
 | Phase 3 | TB1 Robot Agent와 상태 메시지 | 완료 |
 | Phase 4 | 단일 로봇 웹 관제 | 완료, PR #5 병합 |
-| Phase 5 | TB1 SLAM, 지도 저장과 Nav2 자율주행 | 설계·환경 준비 중 |
+| Phase 5 | TB1 SLAM, 지도 저장과 Nav2 자율주행 | 무이동 검증 완료, 매핑 대기 |
 | Phase 6 이후 | 로그, 장애 감지, TB2와 플릿 관리 | 대기 |
 
 완료 표시는 실제 검증한 범위에만 사용한다. Phase 1의 `/scan` 수신은 확인했지만 정확한 발행 주기는 아직 기록하지 못했다.
@@ -47,6 +47,10 @@ ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 
 
 ```text
 LDS-02 ── UART ──> Raspberry Pi ── ld08_driver ──> /scan
+                                                     │
+                                              scan_normalizer
+                                                     │
+                                              /scan_normalized
 OpenCR ── USB ───> Raspberry Pi ── turtlebot3_node ──> /odom, /battery_state
                                       │
                                       └── ROS 2 DDS, domain 42
@@ -84,6 +88,13 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 
 상세 사례: [LDS-02 `/scan` 데이터 복구](docs/case-studies/lds02-scan-data-recovery.md)
 
+Phase 5에서는 LDS-02의 배열 길이가 207~219로 바뀌어 SLAM Toolbox가 스캔을 거부하는
+문제를 100회 측정으로 확인했다. 각도 기준 360-bin 정규화 후 정지 상태 `/map`과
+`map -> odom`을 생성했고, Zenoh allow-list로 최종 `/cmd_vel` Publisher를 watchdog
+하나로 제한했다.
+
+상세 사례: [가변 LDS-02 스캔의 SLAM 정규화](docs/case-studies/slam-toolbox-variable-scan-normalization.md)
+
 ## 문서 안내
 
 ### 처음 보는 사람
@@ -108,6 +119,7 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 - [비상정지 중립 재무장 설계 사례](docs/case-studies/safety-watchdog-neutral-rearm.md)
 - [Robot Agent stale 감지·복구 사례](docs/case-studies/robot-agent-stale-recovery.md)
 - [Zenoh 서비스 시간 초과와 RMW 혼용 사례](docs/case-studies/zenoh-service-timeout-rmw-mismatch.md)
+- [가변 LDS-02 스캔의 SLAM 정규화 사례](docs/case-studies/slam-toolbox-variable-scan-normalization.md)
 - [Phase 3 Robot Agent 설계](docs/design/phase-3-robot-agent.md)
 - [Phase 4 Fleet Gateway 설계](docs/design/phase-4-tb1-web-dashboard.md)
 - [Phase 5 TB1 SLAM·Nav2 설계](docs/design/phase-5-tb1-navigation.md)
@@ -121,6 +133,7 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 - [Phase 3 TB1 Robot Agent 실차 검증 일지](docs/learning-log/2026-07-16-phase-3-tb1-robot-agent-validation.md)
 - [Phase 4 TB1 웹 관제와 Zenoh 통신 일지](docs/learning-log/2026-07-16-phase-4-web-dashboard-and-zenoh.md)
 - [Phase 5 Nav2 환경과 안전 경계 준비 일지](docs/learning-log/2026-07-16-phase-5-navigation-preflight.md)
+- [Phase 5 SLAM 입력과 Zenoh 안전 경계 검증 일지](docs/learning-log/2026-07-16-phase-5-slam-and-zenoh-safety-validation.md)
 
 ## 개발 원칙
 

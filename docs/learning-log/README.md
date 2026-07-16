@@ -16,6 +16,7 @@
 - Phase 3: [TB1 Robot Agent 실차 검증](2026-07-16-phase-3-tb1-robot-agent-validation.md)
 - Phase 4: [TB1 웹 관제와 Zenoh 통신 경로](2026-07-16-phase-4-web-dashboard-and-zenoh.md)
 - Phase 5: [Nav2 환경과 안전 경계 준비](2026-07-16-phase-5-navigation-preflight.md)
+- Phase 5: [SLAM 입력과 Zenoh 안전 경계 실차 검증](2026-07-16-phase-5-slam-and-zenoh-safety-validation.md)
 
 ## 공부와 면접용 문서
 
@@ -25,6 +26,7 @@
 - [Phase 3 Robot Agent 필수 개념과 모범 답변](../study/phase-3-robot-agent.md)
 - [Phase 4 웹 Fleet Gateway 필수 개념과 모범 답변](../study/phase-4-web-fleet-gateway.md)
 - [Phase 5 SLAM·Nav2 필수 개념과 모범 답변](../study/phase-5-slam-nav2.md)
+- [가변 LDS-02 스캔의 SLAM 정규화 사례](../case-studies/slam-toolbox-variable-scan-normalization.md)
 - [LDS-02 `/scan` 데이터 복구 사례](../case-studies/lds02-scan-data-recovery.md)
 - [비상정지 중립 재무장 설계 사례](../case-studies/safety-watchdog-neutral-rearm.md)
 - [Robot Agent stale 감지·복구 사례](../case-studies/robot-agent-stale-recovery.md)
