@@ -58,6 +58,7 @@ jobs:
               fleet_interfaces \
               safety_watchdog \
               robot_agent \
+              fleet_navigation \
               fleet_gateway \
             --event-handlers console_direct+
           colcon test-result --verbose
