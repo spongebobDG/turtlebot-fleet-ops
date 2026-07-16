@@ -41,6 +41,7 @@ def test_watchdog_ros_flow() -> None:
             ),
             Parameter("timeout_sec", value=0.15),
             Parameter("publish_rate_hz", value=50.0),
+            Parameter("estop_status_rate_hz", value=20.0),
             Parameter("max_linear_x", value=0.05),
             Parameter("max_angular_z", value=0.3),
             Parameter("neutral_epsilon", value=0.001),

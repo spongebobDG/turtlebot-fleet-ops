@@ -36,6 +36,7 @@ class SafetyWatchdog(Node):
         self.declare_parameter("max_angular_z", 0.3)
         self.declare_parameter("neutral_epsilon", 0.001)
         self.declare_parameter("publish_rate_hz", 20.0)
+        self.declare_parameter("estop_status_rate_hz", 2.0)
 
         input_topic = self.get_parameter("input_topic").value
         output_topic = self.get_parameter("output_topic").value
@@ -44,6 +45,9 @@ class SafetyWatchdog(Node):
         ).value
         self._timeout_sec = float(self.get_parameter("timeout_sec").value)
         publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
+        estop_status_rate_hz = float(
+            self.get_parameter("estop_status_rate_hz").value
+        )
         self._neutral_epsilon = float(
             self.get_parameter("neutral_epsilon").value
         )
@@ -67,6 +71,13 @@ class SafetyWatchdog(Node):
             raise ValueError("timeout_sec must be a positive finite value")
         if not math.isfinite(publish_rate_hz) or publish_rate_hz <= 0.0:
             raise ValueError("publish_rate_hz must be a positive finite value")
+        if (
+            not math.isfinite(estop_status_rate_hz)
+            or estop_status_rate_hz <= 0.0
+        ):
+            raise ValueError(
+                "estop_status_rate_hz must be a positive finite value"
+            )
         if (
             not math.isfinite(self._neutral_epsilon)
             or self._neutral_epsilon < 0.0
@@ -104,6 +115,10 @@ class SafetyWatchdog(Node):
         self._timer = self.create_timer(
             1.0 / publish_rate_hz,
             self._on_timer,
+        )
+        self._estop_status_timer = self.create_timer(
+            1.0 / estop_status_rate_hz,
+            self._publish_estop_status,
         )
 
         self.publish_stop()

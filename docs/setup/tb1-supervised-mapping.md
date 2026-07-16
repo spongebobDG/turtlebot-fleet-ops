@@ -70,6 +70,9 @@ ros2 topic echo /cmd_vel --once
 
 하나라도 다르면 실차 이동을 실행하지 않는다.
 
+watchdog은 e-stop 상태를 transient-local QoS와 2Hz heartbeat로 발행한다. 따라서 늦게
+시작한 점검 도구도 마지막 상태를 받고, 상태 발행이 계속 살아 있는지도 확인할 수 있다.
+
 ## 3. 실제 graph dry-run
 
 ```bash

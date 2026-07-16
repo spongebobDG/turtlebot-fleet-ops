@@ -8,3 +8,4 @@ safety_watchdog:
     max_angular_z: 0.3
     neutral_epsilon: 0.001
     publish_rate_hz: 20.0
+    estop_status_rate_hz: 2.0
