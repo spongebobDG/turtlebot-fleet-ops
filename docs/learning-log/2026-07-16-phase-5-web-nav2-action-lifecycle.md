@@ -326,7 +326,7 @@ handle을 묶고 소유권이 일치할 때만 정리해야 한다.
 2. YAML·PGM·pose graph를 저장해 자동·시각 검증한다.
 3. AMCL 초기 위치를 설정하고 터미널 Goal부터 실차 검증한다.
 4. 같은 경로를 웹 Goal·재시도 API로 검증한다.
-5. TB2 namespace와 Action 이름을 격리해 다중 로봇으로 확장한다.
+5. TB1 MVP 완료 뒤 TB2 namespace와 Action 이름을 격리하는 향후 backlog를 시작한다.
 
 ## 관련 커밋
 

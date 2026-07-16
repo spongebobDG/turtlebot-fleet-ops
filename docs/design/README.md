@@ -5,6 +5,7 @@
 
 ## 현재 문서
 
+- [현재 프로젝트 범위와 완료 조건](project-scope.md)
 - [Phase 3 Robot Agent와 RobotStatus 계약](phase-3-robot-agent.md)
 - [Phase 4 Fleet Gateway와 TB1 웹 관제](phase-4-tb1-web-dashboard.md)
 - [Phase 5 TB1 SLAM과 안전 Nav2](phase-5-tb1-navigation.md)

@@ -4,6 +4,7 @@
 
 ## 단계별 주요 기록
 
+- 범위 결정: [TB1 단일 로봇 MVP로 집중](2026-07-16-single-robot-mvp-scope-decision.md)
 - Phase 0: [환경 조사](2026-07-15-phase-0-environment-survey.md)
 - Phase 0: [ROS 2 Humble 설치](2026-07-15-wsl-ros2-humble-install.md)
 - Phase 0: [Docker Desktop 및 WSL 통합](2026-07-15-docker-desktop-wsl-install.md)

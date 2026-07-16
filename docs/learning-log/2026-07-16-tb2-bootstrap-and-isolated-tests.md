@@ -143,6 +143,9 @@ Humble 뒤에 overlay의 `install/setup.bash`도 source해야 한다.
 
 ## 다음 단계
 
+> 2026-07-16 범위 결정에 따라 TB2 실차 런타임은 TB1 단일 로봇 MVP 완료 뒤의 향후
+> backlog로 전환했다. 아래 항목은 삭제하지 않고 이미 확인한 확장 준비 증거로 보존한다.
+
 - TB1 새 SLAM 설정의 두 번째 그래프 노드 검증을 마친다.
 - Phase 5 PR을 완료한 뒤 별도 다중 로봇 브랜치에서 TB2용 `robot_id`, 서비스와 namespace
   설정을 추가한다.
