@@ -1,0 +1,191 @@
+# TB1 웹 관제 대시보드 운영 절차
+
+## 목적
+
+WSL에서 TB1 상태를 수신하고 `http://localhost:8000`에서 실시간 관제한다. 이 절차는
+RobotStatus REST 조회, WebSocket 갱신, 비상정지, 통신 단절과 복구를 포함한다.
+
+## 전제조건
+
+- TB1에서 bringup, `safety_watchdog`, `robot_agent`가 실행 중이다.
+- TB1과 WSL에 ROS 2 Humble과 `rmw_cyclonedds_cpp`가 설치돼 있다.
+- 양쪽에 `zenoh-bridge-ros2dds` 1.9.0이 설치돼 있다.
+- WSL 저장소에서 `fleet_gateway`를 빌드했다.
+- TB1과 WSL의 시스템 시각 차이가 500ms 이내다.
+
+## 1. Gateway 빌드와 테스트
+
+WSL에서 실행한다.
+
+```bash
+cd ~/turtlebot-fleet-ops
+source /opt/ros/humble/setup.bash
+
+rosdep check \
+  --from-paths control/fleet_gateway \
+  --ignore-src \
+  --rosdistro humble
+
+colcon build \
+  --base-paths interfaces control \
+  --packages-up-to fleet_gateway \
+  --symlink-install
+
+source install/setup.bash
+
+colcon test \
+  --base-paths interfaces control \
+  --packages-select fleet_gateway
+
+colcon test-result --verbose
+```
+
+## 2. 임시 수동 실행
+
+TB1에서:
+
+```bash
+cd ~/turtlebot-fleet-ops
+export ROS_DISTRO=humble
+export ROS_DOMAIN_ID=42
+bash infra/zenoh/start-robot-bridge.sh
+```
+
+WSL 첫 번째 터미널에서:
+
+```bash
+cd ~/turtlebot-fleet-ops
+export ROBOT_ADDRESS=tb1
+export ROS_DOMAIN_ID=42
+bash infra/zenoh/start-control-bridge.sh
+```
+
+WSL 두 번째 터미널에서:
+
+```bash
+cd ~/turtlebot-fleet-ops
+export ROS_DOMAIN_ID=42
+bash infra/zenoh/start-control-gateway.sh
+```
+
+## 3. 기본 상태 확인
+
+PowerShell 또는 WSL에서 확인한다.
+
+```bash
+curl http://127.0.0.1:8000/api/health
+curl http://127.0.0.1:8000/api/robots
+```
+
+기대 결과:
+
+- `known_robots`는 1이다.
+- `online_robots`는 1이다.
+- `tb1.online`은 `true`다.
+- heartbeat age는 보통 1초 미만이다.
+- 배터리, odom, scan, CPU, 메모리와 Wi-Fi 값이 갱신된다.
+
+브라우저에서 `http://localhost:8000`을 열고 다음을 확인한다.
+
+- 상단 연결 상태가 실시간 연결이다.
+- TB1 상태가 `OK` 또는 실제 fault 상태와 일치한다.
+- 카드의 heartbeat와 센서 값이 갱신된다.
+- 개발자 도구에 정적 파일 404나 WebSocket 오류가 없다.
+
+## 4. 비상정지 검증
+
+로봇 주변을 비우고 바퀴가 움직이지 않는 상태에서 웹의 비상정지 버튼을 누른다.
+API로 검증할 때는 다음 요청을 사용한다.
+
+```bash
+curl -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"engaged":true}' \
+  http://127.0.0.1:8000/api/robots/tb1/estop
+```
+
+TB1에서 0 속도를 확인한다.
+
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_DOMAIN_ID=42
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ros2 topic echo /cmd_vel --once
+```
+
+해제 응답에 `waiting for a neutral command`가 포함되는지 확인한다. 해제 직후 기존의
+비중립 명령이 남아 있어도 로봇은 움직이면 안 된다.
+
+## 5. 오프라인 안전 검증
+
+로봇의 로컬 watchdog은 유지한 채 Zenoh 브리지만 중단한다.
+
+```bash
+systemctl --user stop tb1-zenoh-bridge.service
+```
+
+3초가 지난 후 `GET /api/robots/tb1`에서 `online=false`인지 확인한다. 이 상태에서
+비상정지 해제를 요청하면 HTTP 409와 다음 메시지가 나와야 한다.
+
+```text
+Cannot release emergency stop while robot is offline
+```
+
+브리지를 복구한다.
+
+```bash
+systemctl --user start tb1-zenoh-bridge.service
+```
+
+`online=true`로 돌아온 후 비상정지를 해제하고 중립 명령을 보내 재무장한다.
+
+## 6. systemd 운영
+
+자세한 설치는 [Zenoh 브리지 운영 문서](../../infra/zenoh/README.md)를 따른다.
+
+```bash
+systemctl --user --no-pager status \
+  fleet-control-zenoh.service \
+  fleet-gateway.service
+
+journalctl --user -u fleet-gateway.service -n 100 --no-pager
+```
+
+## 자주 발생하는 문제
+
+### 상태 토픽은 보이지만 서비스가 시간 초과됨
+
+다음을 확인한다.
+
+```bash
+echo "$ROS_DISTRO"
+echo "$ROS_DOMAIN_ID"
+echo "$RMW_IMPLEMENTATION"
+```
+
+모든 ROS 노드는 Humble, domain 42, `rmw_cyclonedds_cpp`를 사용해야 한다. 해결 과정은
+[Zenoh 서비스 시간 초과 사례](../case-studies/zenoh-service-timeout-rmw-mismatch.md)에
+정리돼 있다.
+
+### Zenoh 로그에서 timestamp가 500ms를 초과함
+
+WSL 시계를 Windows 호스트에 다시 맞춘 후 관제 브리지를 재시작한다.
+
+```bash
+sudo hwclock -s
+```
+
+TB1은 NTP 동기화 상태를 확인한다.
+
+```bash
+timedatectl status
+```
+
+### 화면은 열리지만 CSS가 적용되지 않음
+
+```bash
+curl -I http://127.0.0.1:8000/static/styles.css
+```
+
+HTTP 200과 `text/css`가 나와야 한다. colcon의 `--symlink-install`에서도 정적 파일을
+제공하도록 Gateway는 허용된 경로를 `FileResponse`로 반환한다.

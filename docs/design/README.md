@@ -6,3 +6,4 @@
 ## 현재 문서
 
 - [Phase 3 Robot Agent와 RobotStatus 계약](phase-3-robot-agent.md)
+- [Phase 4 Fleet Gateway와 TB1 웹 관제](phase-4-tb1-web-dashboard.md)

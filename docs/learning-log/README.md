@@ -14,6 +14,7 @@
 - Phase 2: [TB1 Safety Watchdog 배포](2026-07-15-phase-2-tb1-watchdog-deployment.md)
 - Phase 3: [Robot Agent 구현](2026-07-16-phase-3-robot-agent-implementation.md)
 - Phase 3: [TB1 Robot Agent 실차 검증](2026-07-16-phase-3-tb1-robot-agent-validation.md)
+- Phase 4: [TB1 웹 관제와 Zenoh 통신 경로](2026-07-16-phase-4-web-dashboard-and-zenoh.md)
 
 ## 공부와 면접용 문서
 
@@ -21,10 +22,13 @@
 - [Phase 1 필수 개념과 모범 답변](../study/phase-1-tb1-bringup.md)
 - [Phase 2 안전 제어 필수 개념과 모범 답변](../study/phase-2-safe-teleoperation.md)
 - [Phase 3 Robot Agent 필수 개념과 모범 답변](../study/phase-3-robot-agent.md)
+- [Phase 4 웹 Fleet Gateway 필수 개념과 모범 답변](../study/phase-4-web-fleet-gateway.md)
 - [LDS-02 `/scan` 데이터 복구 사례](../case-studies/lds02-scan-data-recovery.md)
 - [비상정지 중립 재무장 설계 사례](../case-studies/safety-watchdog-neutral-rearm.md)
 - [Robot Agent stale 감지·복구 사례](../case-studies/robot-agent-stale-recovery.md)
+- [Zenoh 서비스 시간 초과와 RMW 혼용 사례](../case-studies/zenoh-service-timeout-rmw-mismatch.md)
 - [Phase 3 Robot Agent 설계](../design/phase-3-robot-agent.md)
+- [Phase 4 Fleet Gateway 설계](../design/phase-4-tb1-web-dashboard.md)
 
 ## 기록 원칙
 
