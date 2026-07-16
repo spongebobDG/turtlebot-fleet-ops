@@ -141,10 +141,19 @@ ros2 service call \
 ls -lh tb1_lab.*
 grep -E '^(image|resolution|origin|negate|occupied_thresh|free_thresh):' \
   tb1_lab.yaml
+
+ros2 run fleet_navigation validate_map \
+  "$PWD/tb1_lab.yaml" \
+  --min-known-cells 100 \
+  --min-known-ratio 0.01 \
+  --require-pose-graph
 ```
 
 RViz에서 벽의 이중선, 끊긴 벽, 비정상적인 회전과 출발·종료 구간의 어긋남을 확인한다.
-품질 검토를 통과하지 못한 지도는 Nav2 입력으로 사용하지 않는다.
+`validate_map`은 YAML의 상대 이미지 경로, `trinary` 모드, 해상도, 원점, 임계값,
+PGM 픽셀 수, known/free/occupied 분포와 pose graph 파일 쌍을 검사한다. 이 검사는 파일
+일관성을 증명할 뿐 공간 형상의 품질을 증명하지 않는다. 자동 검사와 RViz 육안 검토 중
+하나라도 통과하지 못한 지도는 Nav2 입력으로 사용하지 않는다.
 
 ## 6. 저장 지도 기반 Nav2 시작
 

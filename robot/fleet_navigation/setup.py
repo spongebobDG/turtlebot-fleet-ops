@@ -27,7 +27,7 @@ setup(
         ),
         (
             os.path.join("share", PACKAGE_NAME, "maps"),
-            glob("maps/*.md"),
+            glob("maps/*"),
         ),
     ],
     install_requires=["setuptools"],
@@ -39,6 +39,7 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
+            "validate_map = fleet_navigation.map_validator:main",
             "scan_normalizer = fleet_navigation.scan_normalizer:main",
             "supervised_motion = fleet_navigation.supervised_motion:main",
         ],

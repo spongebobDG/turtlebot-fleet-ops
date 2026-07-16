@@ -18,6 +18,7 @@
 - Phase 5: [Nav2 환경과 안전 경계 준비](2026-07-16-phase-5-navigation-preflight.md)
 - Phase 5: [SLAM 입력과 Zenoh 안전 경계 실차 검증](2026-07-16-phase-5-slam-and-zenoh-safety-validation.md)
 - Phase 5: [잔류 텔레옵 명령 Incident와 모션 가드](2026-07-16-tb1-residual-teleop-command-incident.md)
+- Phase 5: [저장 지도 검증 CLI 구현](2026-07-16-phase-5-map-artifact-validation.md)
 
 ## 공부와 면접용 문서
 
