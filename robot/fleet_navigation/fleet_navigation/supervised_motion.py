@@ -44,6 +44,27 @@ def require_cyclonedds_rmw(environment=None) -> None:
         )
 
 
+def validate_pose_checkpoint_configuration(
+    enabled: bool,
+    path: str,
+    reset: bool,
+    dry_run: bool,
+    max_translation_m: float,
+    max_yaw_rad: float,
+) -> None:
+    """Reject unsafe pose-checkpoint parameter combinations."""
+    if enabled and not path:
+        raise ValueError("pose checkpoint path must not be empty")
+    if max_translation_m <= 0.0:
+        raise ValueError("max checkpoint translation must be positive")
+    if max_yaw_rad <= 0.0:
+        raise ValueError("max checkpoint yaw must be positive")
+    if reset and not dry_run:
+        raise ValueError(
+            "pose checkpoint reset is allowed only in dry-run"
+        )
+
+
 class SupervisedMotion(Node):
     """Own the safe input exclusively for one bounded calibration move."""
 
@@ -185,18 +206,14 @@ class SupervisedMotion(Node):
             raise ValueError("lateral translation limit must be positive")
         if self._reverse_rotation_limit <= 0.0:
             raise ValueError("reverse rotation limit must be positive")
-        if self._pose_checkpoint_enabled and not self._pose_checkpoint_path:
-            raise ValueError("pose checkpoint path must not be empty")
-        if self._max_checkpoint_translation <= 0.0:
-            raise ValueError(
-                "max checkpoint translation must be positive"
-            )
-        if self._max_checkpoint_yaw <= 0.0:
-            raise ValueError("max checkpoint yaw must be positive")
-        if self._reset_pose_checkpoint and not self._dry_run:
-            raise ValueError(
-                "pose checkpoint reset is allowed only in dry-run"
-            )
+        validate_pose_checkpoint_configuration(
+            self._pose_checkpoint_enabled,
+            self._pose_checkpoint_path,
+            self._reset_pose_checkpoint,
+            self._dry_run,
+            self._max_checkpoint_translation,
+            self._max_checkpoint_yaw,
+        )
 
         self._odom: Optional[Odometry] = None
         self._scan: Optional[LaserScan] = None

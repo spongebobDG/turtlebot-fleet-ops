@@ -1,11 +1,11 @@
 """Runtime environment contract tests for supervised motion."""
 
 import pytest
-import rclpy
-from rclpy.parameter import Parameter
 
 from fleet_navigation.supervised_motion import require_cyclonedds_rmw
-from fleet_navigation.supervised_motion import SupervisedMotion
+from fleet_navigation.supervised_motion import (
+    validate_pose_checkpoint_configuration,
+)
 
 
 def test_cyclonedds_rmw_is_required() -> None:
@@ -27,13 +27,12 @@ def test_incompatible_rmw_is_rejected(environment) -> None:
 
 
 def test_pose_checkpoint_reset_requires_dry_run() -> None:
-    rclpy.init()
-    try:
-        with pytest.raises(ValueError, match="only in dry-run"):
-            SupervisedMotion(
-                parameter_overrides=[
-                    Parameter("reset_pose_checkpoint", value=True),
-                ]
-            )
-    finally:
-        rclpy.shutdown()
+    with pytest.raises(ValueError, match="only in dry-run"):
+        validate_pose_checkpoint_configuration(
+            enabled=True,
+            path="/tmp/pose.json",
+            reset=True,
+            dry_run=False,
+            max_translation_m=0.03,
+            max_yaw_rad=0.1,
+        )
