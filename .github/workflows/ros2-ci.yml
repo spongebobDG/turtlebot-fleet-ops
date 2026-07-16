@@ -1,0 +1,63 @@
+name: ROS 2 CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ros2-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Humble build and test
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up ROS 2 Humble
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      - name: Install package dependencies
+        run: |
+          rosdep update
+          rosdep install \
+            --from-paths robot control \
+            --ignore-src \
+            --rosdistro humble \
+            --skip-keys ament_python \
+            -y
+
+      - name: Build workspace packages
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build \
+            --base-paths robot control \
+            --event-handlers console_direct+
+
+      - name: Run workspace tests
+        shell: bash
+        env:
+          ROS_DOMAIN_ID: "142"
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test \
+            --packages-select \
+              fleet_interfaces \
+              safety_watchdog \
+              robot_agent \
+              fleet_gateway \
+            --event-handlers console_direct+
+          colcon test-result --verbose

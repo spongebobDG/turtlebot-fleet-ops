@@ -1,0 +1,19 @@
+[Unit]
+Description=TB1 local velocity safety watchdog
+After=tb1-bringup.service
+Wants=tb1-bringup.service
+
+[Service]
+Type=simple
+Environment=ROS_DISTRO=humble
+Environment=ROS_DOMAIN_ID=42
+Environment=ROS_LOCALHOST_ONLY=0
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ExecStart=/usr/bin/bash -lc 'source /opt/ros/humble/setup.bash && source %h/turtlebot-fleet-ops/install/setup.bash && exec ros2 launch safety_watchdog safety_watchdog.launch.py'
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

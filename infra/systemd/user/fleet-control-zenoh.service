@@ -1,0 +1,15 @@
+[Unit]
+Description=Fleet control Zenoh ROS 2 DDS bridge
+After=default.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/turtlebot-fleet-ops/control.env
+ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/infra/zenoh/start-control-bridge.sh
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

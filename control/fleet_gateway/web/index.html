@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TurtleBot Fleet Ops</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">ROS 2 FLEET CONTROL</p>
+        <h1>TurtleBot Fleet Ops</h1>
+      </div>
+      <div class="connection" id="connection" data-state="connecting">
+        <span class="connection-dot"></span>
+        <span id="connection-label">연결 중</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="summary" aria-label="플릿 요약">
+        <div>
+          <span class="summary-label">등록 로봇</span>
+          <strong id="known-count">0</strong>
+        </div>
+        <div>
+          <span class="summary-label">온라인</span>
+          <strong id="online-count">0</strong>
+        </div>
+        <div>
+          <span class="summary-label">경고·오류</span>
+          <strong id="fault-count">0</strong>
+        </div>
+      </section>
+
+      <section class="section-heading">
+        <div>
+          <p class="eyebrow">LIVE ROBOTS</p>
+          <h2>로봇 상태</h2>
+        </div>
+        <span id="updated-at">아직 데이터 없음</span>
+      </section>
+
+      <section class="robot-grid" id="robot-grid">
+        <article class="empty-state">
+          <h3>RobotStatus를 기다리는 중입니다.</h3>
+          <p>Gateway가 ROS 2 heartbeat를 받으면 여기에 표시됩니다.</p>
+        </article>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

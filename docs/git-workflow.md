@@ -147,18 +147,20 @@ GitHub의 `protect-main` branch ruleset을 기본 브랜치에 적용한다.
 | Required approvals | 0 | 1인 저장소에서 자기 승인으로 막히지 않게 함 |
 | Resolve review conversations | ON | 미해결 검토 의견을 남긴 채 병합하지 않음 |
 | Allowed merge method | Squash | 작업 브랜치의 여러 커밋을 하나로 통합 |
-| Required status checks | OFF | CI 작업을 추가한 뒤 활성화 |
+| Required status checks | ON | `Humble build and test` 성공 전 병합 차단 |
+| Strict status checks | ON | 최신 `main` 기준으로 다시 검사 |
 
 저장소 전체 병합 설정도 squash만 허용한다. merge commit과 rebase merge는 비활성화하고, 병합된 작업 브랜치는 자동 삭제한다.
 
-팀원이 참여하면 필수 승인 수를 1명 이상으로 변경한다. CI가 생기면 테스트와 문서 검사를 required status check로 등록한다.
+팀원이 참여하면 필수 승인 수를 1명 이상으로 변경한다. `.github/workflows/ros2-ci.yml`은
+Ubuntu 22.04와 ROS 2 Humble에서 rosdep, colcon build, 64개 테스트를 실행한다.
+`protect-main` Ruleset은 `Humble build and test`를 required status check로 요구한다.
 
 ## 현재 적용 범위
 
-- 현재 작업 브랜치: `feat/phase-1-tb1-bringup`
-- 현재 목표: TB1 단독 bringup, LDS-02 복구와 Phase 1 증거 문서화
+- 현재 작업 브랜치: `feat/phase-4-tb1-web-dashboard`
+- 현재 목표: TB1 웹 관제, Zenoh 브리지와 systemd 운영 검증
 - 원격 저장소: `origin`으로 GitHub Public 저장소 연결 완료
-- 원격 `main`: Phase 0 PR #1 squash merge 완료
-- Phase 1 작업 브랜치: 로컬 커밋 완료, 원격 게시와 Draft PR 대기
-- Pull Request: [PR #1](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/1) 병합 완료
-- `main` 보호: `protect-main` Ruleset 활성화
+- 원격 `main`: Phase 3 PR #4까지 squash merge 완료
+- Pull Request: [PR #5](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/5) 검증 중
+- `main` 보호: `protect-main` Ruleset과 Humble 필수 CI 활성화
