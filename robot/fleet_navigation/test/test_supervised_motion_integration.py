@@ -6,6 +6,7 @@ import time
 
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+import pytest
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -16,6 +17,9 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
+from fleet_navigation.pose_checkpoint import load_pose_checkpoint
+from fleet_navigation.pose_checkpoint import PoseCheckpoint
+from fleet_navigation.pose_checkpoint import save_pose_checkpoint
 from fleet_navigation.supervised_motion import SupervisedMotion
 
 
@@ -122,6 +126,8 @@ class FakeTurtleBot(Node):
         self.yaw += self._angular * elapsed
 
         odom = Odometry()
+        odom.header.frame_id = "odom"
+        odom.child_frame_id = "base_footprint"
         odom.pose.pose.position.x = self.x
         odom.pose.pose.position.y = self.y
         odom.pose.pose.orientation.z = math.sin(self.yaw / 2.0)
@@ -151,6 +157,7 @@ def _motion_parameters() -> list:
             "estop_service",
             value="/test/fleet_navigation/set_estop",
         ),
+        Parameter("pose_checkpoint_enabled", value=False),
     ]
 
 
@@ -242,6 +249,122 @@ def test_supervised_motion_rejects_low_clearance() -> None:
         assert watchdog.estop_active is True
         assert robot.x == 0.0
         assert robot.y == 0.0
+    finally:
+        motion.destroy_node()
+        _stop_fake_graph(watchdog, robot, executor, thread)
+        rclpy.shutdown()
+
+
+def _enable_checkpoint(parameters, path, reset=False) -> None:
+    for index, parameter in enumerate(parameters):
+        if parameter.name == "pose_checkpoint_enabled":
+            parameters[index] = Parameter(
+                "pose_checkpoint_enabled",
+                value=True,
+            )
+            break
+    else:
+        raise AssertionError("checkpoint parameter is missing")
+    parameters.extend(
+        [
+            Parameter("pose_checkpoint_path", value=str(path)),
+            Parameter("reset_pose_checkpoint", value=reset),
+        ]
+    )
+
+
+def test_pose_checkpoint_blocks_uncommanded_rotation(tmp_path) -> None:
+    rclpy.init()
+    watchdog, robot, executor, thread = _start_fake_graph()
+    path = tmp_path / "pose.json"
+    save_pose_checkpoint(
+        path,
+        PoseCheckpoint(0.0, 0.0, 0.0, "odom", "base_footprint"),
+    )
+    robot.yaw = math.pi / 2.0
+    parameters = _motion_parameters()
+    _enable_checkpoint(parameters, path)
+    motion = SupervisedMotion(parameter_overrides=parameters)
+    try:
+        assert motion.run_once() is False
+        assert watchdog.estop_active is True
+        assert watchdog.release_count == 0
+        assert robot.x == 0.0
+    finally:
+        motion.destroy_node()
+        _stop_fake_graph(watchdog, robot, executor, thread)
+        rclpy.shutdown()
+
+
+def test_successful_motion_updates_pose_checkpoint(tmp_path) -> None:
+    rclpy.init()
+    watchdog, robot, executor, thread = _start_fake_graph()
+    path = tmp_path / "pose.json"
+    save_pose_checkpoint(
+        path,
+        PoseCheckpoint(0.0, 0.0, 0.0, "odom", "base_footprint"),
+    )
+    parameters = _motion_parameters()
+    _enable_checkpoint(parameters, path)
+    motion = SupervisedMotion(parameter_overrides=parameters)
+    try:
+        assert motion.run_once() is True
+        saved = load_pose_checkpoint(path)
+        assert saved is not None
+        assert saved.x >= 0.02
+        assert saved.y == pytest.approx(0.0)
+        assert saved.yaw == pytest.approx(0.0)
+    finally:
+        motion.destroy_node()
+        _stop_fake_graph(watchdog, robot, executor, thread)
+        rclpy.shutdown()
+
+
+def test_dry_run_can_reset_pose_checkpoint_without_motion(tmp_path) -> None:
+    rclpy.init()
+    watchdog, robot, executor, thread = _start_fake_graph()
+    path = tmp_path / "pose.json"
+    save_pose_checkpoint(
+        path,
+        PoseCheckpoint(0.0, 0.0, 0.0, "odom", "base_footprint"),
+    )
+    robot.yaw = math.pi / 2.0
+    parameters = _motion_parameters()
+    parameters.append(Parameter("dry_run", value=True))
+    _enable_checkpoint(parameters, path, reset=True)
+    motion = SupervisedMotion(parameter_overrides=parameters)
+    try:
+        assert motion.run_once() is True
+        saved = load_pose_checkpoint(path)
+        assert saved is not None
+        assert saved.yaw == pytest.approx(math.pi / 2.0)
+        assert watchdog.estop_active is True
+        assert watchdog.release_count == 0
+        assert robot.x == 0.0
+    finally:
+        motion.destroy_node()
+        _stop_fake_graph(watchdog, robot, executor, thread)
+        rclpy.shutdown()
+
+
+def test_failed_motion_leaves_checkpoint_blocked(tmp_path) -> None:
+    rclpy.init()
+    watchdog, robot, executor, thread = _start_fake_graph()
+    robot.scan_range = 0.20
+    path = tmp_path / "pose.json"
+    save_pose_checkpoint(
+        path,
+        PoseCheckpoint(0.0, 0.0, 0.0, "odom", "base_footprint"),
+    )
+    parameters = _motion_parameters()
+    _enable_checkpoint(parameters, path)
+    motion = SupervisedMotion(parameter_overrides=parameters)
+    try:
+        assert motion.run_once() is False
+        assert watchdog.estop_active is True
+        assert watchdog.release_count == 1
+        with pytest.raises(RuntimeError, match="did not commit"):
+            load_pose_checkpoint(path)
     finally:
         motion.destroy_node()
         _stop_fake_graph(watchdog, robot, executor, thread)

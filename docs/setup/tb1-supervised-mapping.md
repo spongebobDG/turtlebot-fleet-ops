@@ -73,7 +73,35 @@ ros2 topic echo /cmd_vel --once
 watchdog은 e-stop 상태를 transient-local QoS와 2Hz heartbeat로 발행한다. 따라서 늦게
 시작한 점검 도구도 마지막 상태를 받고, 상태 발행이 계속 살아 있는지도 확인할 수 있다.
 
-## 3. 실제 graph dry-run
+## 3. 실제 graph dry-run과 자세 체크포인트
+
+`supervised_motion`은 기본적으로 이전 성공 동작의 최종 odom 자세를 로봇별 상태 파일에
+보관한다. 다음 실행의 시작 자세가 3cm 또는 5도보다 달라지면 사람이 밀거나 돌린 것 또는
+odom 재시작으로 판단하고 e-stop을 풀지 않는다. 실제 이동 직전에는 체크포인트를
+`motion_in_progress`로 먼저 표시하며, 성공한 최종 자세만 이 표시를 해제한다. 따라서 이동
+중단이나 프로세스 강제 종료는 실제 변위가 작아도 다음 실행을 거부한다.
+
+최초 배포, bringup 재시작, 또는 승인된 수동 이동 뒤에는 현장 상태를 확인한 다음 아래
+명령으로 기준을 한 번만 등록한다. 이 명령은 dry-run이므로 바퀴를 움직이지 않는다.
+
+```bash
+ros2 run fleet_navigation supervised_motion --ros-args \
+  -p dry_run:=true \
+  -p reset_pose_checkpoint:=true \
+  -p mode:=translate \
+  -p target_distance_m:=0.05 \
+  -p speed:=0.02 \
+  -p timeout_sec:=5.0 \
+  -p minimum_clearance_m:=0.30
+```
+
+정상 로그에는 `POSE_CHECKPOINT_RESET`과
+`SUPERVISED_MOTION_DRY_RUN_SUCCESS`가 함께 나온다. `reset_pose_checkpoint`는
+일반 이동에서 사용할 수 없으며, 자세 불일치 원인을 확인하지 않고 반복해서 기준을
+덮어쓰면 안 된다. 로봇을 들어 옮기거나 바퀴가 미끄러져 활성 SLAM의 pose 전제가
+깨졌다면 체크포인트만 재등록하지 말고 SLAM 지도도 새로 시작한다.
+
+기준 등록 뒤의 평상시 무동작 점검에서는 reset 없이 실행한다.
 
 ```bash
 ros2 run fleet_navigation supervised_motion --ros-args \
@@ -88,6 +116,7 @@ ros2 run fleet_navigation supervised_motion --ros-args \
 정상 결과는 `SUPERVISED_MOTION_DRY_RUN_SUCCESS`와 종료 코드 0이다. dry-run은 e-stop을
 해제하지 않는다. 짧은 외부 `timeout`으로 프로세스를 자르지 않는다. 노드 내부에 서비스,
 센서, 동작 timeout이 있고 모든 실패 경로가 e-stop과 0속도로 끝나도록 구현돼 있다.
+체크포인트가 없거나 허용 범위를 넘은 경우에도 같은 fail-closed 경로로 종료한다.
 
 ## 4. 5cm 직진 검증
 
@@ -142,6 +171,7 @@ ros2 topic echo /odom --once
 
 - guard 종료 코드와 `SUPERVISED_MOTION_SUCCESS` 또는 실패 원인
 - 목표 대비 부호 있는 odometry 진행량과 실행 시간
+- 시작 자세 체크포인트 편차와 성공 후 `pose checkpoint updated` 로그
 - 종료 후 e-stop `true`, 안전 입력 Publisher 0, 최종 속도 0
 - 사용자가 본 실제 이동 방향·대략적인 거리·충돌·파손 여부
 

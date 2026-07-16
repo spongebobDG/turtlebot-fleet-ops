@@ -21,6 +21,12 @@ from fleet_navigation.motion_guard import RotationProgress
 from fleet_navigation.motion_guard import sector_minimum
 from fleet_navigation.motion_guard import TranslationProgress
 from fleet_navigation.motion_guard import validate_motion_request
+from fleet_navigation.pose_checkpoint import default_pose_checkpoint_path
+from fleet_navigation.pose_checkpoint import load_pose_checkpoint
+from fleet_navigation.pose_checkpoint import mark_pose_checkpoint_in_progress
+from fleet_navigation.pose_checkpoint import PoseCheckpoint
+from fleet_navigation.pose_checkpoint import require_pose_continuity
+from fleet_navigation.pose_checkpoint import save_pose_checkpoint
 
 
 EXPECTED_RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp"
@@ -62,6 +68,17 @@ class SupervisedMotion(Node):
         self.declare_parameter("lateral_translation_limit_m", 0.05)
         self.declare_parameter("reverse_rotation_limit_rad", 0.10)
         self.declare_parameter("neutral_epsilon", 1.0e-3)
+        self.declare_parameter("pose_checkpoint_enabled", True)
+        self.declare_parameter(
+            "pose_checkpoint_path",
+            str(default_pose_checkpoint_path()),
+        )
+        self.declare_parameter("reset_pose_checkpoint", False)
+        self.declare_parameter("max_checkpoint_translation_m", 0.03)
+        self.declare_parameter(
+            "max_checkpoint_yaw_rad",
+            math.radians(5.0),
+        )
         self.declare_parameter("input_topic", "/safety/cmd_vel_in")
         self.declare_parameter("output_topic", "/cmd_vel")
         self.declare_parameter("odom_topic", "/odom")
@@ -118,6 +135,21 @@ class SupervisedMotion(Node):
         self._neutral_epsilon = float(
             self.get_parameter("neutral_epsilon").value
         )
+        self._pose_checkpoint_enabled = bool(
+            self.get_parameter("pose_checkpoint_enabled").value
+        )
+        self._pose_checkpoint_path = os.path.expanduser(
+            str(self.get_parameter("pose_checkpoint_path").value)
+        )
+        self._reset_pose_checkpoint = bool(
+            self.get_parameter("reset_pose_checkpoint").value
+        )
+        self._max_checkpoint_translation = float(
+            self.get_parameter("max_checkpoint_translation_m").value
+        )
+        self._max_checkpoint_yaw = float(
+            self.get_parameter("max_checkpoint_yaw_rad").value
+        )
         self._input_topic = str(
             self.get_parameter("input_topic").value
         )
@@ -153,6 +185,18 @@ class SupervisedMotion(Node):
             raise ValueError("lateral translation limit must be positive")
         if self._reverse_rotation_limit <= 0.0:
             raise ValueError("reverse rotation limit must be positive")
+        if self._pose_checkpoint_enabled and not self._pose_checkpoint_path:
+            raise ValueError("pose checkpoint path must not be empty")
+        if self._max_checkpoint_translation <= 0.0:
+            raise ValueError(
+                "max checkpoint translation must be positive"
+            )
+        if self._max_checkpoint_yaw <= 0.0:
+            raise ValueError("max checkpoint yaw must be positive")
+        if self._reset_pose_checkpoint and not self._dry_run:
+            raise ValueError(
+                "pose checkpoint reset is allowed only in dry-run"
+            )
 
         self._odom: Optional[Odometry] = None
         self._scan: Optional[LaserScan] = None
@@ -336,6 +380,75 @@ class SupervisedMotion(Node):
         ):
             raise RuntimeError("final velocity output is not neutral")
 
+    def _current_pose_checkpoint(self) -> PoseCheckpoint:
+        if self._odom is None:
+            raise RuntimeError("odom is unavailable")
+        pose = self._odom.pose.pose
+        orientation = pose.orientation
+        yaw = math.atan2(
+            2.0
+            * (
+                orientation.w * orientation.z
+                + orientation.x * orientation.y
+            ),
+            1.0
+            - 2.0
+            * (
+                orientation.y * orientation.y
+                + orientation.z * orientation.z
+            ),
+        )
+        return PoseCheckpoint(
+            x=pose.position.x,
+            y=pose.position.y,
+            yaw=yaw,
+            odom_frame=self._odom.header.frame_id,
+            base_frame=self._odom.child_frame_id,
+        )
+
+    def _check_pose_checkpoint(self) -> None:
+        if not self._pose_checkpoint_enabled:
+            return
+        current = self._current_pose_checkpoint()
+        if self._reset_pose_checkpoint:
+            save_pose_checkpoint(self._pose_checkpoint_path, current)
+            self.get_logger().warning(
+                "POSE_CHECKPOINT_RESET dry-run accepted current odom pose"
+            )
+            return
+        expected = load_pose_checkpoint(self._pose_checkpoint_path)
+        if expected is None:
+            raise RuntimeError(
+                "pose checkpoint is missing; run an e-stop dry-run with "
+                "reset_pose_checkpoint:=true after operator inspection"
+            )
+        deviation = require_pose_continuity(
+            expected,
+            current,
+            self._max_checkpoint_translation,
+            self._max_checkpoint_yaw,
+        )
+        self.get_logger().info(
+            "pose checkpoint accepted: "
+            f"translation={deviation.translation_m:.4f}m "
+            f"yaw={math.degrees(deviation.yaw_rad):.2f}deg"
+        )
+
+    def _save_current_pose_checkpoint(self) -> None:
+        if not self._pose_checkpoint_enabled:
+            return
+        save_pose_checkpoint(
+            self._pose_checkpoint_path,
+            self._current_pose_checkpoint(),
+        )
+        self.get_logger().info("pose checkpoint updated")
+
+    def _mark_pose_checkpoint_in_progress(self) -> None:
+        if not self._pose_checkpoint_enabled:
+            return
+        mark_pose_checkpoint_in_progress(self._pose_checkpoint_path)
+        self.get_logger().info("pose checkpoint marked motion_in_progress")
+
     def _preflight(self) -> None:
         self._input_nonzero_seen = False
         end = time.monotonic() + self._preflight_sec
@@ -504,6 +617,7 @@ class SupervisedMotion(Node):
             self._set_estop(True)
             self._publish_zero(5)
             self._preflight()
+            self._check_pose_checkpoint()
             if self._dry_run:
                 self._publish_zero(5)
                 self._require_zero_output()
@@ -511,6 +625,7 @@ class SupervisedMotion(Node):
                     "SUPERVISED_MOTION_DRY_RUN_SUCCESS e-stop remains active"
                 )
                 return True
+            self._mark_pose_checkpoint_in_progress()
             self._set_estop(False)
             self._input_nonzero_seen = False
             self._publish_zero(10)
@@ -524,6 +639,7 @@ class SupervisedMotion(Node):
             self._set_estop(True)
             self._publish_zero(5)
             self._require_zero_output()
+            self._save_current_pose_checkpoint()
             unit = "m" if self._mode == "translate" else "rad"
             self.get_logger().info(
                 f"SUPERVISED_MOTION_SUCCESS mode={self._mode} "
