@@ -5,6 +5,7 @@ from fleet_gateway.registry import StatusRegistry
 
 
 class FakeEStopController:
+
     def __init__(self):
         self.calls = []
 
