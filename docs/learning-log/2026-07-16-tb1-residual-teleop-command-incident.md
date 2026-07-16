@@ -249,12 +249,34 @@ guard exit: 0
 종료 /safety/cmd_vel_in Publisher: 0
 ```
 
-시스템 측정은 목표 전진과 작은 횡이탈, 자동 정지를 증명했다. 실제 이동 거리·방향, 충돌과
-케이블 상태에 대한 사용자 현장 확인은 아직 대기 중이므로 30도 회전은 실행하지 않았다.
+시스템 측정은 목표 전진과 작은 횡이탈, 자동 정지를 증명했다. 사용자는 실제로 약 5cm를
+정상 방향으로 이동했고 충돌과 케이블 이상이 없었다고 확인했다.
 
 그 뒤 e-stop 상태를 2Hz heartbeat로 재발행하는 커밋 `edcbf87`을 TB1에 배포했다. TB1의
 `safety_watchdog` 18개 테스트와 GitHub Actions가 통과했고, 늦게 시작한 CLI가 서비스 재호출
 없이 `/safety/estop_active data:true`를 수신했다.
+
+## 30도 보호 회전 시스템 검증
+
+사용자가 5cm 이동의 물리 결과와 30도 회전 준비 상태를 확인한 뒤 양의 yaw 방향으로 한 번
+회전했다. 시작 전 e-stop은 `true`, 안전 입력 Publisher는 0개, Zenoh와 텔레옵은 중단 상태였다.
+
+```text
+실행 커밋: edcbf87
+목표: 0.523599 rad (30.000 deg)
+속도: 0.100 rad/s
+guard progress: 0.5249 rad (30.075 deg)
+guard elapsed: 5.80 s
+독립 odom yaw delta: 0.545272 rad (31.242 deg)
+guard exit: 0
+종료 e-stop: true
+종료 /cmd_vel: linear.x=0.0, angular.z=0.0
+종료 /safety/cmd_vel_in Publisher: 0
+```
+
+부호 있는 wrapped yaw 진행량과 독립 odometry가 모두 목표 방향 회전을 증명했다. 실제 회전
+방향·대략적인 각도, 충돌과 케이블 상태에 대한 사용자 현장 확인 전에는 다음 이동이나 지도
+작성을 시작하지 않는다.
 
 ## 오늘 꼭 기억해야 할 것
 
@@ -277,7 +299,7 @@ guard exit: 0
 > e-stop에 가려진 것을 놓친 것이 원인이었습니다. 즉시 e-stop, 텔레옵·SLAM·bringup 종료와
 > 데이터 폐기를 수행했고, 이후 입력 Publisher 독점권, 무동작 dry-run, odom·LiDAR 기반
 > 목표 정지와 fail-closed 종료를 가진 전용 가드를 구현했습니다. 가짜 ROS graph 통합
-> 테스트를 포함한 전체 111개 테스트로 재발 방지를 검증했습니다.
+> 테스트를 포함한 전체 115개 테스트와 저속 실차 guard로 재발 방지를 검증했습니다.
 
 ### “왜 사용자 실수로 보지 않았나요?”
 
@@ -327,13 +349,15 @@ guard exit: 0
 - [x] 단독 Publisher·센서 freshness·LiDAR clearance 검사 구현
 - [x] 무동작 dry-run 구현
 - [x] 텔레옵 공존 거부 ROS 통합 테스트
-- [x] 전체 111개 로컬 테스트 통과
+- [x] 전체 115개 로컬 테스트 통과
 - [x] TB1 실제 ROS graph dry-run 통과
 - [x] Cyclone DDS RMW 불일치 실행 거부 구현
 - [x] watchdog 시작 e-stop과 상태 토픽 구현
 - [x] 보강 후 115개 로컬 테스트 통과
 - [x] 5cm 직진 guard 시스템 측정 통과
-- [ ] 5cm 직진 사용자 물리 관찰 확인
+- [x] 5cm 직진 사용자 물리 관찰 확인
+- [x] 30도 회전 guard 시스템 측정 통과
+- [ ] 30도 회전 사용자 물리 관찰 확인
 - [ ] TB1 전용 가드 저속 직진·회전 통과
 - [ ] 깨끗한 지도 저장 및 시각 검수
 
@@ -347,6 +371,6 @@ guard exit: 0
 
 ## 다음에 할 일
 
-1. 사용자 물리 감시 아래 5cm 직진부터 다시 검증한다.
-2. 부호 있는 30° 회전 검증을 수행한다.
-3. 실차 결과를 이 문서에 추가하고 지도 작성을 재개한다.
+1. 30도 회전의 사용자 물리 관찰을 확인한다.
+2. 짧은 보호 이동만 사용해 깨끗한 지도를 작성한다.
+3. 지도와 pose graph를 저장하고 시각 품질을 검수한다.
