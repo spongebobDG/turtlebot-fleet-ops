@@ -30,6 +30,7 @@ jobs:
 
       - name: Install package dependencies
         run: |
+          rosdep update
           rosdep install \
             --from-paths robot control \
             --ignore-src \
