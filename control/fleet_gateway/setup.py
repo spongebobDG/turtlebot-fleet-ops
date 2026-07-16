@@ -40,6 +40,10 @@ setup(
     entry_points={
         "console_scripts": [
             "fleet_gateway = fleet_gateway.main:main",
+            "fleet_gateway_mock_robot = "
+            "fleet_gateway.mock_robot:main",
+            "fleet_gateway_weekend = "
+            "fleet_gateway.weekend_main:main",
         ],
     },
 )

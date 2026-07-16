@@ -112,6 +112,7 @@ Phase 5에서는 LDS-02의 배열 길이가 207~219로 바뀌어 SLAM Toolbox가
 - [Zenoh ROS 2 DDS 브리지 운영](infra/zenoh/README.md)
 - [Git 작업 흐름](docs/git-workflow.md)
 - [현재 프로젝트 범위와 완료 조건](docs/design/project-scope.md)
+- [새 PC 주말 무로봇 개발 환경](docs/setup/weekend-robotless-development.md)
 
 ### 공부와 면접 준비
 
@@ -141,6 +142,7 @@ Phase 5에서는 LDS-02의 배열 길이가 207~219로 바뀌어 SLAM Toolbox가
 - [Phase 5 SLAM 입력과 Zenoh 안전 경계 검증 일지](docs/learning-log/2026-07-16-phase-5-slam-and-zenoh-safety-validation.md)
 - [Phase 5 저장 지도 검증 CLI 구현 일지](docs/learning-log/2026-07-16-phase-5-map-artifact-validation.md)
 - [Phase 5 웹 Nav2 Action 수명주기 구현 일지](docs/learning-log/2026-07-16-phase-5-web-nav2-action-lifecycle.md)
+- [새 PC 주말 무로봇 개발 인수인계 일지](docs/learning-log/2026-07-16-weekend-robotless-handoff.md)
 
 ## 개발 원칙
 

@@ -67,6 +67,16 @@ ros2 launch fleet_gateway fleet_gateway.launch.py
 
 그 후 관제 PC 브라우저에서 `http://localhost:8000`을 연다.
 
+로봇이 없는 개발 PC에서는 mock TB1과 Gateway를 함께 실행할 수 있다.
+
+```bash
+bash scripts/weekend/start_mock_stack.sh
+```
+
+mock은 상태, e-stop 서비스·heartbeat와 `NavigateToPose` 성공·취소·timeout·abort 경로를
+제공하지만 실차 acceptance를 대신하지 않는다. 새 PC 전체 절차는
+[주말 무로봇 개발 환경](../../docs/setup/weekend-robotless-development.md)을 따른다.
+
 WSL과 로봇 사이의 실제 운영 경로는 Zenoh TCP 브리지를 사용한다. 실행 순서와
 systemd 구성은 [TB1 웹 관제 운영 절차](../../docs/setup/tb1-web-dashboard.md)와
 [Zenoh 브리지 운영 문서](../../infra/zenoh/README.md)를 따른다.
