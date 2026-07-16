@@ -329,8 +329,28 @@ map occupied cells: 51
 map unknown: 96.17%
 ```
 
-시스템은 목표 이동·자동 정지·SLAM 갱신을 증명했다. 사용자의 실제 10cm 전진 방향, 충돌과
-케이블 상태 확인 전에는 다음 매핑 구간을 실행하지 않는다.
+시스템은 목표 이동·자동 정지·SLAM 갱신을 증명했다. 사용자는 실제 10cm 전진과 방향이
+정상이고 충돌과 케이블 이상이 없다고 확인했다.
+
+같은 방향의 두 번째 10cm 구간은 30회 전방 최소 여유 `0.725m`를 확인한 뒤 실행했다.
+
+```text
+목표: 0.1000 m
+guard progress: 0.1007 m
+guard elapsed: 5.30 s
+독립 odom delta x: 0.103833 m
+독립 odom delta y: 0.004944 m
+guard exit: 0
+종료 e-stop: true
+종료 /cmd_vel: linear.x=0.0, angular.z=0.0
+종료 /safety/cmd_vel_in Publisher: 0
+map known cells: 618
+map occupied cells: 108
+```
+
+지도 격자 범위가 이동에 따라 확장되어 unknown 비율만 단순 비교하지 않고, known·occupied
+cell 수와 지도 이미지 품질을 함께 판단한다. 두 번째 구간의 사용자 물리 확인 전에는 다음
+이동을 실행하지 않는다.
 
 ## 병렬 CI 테스트 격리
 
@@ -437,7 +457,9 @@ GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜
 - [x] 전방 0.30m 미만에서 직진 차단과 무이동 확인
 - [x] 병렬 ROS 테스트 service 이름 격리
 - [x] 재배치 후 SLAM 재시작과 클린 맵 첫 10cm 시스템 측정
-- [ ] 클린 맵 첫 10cm 사용자 물리 관찰 확인
+- [x] 클린 맵 첫 10cm 사용자 물리 관찰 확인
+- [x] 클린 맵 두 번째 10cm 시스템 측정
+- [ ] 클린 맵 두 번째 10cm 사용자 물리 관찰 확인
 - [ ] 깨끗한 지도 저장 및 시각 검수
 
 ## 관련 커밋
@@ -452,6 +474,6 @@ GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜
 
 ## 다음에 할 일
 
-1. 클린 맵 첫 10cm의 사용자 물리 관찰을 확인한다.
+1. 클린 맵 두 번째 10cm의 사용자 물리 관찰을 확인한다.
 2. 짧은 보호 이동만 사용해 깨끗한 지도를 작성한다.
 3. 지도와 pose graph를 저장하고 시각 품질을 검수한다.
