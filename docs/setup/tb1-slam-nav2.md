@@ -193,7 +193,46 @@ ros2 action send_goal \
   --feedback
 ```
 
-## 7. 실패 시 확인 순서
+## 7. 웹 Goal 경로 검증
+
+터미널 Goal 성공·취소와 e-stop을 먼저 실차에서 검증한 뒤 진행한다. 웹 화면의 좌표는
+지도와 RViz에서 직접 선택하고 문서의 예시 숫자를 복사해 실차에 보내지 않는다.
+
+실행 전 다음 조건을 다시 확인한다.
+
+- 로봇이 지도에서 안전한 위치에 있고 AMCL pose가 실제 방향과 일치한다.
+- 목적지까지의 global path와 주변 장애물·낙하 위험을 운영자가 확인했다.
+- `/cmd_vel`의 유일한 Publisher가 `safety_watchdog`다.
+- `/navigate_to_pose` Action server와 watchdog e-stop service가 응답한다.
+- 취소와 e-stop 버튼을 즉시 누를 운영자가 로봇을 보고 있다.
+
+관제 PC에서 상태 API를 확인한다.
+
+```bash
+curl -fsS http://localhost:8000/api/health
+curl -fsS http://localhost:8000/api/robots/tb1/navigation
+```
+
+웹 `Nav2 목적지` 패널에 검증한 X, Y, yaw와 timeout을 입력하고 확인 대화상자의 좌표를
+다시 읽은 뒤 전송한다. 진행 중에는 상태, 남은 거리, 예상 시간과 실제 로봇을 함께 본다.
+
+API 자체를 검사할 때의 형식은 다음과 같다. `X`, `Y`, `YAW`는 현장에서 검증한 값으로만
+치환한다.
+
+```bash
+curl -X POST http://localhost:8000/api/robots/tb1/navigation/goals \
+  -H 'Content-Type: application/json' \
+  -d '{"x": X, "y": Y, "yaw": YAW, "timeout_sec": 60}'
+
+curl -fsS http://localhost:8000/api/robots/tb1/navigation
+curl -X POST http://localhost:8000/api/robots/tb1/navigation/cancel
+```
+
+Goal timeout이나 상태 불명확 시 e-stop을 먼저 적용한다. 취소 응답만 믿고 로봇 정지를
+판정하지 말고 실제 `/cmd_vel` 0과 watchdog e-stop 상태를 확인한다. 활성 Goal이 남아
+있으면 Gateway가 e-stop 해제를 거부하는 것이 정상이다.
+
+## 8. 실패 시 확인 순서
 
 1. `/scan`, `/scan_normalized`, `/odom`의 실제 메시지가 최신인가
 2. `map -> odom -> base_footprint -> base_link -> base_scan` TF가 이어지는가

@@ -274,6 +274,41 @@ graph를 격리해 해결했다.
 완료 처리하면 작은 부분 실패와 강제 종료도 놓치지 않는다. 기준 재등록은 e-stop dry-run과
 운영자 원인 확인 뒤에만 한다.
 
+### 15. 웹 Goal 요청에 `200 OK` 대신 `202 Accepted`를 사용하는 이유는?
+
+정답: HTTP 요청이 증명하는 것은 Nav2가 장시간 작업을 시작하도록 Goal을 수락했다는
+사실까지이고, 목적지 도착 성공은 나중의 Action result로 결정되기 때문이다. 수락과 완료를
+구분해야 HTTP thread를 오래 점유하지 않고 WebSocket으로 진행 상태를 전달할 수 있다.
+
+### 16. Goal timeout 때 Action 취소만 하지 않고 e-stop도 적용하는 이유는?
+
+정답: 취소는 Nav2의 협조적 비동기 요청이라 응답이 늦거나 거부될 수 있다. e-stop은 로봇
+로컬 watchdog에서 최종 속도를 즉시 0으로 강제하는 독립 안전 경계다. 따라서 timeout은
+원격 취소와 로컬 정지를 함께 실행해야 fail-closed가 된다.
+
+### 17. 이미 TIMEOUT인 Goal이 늦게 수락되면 어떤 위험이 있는가?
+
+정답: 단순히 수락 callback에서 `RUNNING`으로 덮어쓰면 종료된 작업이 되살아나 사용자가
+끝났다고 믿는 Goal이 실행될 수 있다. 상태 전이는 `PENDING -> RUNNING`만 허용하고,
+늦게 수락된 handle은 즉시 취소하며 e-stop을 유지해야 한다.
+
+### 18. 이전 Goal의 늦은 result callback이 새 Goal에 영향을 주지 않게 하려면?
+
+정답: 로봇 ID만으로 handle을 저장하지 말고 Goal ID와 handle의 소유권을 함께 저장한다.
+result callback이 정리할 때 현재 handle의 Goal ID가 자기 ID와 일치할 때만 삭제해야 한다.
+
+## 웹 Nav2 면접 모범 답변
+
+> FastAPI 요청을 ROS 2 `NavigateToPose` Action Client에 연결했습니다. HTTP는 Goal의
+> 수락 여부까지만 기다리고 `202 Accepted`를 반환하며, `PENDING`, `RUNNING`,
+> `CANCELING`과 최종 상태를 thread-safe registry에 저장해 WebSocket으로 feedback을
+> 전달합니다. 로봇별 활성 Goal은 하나로 제한하고 오프라인 로봇, 비유한 좌표와 map 이외
+> frame을 서버에서 거부합니다. timeout이나 늦은 Goal 수락 시에는 Action 취소만 믿지 않고
+> 로컬 watchdog e-stop도 함께 적용합니다. 구현 리뷰에서 종료된 Goal이 늦은 수락으로 다시
+> 실행되는 경합과 이전 result가 새 handle을 지우는 경합을 발견해 Goal ID 기반 상태 전이와
+> 소유권 검사로 막았습니다. 가짜 Nav2 Action Server 통합 테스트를 포함해 전체 169개
+> 테스트를 통과했으며, 실차 웹 Goal은 저장 지도와 터미널 Goal 검증 후 수행하도록 분리했습니다.
+
 ## 보지 않고 다시 말할 체크리스트
 
 - [ ] `map -> odom -> base -> scan` TF 책임을 설명할 수 있다.
@@ -291,6 +326,9 @@ graph를 격리해 해결했다.
 - [ ] 지도 자동 검사가 보장하는 것과 보장하지 않는 것을 구분할 수 있다.
 - [ ] 제자리 회전과 위치 이동이 지도 관측 범위에 미치는 차이를 설명할 수 있다.
 - [ ] trinary unknown marker와 free threshold의 round-trip 문제를 설명할 수 있다.
+- [ ] HTTP Goal 수락과 Nav2 최종 성공의 차이를 설명할 수 있다.
+- [ ] timeout에서 cancel과 e-stop을 함께 사용하는 이유를 설명할 수 있다.
+- [ ] 늦은 Action callback의 상태·handle 경합을 Goal ID로 막는 방법을 설명할 수 있다.
 
 ## 아직 실차로 검증하지 않은 것
 
@@ -325,3 +363,8 @@ graph를 격리해 해결했다.
 
 > 안전한 명령 여러 개가 자동으로 안전한 연속 작업이 되는 것은 아니다. 마지막 성공 자세를
 > 다음 명령의 시작 자세와 비교해야 명령 사이의 수동 이동도 발견할 수 있다.
+
+웹 Goal에 관해서 오늘 반드시 기억할 문장은 다음과 같다.
+
+> Goal이 수락됐다는 것은 목적지 도착 성공이 아니다. 장시간 작업은 Action 상태와 Goal ID를
+> 끝까지 추적해야 하며, timeout의 최종 안전은 원격 취소가 아니라 로봇 로컬 e-stop이 맡는다.
