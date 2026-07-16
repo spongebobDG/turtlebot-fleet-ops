@@ -40,6 +40,7 @@ setup(
     entry_points={
         "console_scripts": [
             "scan_normalizer = fleet_navigation.scan_normalizer:main",
+            "supervised_motion = fleet_navigation.supervised_motion:main",
         ],
     },
 )
