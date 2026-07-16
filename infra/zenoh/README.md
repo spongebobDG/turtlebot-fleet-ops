@@ -75,6 +75,21 @@ bash infra/zenoh/start-control-gateway.sh
 `infra/systemd/user`에는 TB1 런타임과 WSL 관제 스택의 사용자 서비스 단위가 있다.
 로컬 환경 파일은 저장소 밖에 둔다.
 
+WSL 최소 설치본에는 사용자 systemd 버스가 없을 수 있다. 다음 패키지를 설치하고
+사용자 서비스를 로그인 전에도 유지하도록 linger를 활성화한다.
+
+```bash
+sudo apt update
+sudo apt install -y dbus-user-session
+sudo loginctl enable-linger "$USER"
+```
+
+설치 직후 사용자 버스가 아직 없다면 WSL을 한 번 종료했다 다시 시작한다.
+
+```powershell
+wsl.exe --shutdown
+```
+
 ```bash
 mkdir -p ~/.config/systemd/user ~/.config/turtlebot-fleet-ops
 cp infra/systemd/user/*.service ~/.config/systemd/user/
@@ -105,8 +120,8 @@ systemctl --user enable --now \
   fleet-gateway.service
 ```
 
-재부팅 뒤 로그인 전에도 TB1 사용자 서비스를 시작하려면 관리자 권한으로 한 번
-`loginctl enable-linger dg`를 설정한다.
+재부팅 뒤 로그인 전에도 사용자 서비스를 시작하려면 각 장비에서 관리자 권한으로
+한 번 `loginctl enable-linger <사용자>`를 설정한다.
 
 ## 운영 확인
 
@@ -116,6 +131,11 @@ systemctl --user --no-pager status fleet-control-zenoh.service
 curl http://127.0.0.1:8000/api/health
 curl http://127.0.0.1:8000/api/robots
 ```
+
+`active`만 보고 복구 완료로 판단하지 않는다. ROS 2 discovery와 Zenoh endpoint
+재등록에는 시간이 더 필요할 수 있으므로 새 PID와 REST의 `online=true`를 함께
+확인한다. 고정된 짧은 `sleep`보다 제한 시간 안에서 조건을 반복 확인하는 방식이
+안정적이다.
 
 장애 진단 순서는 다음과 같다.
 

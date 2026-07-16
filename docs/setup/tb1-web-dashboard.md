@@ -143,6 +143,14 @@ systemctl --user start tb1-zenoh-bridge.service
 
 자세한 설치는 [Zenoh 브리지 운영 문서](../../infra/zenoh/README.md)를 따른다.
 
+WSL 최소 설치본이면 먼저 사용자 systemd 버스를 설치하고 linger를 활성화한다.
+
+```bash
+sudo apt update
+sudo apt install -y dbus-user-session
+sudo loginctl enable-linger "$USER"
+```
+
 ```bash
 systemctl --user --no-pager status \
   fleet-control-zenoh.service \
@@ -150,6 +158,16 @@ systemctl --user --no-pager status \
 
 journalctl --user -u fleet-gateway.service -n 100 --no-pager
 ```
+
+프로세스 장애 복구를 검증할 때는 다음 세 가지를 모두 확인한다.
+
+1. systemd의 `MainPID`가 새 값으로 바뀐다.
+2. `/api/robots/tb1`이 일시적인 offline 뒤 `online=true`로 복귀한다.
+3. `/cmd_vel`이 계속 0인지 확인한다.
+
+`RestartSec` 뒤에도 ROS 2 discovery와 Zenoh 경로 재등록 시간이 필요하므로 5초 같은
+고정 대기만으로 실패를 단정하지 않는다. 최대 대기 시간을 정하고 기능 상태를
+반복 확인한다.
 
 ## 자주 발생하는 문제
 
