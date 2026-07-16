@@ -23,6 +23,7 @@ class FakeWatchdog(Node):
     def __init__(self) -> None:
         super().__init__("safety_watchdog")
         self.estop_active = True
+        self.release_count = 0
         self._linear = 0.0
         self._angular = 0.0
         self._publisher = self.create_publisher(Twist, "/cmd_vel", 10)
@@ -45,6 +46,8 @@ class FakeWatchdog(Node):
 
     def _on_estop(self, request, response):
         self.estop_active = request.data
+        if not request.data:
+            self.release_count += 1
         response.success = True
         response.message = "fake e-stop updated"
         return response
@@ -155,6 +158,24 @@ def test_supervised_translation_stops_with_estop() -> None:
         assert watchdog.estop_active is True
         assert robot.x >= 0.02
         assert robot.x < 0.04
+        assert robot.y == 0.0
+    finally:
+        motion.destroy_node()
+        _stop_fake_graph(watchdog, robot, executor, thread)
+        rclpy.shutdown()
+
+
+def test_dry_run_never_releases_estop_or_moves() -> None:
+    rclpy.init()
+    watchdog, robot, executor, thread = _start_fake_graph()
+    parameters = _motion_parameters()
+    parameters.append(Parameter("dry_run", value=True))
+    motion = SupervisedMotion(parameter_overrides=parameters)
+    try:
+        assert motion.run_once() is True
+        assert watchdog.estop_active is True
+        assert watchdog.release_count == 0
+        assert robot.x == 0.0
         assert robot.y == 0.0
     finally:
         motion.destroy_node()

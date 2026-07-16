@@ -28,6 +28,7 @@ class SupervisedMotion(Node):
             parameter_overrides=parameter_overrides,
         )
         self.declare_parameter("mode", "translate")
+        self.declare_parameter("dry_run", False)
         self.declare_parameter("target_distance_m", 0.10)
         self.declare_parameter("target_angle_rad", math.pi / 2.0)
         self.declare_parameter("speed", 0.03)
@@ -52,6 +53,7 @@ class SupervisedMotion(Node):
         )
 
         self._mode = str(self.get_parameter("mode").value)
+        self._dry_run = bool(self.get_parameter("dry_run").value)
         self._target = float(
             self.get_parameter(
                 "target_distance_m"
@@ -445,6 +447,13 @@ class SupervisedMotion(Node):
             self._set_estop(True)
             self._publish_zero(5)
             self._preflight()
+            if self._dry_run:
+                self._publish_zero(5)
+                self._require_zero_output()
+                self.get_logger().info(
+                    "SUPERVISED_MOTION_DRY_RUN_SUCCESS e-stop remains active"
+                )
+                return True
             self._set_estop(False)
             self._input_nonzero_seen = False
             self._publish_zero(10)
