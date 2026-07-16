@@ -145,6 +145,7 @@ unknown sentinel을 발행하며, 실제 TB1·TB2의 `wlan0`에서 값을 검증
 - [x] received/fresh/valid와 fault code 계산
 - [x] WSL build와 33개 Robot Agent 테스트 통과
 - [x] 설치된 launch 파일 시작과 초기 fail-closed 로그 확인
-- [ ] TB1 실제 source를 사용해 OK 상태 메시지 확인
-- [ ] TB1에서 source 중단 후 stale fault 전환 확인
-- [ ] 실제 결과를 학습 일지와 PR에 기록
+- [x] TB1 실제 source를 사용해 OK 상태 메시지 확인
+- [x] TB1에서 source 중단 후 stale fault 전환 확인
+- [x] bringup 재시작 후 Agent 자동 OK 복구 확인
+- [x] 실제 결과를 학습 일지와 PR에 기록

@@ -13,6 +13,7 @@
 - Phase 1: [TB1 Bringup과 LDS-02 GPIO UART 복구](2026-07-15-phase-1-tb1-bringup-and-lds02-gpio-uart.md)
 - Phase 2: [TB1 Safety Watchdog 배포](2026-07-15-phase-2-tb1-watchdog-deployment.md)
 - Phase 3: [Robot Agent 구현](2026-07-16-phase-3-robot-agent-implementation.md)
+- Phase 3: [TB1 Robot Agent 실차 검증](2026-07-16-phase-3-tb1-robot-agent-validation.md)
 
 ## 공부와 면접용 문서
 
@@ -22,6 +23,7 @@
 - [Phase 3 Robot Agent 필수 개념과 모범 답변](../study/phase-3-robot-agent.md)
 - [LDS-02 `/scan` 데이터 복구 사례](../case-studies/lds02-scan-data-recovery.md)
 - [비상정지 중립 재무장 설계 사례](../case-studies/safety-watchdog-neutral-rearm.md)
+- [Robot Agent stale 감지·복구 사례](../case-studies/robot-agent-stale-recovery.md)
 - [Phase 3 Robot Agent 설계](../design/phase-3-robot-agent.md)
 
 ## 기록 원칙

@@ -213,7 +213,7 @@ ros2 topic echo /fleet/robot_status --once
 - [x] Robot Agent 자동 테스트 33개 통과
 - [x] custom interface 생성 확인
 - [x] launch 시작과 초기 missing fault 확인
-- [ ] TB1에서 정상 RobotStatus 확인
-- [ ] TB1에서 약 1 Hz 확인
-- [ ] source 종료 후 stale fault 확인
-- [ ] bringup 재시작 후 OK 복구 확인
+- [x] TB1에서 정상 RobotStatus 확인
+- [x] TB1에서 약 1 Hz 확인
+- [x] source 종료 후 stale fault 확인
+- [x] bringup 재시작 후 OK 복구 확인

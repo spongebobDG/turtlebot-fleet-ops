@@ -2,7 +2,7 @@
 
 단계: Phase 3
 
-진행 상태: WSL 구현·자동 테스트 33개 완료, TB1 1차 29개 통과 후 최신 보강 재검증 대기
+진행 상태: 완료 - WSL·TB1 최신 자동 테스트 33개와 TB1 정상·장애·복구 검증 완료
 
 브랜치: `feat/phase-3-robot-agent`
 
@@ -112,15 +112,15 @@ BATTERY_NOT_RECEIVED
 - [x] ROS graph 통합 테스트
 - [x] dependency와 package discovery 확인
 - [x] launch 설치·시작 로그 확인
-- [ ] TB1 정상 실제 상태 확인
-- [ ] source 중단 stale 전환 확인
-- [ ] TB1 결과 문서화
+- [x] TB1 정상 실제 상태 확인
+- [x] source 중단 stale 전환 확인
+- [x] TB1 결과 문서화
 
 ## 다음 작업
 
-TB1에 최종 Phase 2 main을 먼저 반영하고 18개 watchdog 테스트를 확인한다. Phase 3
-브랜치를 받아 Robot Agent 29개 테스트를 실행한 뒤 domain 42의 실제 battery, odom,
-scan으로 `level=0`, fault 없음과 약 1 Hz를 검증한다.
+Phase 3 PR을 최종 리뷰하고 main에 squash merge한다. Phase 4에서는 Fleet Gateway가
+RobotStatus를 구독하고 heartbeat age로 online/offline을 판단하며 FastAPI REST와
+WebSocket으로 최소 웹 화면에 전달한다.
 
 ## 원본 요구사항 재검토 후 보강
 
@@ -141,5 +141,5 @@ collected 33 items
 Summary: 33 tests, 0 errors, 0 failures, 0 skipped
 ```
 
-TB1에서 이미 확인한 29개는 보강 전 revision의 실제 결과로 유지한다. 최신 33개는 새
-revision을 배포한 뒤 다시 검증한다.
+TB1에서 이미 확인한 29개는 보강 전 revision의 실제 결과로 유지한다. 최신 revision
+`86047b7`을 TB1에 배포한 뒤 33개도 오류와 실패 없이 통과했다.

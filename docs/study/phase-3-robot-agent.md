@@ -200,6 +200,19 @@ Agent fault에서 e-stop을 활성화할지 명시적으로 연결하는 편이 
 
 Custom interface 생성과 launch 설치는 실제 colcon build와 launch 시작으로 추가 확인했다.
 
+## TB1 실제 검증 증거
+
+- 최신 TB1 자동 테스트: 33개 통과, 실패 0
+- 정상 상태: `level=0`, fault 없음, 세 source fresh·valid
+- RobotStatus 발행률: 평균 1.000 Hz
+- Wi-Fi: `wlan0`, 검증 snapshot -35dBm
+- source 중단: odom 1초, scan 2초, battery 5초 순서로 stale
+- 최종 장애 상태: `level=2`, 세 stale fault
+- bringup 재시작: Agent 재시작 없이 `Robot health OK` 복구
+
+상세 과정은
+[Robot Agent stale 감지·복구 사례](../case-studies/robot-agent-stale-recovery.md)에 있다.
+
 ## 면접용 모범 답변
 
 ### 30초
