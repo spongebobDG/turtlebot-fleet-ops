@@ -87,6 +87,7 @@ class FakeTurtleBot(Node):
         self.x = 0.0
         self.y = 0.0
         self.yaw = 0.0
+        self.scan_range = 1.0
         self._linear = 0.0
         self._angular = 0.0
         self._last_update = time.monotonic()
@@ -135,7 +136,7 @@ class FakeTurtleBot(Node):
         scan.angle_max = scan.angle_increment * 359
         scan.range_min = 0.05
         scan.range_max = 12.0
-        scan.ranges = [1.0] * 360
+        scan.ranges = [self.scan_range] * 360
         self._scan_publisher.publish(scan)
 
 
@@ -223,5 +224,21 @@ def test_supervised_motion_rejects_teleop_publisher() -> None:
         motion.destroy_node()
         executor.remove_node(teleop)
         teleop.destroy_node()
+        _stop_fake_graph(watchdog, robot, executor, thread)
+        rclpy.shutdown()
+
+
+def test_supervised_motion_rejects_low_clearance() -> None:
+    rclpy.init()
+    watchdog, robot, executor, thread = _start_fake_graph()
+    robot.scan_range = 0.20
+    motion = SupervisedMotion(parameter_overrides=_motion_parameters())
+    try:
+        assert motion.run_once() is False
+        assert watchdog.estop_active is True
+        assert robot.x == 0.0
+        assert robot.y == 0.0
+    finally:
+        motion.destroy_node()
         _stop_fake_graph(watchdog, robot, executor, thread)
         rclpy.shutdown()
