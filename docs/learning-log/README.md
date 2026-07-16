@@ -20,6 +20,7 @@
 - Phase 5: [잔류 텔레옵 명령 Incident와 모션 가드](2026-07-16-tb1-residual-teleop-command-incident.md)
 - Phase 5: [저장 지도 검증 CLI 구현](2026-07-16-phase-5-map-artifact-validation.md)
 - Phase 5: [TB1 새 장소 클린 매핑 시작](2026-07-16-phase-5-new-location-clean-mapping.md)
+- 다중 로봇 준비: [TB2 무동작 부트스트랩과 격리 테스트](2026-07-16-tb2-bootstrap-and-isolated-tests.md)
 
 ## 공부와 면접용 문서
 
