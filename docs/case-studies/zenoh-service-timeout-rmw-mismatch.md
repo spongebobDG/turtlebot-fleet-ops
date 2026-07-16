@@ -115,3 +115,19 @@ angular.z: 0.0
 - DDS 구현의 표준 토픽 상호 운용과 ROS 2 서비스의 완전한 호환성은 별개다.
 - 공식 검증 조합을 기준선으로 두고 다른 조합은 통합 테스트로 증명해야 한다.
 - 웹 버튼 비활성화만 믿지 말고 서버도 오프라인 해제를 거부해야 한다.
+
+## 로컬 실차 guard에서 다시 확인한 증거
+
+2026-07-16 첫 5cm 보호 이동에서도 같은 종류의 실패를 다시 관찰했다. systemd로 실행한
+watchdog와 TurtleBot bringup은 `rmw_cyclonedds_cpp`였지만 SSH 비대화형 셸은
+`RMW_IMPLEMENTATION=UNSET`이었다.
+
+- `/cmd_vel` Topic과 service endpoint는 조회됨
+- e-stop 해제 요청은 watchdog 로그에 기록됨
+- CLI와 guard는 service response를 받지 못해 timeout
+- 비영 이동 명령은 아직 발행되지 않았고 odometry 진행도 관찰되지 않음
+- 같은 셸에서 Cyclone DDS를 명시하자 e-stop 호출이 즉시 성공
+
+이 증거로 “Zenoh만의 문제”가 아니라 운영 셸까지 포함한 RMW 계약 문제임을 확정했다.
+`supervised_motion`은 Cyclone DDS가 아니면 시작을 거부하고, watchdog은 시작부터 e-stop을
+활성화하며 `/safety/estop_active` 상태를 transient-local QoS로 발행하도록 보강했다.

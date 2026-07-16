@@ -9,6 +9,8 @@
 > Phase 4 절차: [TB1 웹 관제 대시보드 운영](setup/tb1-web-dashboard.md)
 >
 > Phase 5 절차: [TB1 SLAM과 Nav2 운영](setup/tb1-slam-nav2.md)
+>
+> Phase 5 실차 이동: [TB1 보호 이동 기반 매핑 Runbook](setup/tb1-supervised-mapping.md)
 
 조사일: 2026-07-15
 

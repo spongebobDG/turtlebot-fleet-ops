@@ -207,6 +207,28 @@ SUPERVISED_MOTION_DRY_RUN_SUCCESS e-stop remains active
 따라서 실제 배포된 노드 이름, endpoint 집합, odom·scan freshness, watchdog 서비스와 최종
 0속도 계약은 바퀴를 움직이지 않고 검증됐다.
 
+## RMW 불일치 실차 사전 차단
+
+첫 5cm 검증 시 원격 셸의 `RMW_IMPLEMENTATION`이 `UNSET`인 상태에서 서비스를 호출했다.
+TB1 watchdog와 bringup은 `rmw_cyclonedds_cpp`였기 때문에 일반 토픽과 endpoint는 보였지만
+e-stop 서비스 응답이 반환되지 않았다. watchdog에는 해제 요청이 도착했으나 guard에는 응답이
+돌아오지 않아 비영 이동 명령 전 단계에서 멈췄고, odometry 진행량도 관찰되지 않았다.
+
+명시적으로 다음 값을 설정하자 같은 e-stop 서비스가 즉시 성공했다.
+
+```bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+재발 방지를 위해 watchdog은 시작부터 e-stop을 활성화하고 transient-local 상태 토픽
+`/safety/estop_active`를 발행한다. `supervised_motion`은 Cyclone DDS 환경이 아니면 ROS node를
+시작하기 전에 종료하고, 서비스 성공뿐 아니라 상태 토픽 전이까지 확인한다.
+
+```text
+safety_watchdog + fleet_navigation: 69 tests passed
+전체 테스트 결과: 115 tests, 0 errors, 0 failures, 0 skipped
+```
+
 ## 오늘 꼭 기억해야 할 것
 
 1. **e-stop 중 `/cmd_vel=0`은 upstream 입력이 중립이라는 증거가 아니다.**
@@ -217,6 +239,7 @@ SUPERVISED_MOTION_DRY_RUN_SUCCESS e-stop remains active
 6. **wheel odometry는 바퀴가 걸리거나 미끄러지면 실제 이동과 달라질 수 있다.**
 7. **잘못된 실차 데이터는 보정해서 쓰지 말고 폐기 사유와 함께 다시 측정한다.**
 8. **실차 기능은 unit test → ROS 통합 test → 실제 graph dry-run → 저속 실물 순서로 올린다.**
+9. **토픽 성공은 서비스 성공의 증거가 아니다. 모든 ROS 터미널의 RMW를 통일한다.**
 
 ## 면접에서 이렇게 설명한다
 
@@ -279,6 +302,9 @@ SUPERVISED_MOTION_DRY_RUN_SUCCESS e-stop remains active
 - [x] 텔레옵 공존 거부 ROS 통합 테스트
 - [x] 전체 111개 로컬 테스트 통과
 - [x] TB1 실제 ROS graph dry-run 통과
+- [x] Cyclone DDS RMW 불일치 실행 거부 구현
+- [x] watchdog 시작 e-stop과 상태 토픽 구현
+- [x] 보강 후 115개 로컬 테스트 통과
 - [ ] TB1 전용 가드 저속 직진·회전 통과
 - [ ] 깨끗한 지도 저장 및 시각 검수
 
@@ -287,6 +313,7 @@ SUPERVISED_MOTION_DRY_RUN_SUCCESS e-stop remains active
 - `b5cc3e4 fix: declare fleet gateway test dependency`
 - `43cf761 feat: add fail-closed supervised motion guard`
 - `377cb64 feat: add no-motion guard preflight`
+- `22efda6 fix: enforce DDS and e-stop motion contracts`
 
 ## 다음에 할 일
 

@@ -11,6 +11,7 @@ source /opt/ros/humble/setup.bash
 source ~/turtlebot3_ws/install/setup.bash
 source ~/turtlebot-fleet-ops/install/setup.bash
 export ROS_DOMAIN_ID=42
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export TURTLEBOT3_MODEL=burger
 export LDS_MODEL=LDS-02
 
@@ -85,26 +86,35 @@ ros2 topic info /cmd_vel --verbose
 하나여야 하고 값은 0이어야 한다. `zenoh_bridge_ros2dds`가 `/cmd_vel` Publisher로
 보이면 양쪽 allow-list 적용 상태를 먼저 확인한다.
 
-## 4. 저속 수동 매핑
+## 4. 저속 보호 이동 매핑
 
 다음 물리 조건을 사용자가 직접 확인한 뒤 진행한다.
 
 - 로봇을 바닥에 놓고 전후좌우 최소 1m 확보
 - 케이블과 낙하 위험 제거
 - LDS-02 GPIO 임시 점퍼 고정 상태 확인
-- e-stop 명령을 즉시 실행할 별도 터미널 준비
+- e-stop 또는 전원 차단이 가능한 안전한 관찰 위치 확보
 - 사람 한 명이 로봇을 계속 시야 안에 둠
 
-teleop 출력은 반드시 안전 입력으로 remap한다.
+잔류 목표를 가진 텔레옵은 이 절차에 사용하지 않는다. Zenoh 브리지를 중단하고
+`/safety/cmd_vel_in`을 전용 guard 하나만 소유하게 한다. 직진 5cm와 회전 30도부터
+검증한 뒤 짧은 구간을 반복한다.
 
 ```bash
-ros2 run turtlebot3_teleop teleop_keyboard \
-  --ros-args \
-  -r /cmd_vel:=/safety/cmd_vel_in
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ros2 run fleet_navigation supervised_motion --ros-args \
+  -p dry_run:=false \
+  -p mode:=translate \
+  -p target_distance_m:=0.05 \
+  -p speed:=0.02 \
+  -p timeout_sec:=5.0 \
+  -p minimum_clearance_m:=0.30
 ```
 
-벽과 코너를 LiDAR가 여러 각도에서 보도록 천천히 한 바퀴를 만들고 출발 위치로
-돌아와 loop closure를 확인한다. 급회전과 로봇을 손으로 들어 옮기는 행동은 피한다.
+전체 사전 점검, dry-run, 회전 명령과 동작 후 증거 수집은
+[TB1 보호 이동 기반 매핑 Runbook](tb1-supervised-mapping.md)을 따른다. 벽과 코너를
+LiDAR가 여러 각도에서 보도록 짧게 이동하고 출발 위치로 돌아와 loop closure를 확인한다.
+급회전과 로봇을 손으로 들어 옮기는 행동은 피한다.
 
 긴급 정지:
 
