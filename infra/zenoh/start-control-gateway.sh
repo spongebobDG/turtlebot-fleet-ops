@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -eo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ros_distro="${ROS_DISTRO:-humble}"
 
+# ROS 2 Humble setup files reference optional variables that may be unset.
+# Disable nounset only while loading the underlay and overlay environments.
+set +u
 source "/opt/ros/${ros_distro}/setup.bash"
 source "${repo_root}/install/setup.bash"
+set -u
 
 export ROS_DISTRO="${ros_distro}"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}"
