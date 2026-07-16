@@ -30,6 +30,7 @@ def main(args: Optional[List[str]] = None) -> None:
     app = create_app(
         registry=node.registry,
         estop_controller=node,
+        navigation_controller=node,
         static_dir=share_dir / "web",
     )
     try:

@@ -138,6 +138,78 @@ main { padding: 34px 0 80px; }
 .faults { min-height: 24px; color: var(--yellow); font-size: 0.8rem; overflow-wrap: anywhere; }
 .faults.none { color: var(--muted); }
 
+.navigation-panel {
+  margin-top: 18px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.navigation-heading,
+.navigation-feedback {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.navigation-status {
+  color: var(--mint);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.navigation-status[data-status="ABORTED"],
+.navigation-status[data-status="REJECTED"],
+.navigation-status[data-status="TIMEOUT"] { color: var(--red); }
+
+.navigation-status[data-status="CANCELING"],
+.navigation-status[data-status="CANCELED"] { color: var(--yellow); }
+
+.goal-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.goal-inputs label {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.goal-inputs input {
+  width: 100%;
+  margin-top: 5px;
+  padding: 10px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font: inherit;
+}
+
+.goal-inputs input:focus {
+  outline: 2px solid rgba(88, 224, 174, 0.42);
+  outline-offset: 1px;
+}
+
+.navigation-feedback {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.navigation-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.goal { background: #17684f; border-color: #25866a; }
+.cancel { background: transparent; }
+
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
 button { padding: 12px; color: var(--text); font: inherit; font-weight: 800; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
 .estop { background: #9f252b; border-color: #c23840; }

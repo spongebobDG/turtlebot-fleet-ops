@@ -4,6 +4,8 @@ const connectionLabel = document.querySelector("#connection-label");
 const updatedAt = document.querySelector("#updated-at");
 const toast = document.querySelector("#toast");
 let reconnectTimer;
+const goalDrafts = new Map();
+let navigationByRobot = new Map();
 
 const escapeHtml = (value) => String(value ?? "").replace(
   /[&<>"']/g,
@@ -28,6 +30,44 @@ const health = (robot) => {
   if (robot.level === 2) return { label: "ERROR", className: "error" };
   if (robot.level === 1) return { label: "WARN", className: "warn" };
   return { label: "OK", className: "" };
+};
+
+const navigationPanel = (robot, navigation) => {
+  const robotId = robot.robot_id;
+  const safeRobotId = escapeHtml(robotId);
+  if (!goalDrafts.has(robotId)) {
+    goalDrafts.set(robotId, {
+      x: "",
+      y: "",
+      yaw: "0",
+      timeout: "300",
+    });
+  }
+  const draft = goalDrafts.get(robotId);
+  const status = navigation?.status || "IDLE";
+  const active = ["PENDING", "RUNNING", "CANCELING"].includes(status);
+  const feedback = navigation?.feedback || {};
+  return `
+    <section class="navigation-panel" data-navigation-robot="${safeRobotId}">
+      <div class="navigation-heading">
+        <strong>Nav2 목적지</strong>
+        <span class="navigation-status" data-status="${escapeHtml(status)}">${escapeHtml(status)}</span>
+      </div>
+      <div class="goal-inputs">
+        <label>X (m)<input inputmode="decimal" data-field="x" value="${escapeHtml(draft.x)}" placeholder="1.20"></label>
+        <label>Y (m)<input inputmode="decimal" data-field="y" value="${escapeHtml(draft.y)}" placeholder="-0.40"></label>
+        <label>Yaw (rad)<input inputmode="decimal" data-field="yaw" value="${escapeHtml(draft.yaw)}"></label>
+        <label>Timeout (s)<input inputmode="numeric" data-field="timeout" value="${escapeHtml(draft.timeout)}"></label>
+      </div>
+      <div class="navigation-feedback">
+        <span>남은 거리 ${number(feedback.distance_remaining, 2, "m")}</span>
+        <span>예상 시간 ${number(feedback.estimated_time_remaining_sec, 1, "s")}</span>
+      </div>
+      <div class="navigation-actions">
+        <button class="goal" data-action="goal" data-robot="${safeRobotId}" ${robot.online && !active ? "" : "disabled"}>목적지 전송</button>
+        <button class="cancel" data-action="cancel" data-robot="${safeRobotId}" ${active ? "" : "disabled"}>주행 취소</button>
+      </div>
+    </section>`;
 };
 
 const robotCard = (robot) => {
@@ -57,20 +97,39 @@ const robotCard = (robot) => {
         <div class="metric"><span>Scan points</span><strong>${robot.scan?.valid_points ?? "—"}</strong></div>
       </div>
       <p class="faults ${robot.fault_codes?.length ? "" : "none"}">${faults}</p>
+      ${navigationPanel(robot, navigationByRobot.get(robot.robot_id))}
       <div class="actions">
-        <button class="estop" data-robot="${safeRobotId}" data-engaged="true">비상 정지</button>
-        <button class="release" data-robot="${safeRobotId}" data-engaged="false" ${robot.online ? "" : "disabled"}>정지 해제</button>
+        <button class="estop" data-action="estop" data-robot="${safeRobotId}" data-engaged="true">비상 정지</button>
+        <button class="release" data-action="estop" data-robot="${safeRobotId}" data-engaged="false" ${robot.online ? "" : "disabled"}>정지 해제</button>
       </div>
     </article>`;
 };
 
-const render = (robots) => {
+const render = (robots, navigationStates = []) => {
+  const focused = document.activeElement?.matches("input[data-field]")
+    ? {
+      robotId: document.activeElement.closest("[data-navigation-robot]")?.dataset.navigationRobot,
+      field: document.activeElement.dataset.field,
+      start: document.activeElement.selectionStart,
+      end: document.activeElement.selectionEnd,
+    }
+    : null;
+  navigationByRobot = new Map(
+    navigationStates.map((item) => [item.robot_id, item]),
+  );
   document.querySelector("#known-count").textContent = robots.length;
   document.querySelector("#online-count").textContent = robots.filter((robot) => robot.online).length;
   document.querySelector("#fault-count").textContent = robots.filter((robot) => !robot.online || robot.level > 0).length;
   grid.innerHTML = robots.length
     ? robots.map(robotCard).join("")
     : `<article class="empty-state"><h3>RobotStatus를 기다리는 중입니다.</h3><p>Gateway가 ROS 2 heartbeat를 받으면 여기에 표시됩니다.</p></article>`;
+  if (focused?.robotId && focused?.field) {
+    const panel = [...grid.querySelectorAll("[data-navigation-robot]")]
+      .find((item) => item.dataset.navigationRobot === focused.robotId);
+    const input = panel?.querySelector(`[data-field="${focused.field}"]`);
+    input?.focus();
+    input?.setSelectionRange(focused.start, focused.end);
+  }
   updatedAt.textContent = `최근 갱신 ${new Date().toLocaleTimeString("ko-KR")}`;
 };
 
@@ -92,7 +151,10 @@ const connect = () => {
   setConnection("connecting", "연결 중");
 
   socket.addEventListener("open", () => setConnection("connected", "실시간 연결"));
-  socket.addEventListener("message", (event) => render(JSON.parse(event.data).robots || []));
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    render(message.robots || [], message.navigation || []);
+  });
   socket.addEventListener("close", () => {
     setConnection("offline", "재연결 중");
     reconnectTimer = window.setTimeout(connect, 1500);
@@ -100,9 +162,7 @@ const connect = () => {
   socket.addEventListener("error", () => socket.close());
 };
 
-grid.addEventListener("click", async (event) => {
-  const button = event.target.closest("button[data-robot]");
-  if (!button) return;
+const requestEStop = async (button) => {
   const robotId = button.dataset.robot;
   const engaged = button.dataset.engaged === "true";
   const prompt = engaged
@@ -125,6 +185,84 @@ grid.addEventListener("click", async (event) => {
   } finally {
     button.disabled = false;
   }
+};
+
+const requestGoal = async (button) => {
+  const robotId = button.dataset.robot;
+  const panel = button.closest("[data-navigation-robot]");
+  const field = (name) => panel.querySelector(`[data-field="${name}"]`).value;
+  if (!field("x").trim() || !field("y").trim()) {
+    showToast("목적지 X와 Y를 모두 입력하세요.", true);
+    return;
+  }
+  const payload = {
+    x: Number(field("x")),
+    y: Number(field("y")),
+    yaw: Number(field("yaw")),
+    timeout_sec: Number(field("timeout")),
+  };
+  if (!Object.values(payload).every(Number.isFinite)) {
+    showToast("목적지와 timeout에 유한한 숫자를 입력하세요.", true);
+    return;
+  }
+  if (!window.confirm(
+    `${robotId}를 map 좌표 (${payload.x}, ${payload.y}, yaw ${payload.yaw})로 이동할까요?`,
+  )) return;
+  button.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robotId)}/navigation/goals`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "Goal 요청 실패");
+    showToast(`Goal ${body.goal_id}이 수락됐습니다.`);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+};
+
+const requestCancel = async (button) => {
+  const robotId = button.dataset.robot;
+  if (!window.confirm(`${robotId}의 현재 Nav2 Goal을 취소할까요?`)) return;
+  button.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robotId)}/navigation/cancel`,
+      { method: "POST" },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "취소 요청 실패");
+    showToast(body.message || "주행 취소를 요청했습니다.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+};
+
+grid.addEventListener("input", (event) => {
+  const input = event.target.closest("input[data-field]");
+  if (!input) return;
+  const panel = input.closest("[data-navigation-robot]");
+  const robotId = panel.dataset.navigationRobot;
+  const draft = goalDrafts.get(robotId) || {};
+  draft[input.dataset.field] = input.value;
+  goalDrafts.set(robotId, draft);
+});
+
+grid.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-action][data-robot]");
+  if (!button) return;
+  if (button.dataset.action === "estop") await requestEStop(button);
+  if (button.dataset.action === "goal") await requestGoal(button);
+  if (button.dataset.action === "cancel") await requestCancel(button);
 });
 
 connect();
