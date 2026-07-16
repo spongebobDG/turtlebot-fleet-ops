@@ -1,6 +1,8 @@
 """Execute one fail-closed odometry-bounded motion for mapping tests."""
 
 import math
+import os
+import sys
 import time
 from typing import Optional
 
@@ -8,8 +10,10 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
 from fleet_navigation.motion_guard import is_neutral
@@ -17,6 +21,21 @@ from fleet_navigation.motion_guard import RotationProgress
 from fleet_navigation.motion_guard import sector_minimum
 from fleet_navigation.motion_guard import TranslationProgress
 from fleet_navigation.motion_guard import validate_motion_request
+
+
+EXPECTED_RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp"
+
+
+def require_cyclonedds_rmw(environment=None) -> None:
+    """Reject an operator shell that does not match the robot DDS RMW."""
+    source = os.environ if environment is None else environment
+    actual = source.get("RMW_IMPLEMENTATION")
+    if actual != EXPECTED_RMW_IMPLEMENTATION:
+        shown = actual if actual else "UNSET"
+        raise RuntimeError(
+            "RMW_IMPLEMENTATION must be "
+            f"{EXPECTED_RMW_IMPLEMENTATION}; actual={shown}"
+        )
 
 
 class SupervisedMotion(Node):
@@ -47,6 +66,10 @@ class SupervisedMotion(Node):
         self.declare_parameter("output_topic", "/cmd_vel")
         self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("scan_topic", "/scan_normalized")
+        self.declare_parameter(
+            "estop_status_topic",
+            "/safety/estop_active",
+        )
         self.declare_parameter(
             "estop_service",
             "/safety_watchdog/set_estop",
@@ -103,6 +126,9 @@ class SupervisedMotion(Node):
         )
         self._odom_topic = str(self.get_parameter("odom_topic").value)
         self._scan_topic = str(self.get_parameter("scan_topic").value)
+        self._estop_status_topic = str(
+            self.get_parameter("estop_status_topic").value
+        )
         self._estop_service = str(
             self.get_parameter("estop_service").value
         )
@@ -134,6 +160,8 @@ class SupervisedMotion(Node):
         self._odom_received_at = 0.0
         self._scan_received_at = 0.0
         self._output_received_at = 0.0
+        self._estop_status: Optional[bool] = None
+        self._estop_status_received_at = 0.0
         self._input_nonzero_seen = False
 
         self._publisher = self.create_publisher(
@@ -165,6 +193,17 @@ class SupervisedMotion(Node):
             self._on_scan,
             qos_profile_sensor_data,
         )
+        status_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._estop_status_subscription = self.create_subscription(
+            Bool,
+            self._estop_status_topic,
+            self._on_estop_status,
+            status_qos,
+        )
         self._estop_client = self.create_client(
             SetBool,
             self._estop_service,
@@ -190,6 +229,10 @@ class SupervisedMotion(Node):
         self._scan = message
         self._scan_received_at = time.monotonic()
 
+    def _on_estop_status(self, message: Bool) -> None:
+        self._estop_status = bool(message.data)
+        self._estop_status_received_at = time.monotonic()
+
     def _spin_for(self, duration_sec: float) -> None:
         end = time.monotonic() + duration_sec
         while rclpy.ok() and time.monotonic() < end:
@@ -207,8 +250,22 @@ class SupervisedMotion(Node):
         response = future.result()
         if not response.success:
             raise RuntimeError(f"e-stop rejected request: {response.message}")
+        self._wait_for_estop_status(active)
         state = "active" if active else "released"
         self.get_logger().info(f"e-stop {state}: {response.message}")
+
+    def _wait_for_estop_status(self, active: bool) -> None:
+        end = time.monotonic() + 2.0
+        while rclpy.ok() and time.monotonic() < end:
+            rclpy.spin_once(self, timeout_sec=0.03)
+            if (
+                self._estop_status is active
+                and time.monotonic() - self._estop_status_received_at < 1.0
+            ):
+                return
+        raise RuntimeError(
+            f"e-stop status did not confirm active={active}"
+        )
 
     def _publish_zero(self, frame_count: int) -> None:
         zero = Twist()
@@ -481,6 +538,14 @@ class SupervisedMotion(Node):
 
 def main(args=None) -> None:
     """Run exactly one supervised motion and return a process exit code."""
+    try:
+        require_cyclonedds_rmw()
+    except RuntimeError as error:
+        print(
+            f"SUPERVISED_MOTION_STARTUP_FAILED: {error}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from error
     rclpy.init(args=args)
     node = SupervisedMotion()
     success = False

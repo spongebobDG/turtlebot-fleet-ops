@@ -2,6 +2,7 @@ safety_watchdog:
   ros__parameters:
     input_topic: /safety/cmd_vel_in
     output_topic: /cmd_vel
+    estop_status_topic: /safety/estop_active
     timeout_sec: 0.5
     max_linear_x: 0.05
     max_angular_z: 0.3

@@ -9,6 +9,8 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
 from safety_watchdog.node import SafetyWatchdog
@@ -33,6 +35,10 @@ def test_watchdog_ros_flow() -> None:
         parameter_overrides=[
             Parameter("input_topic", value="/test/safety/cmd_vel_in"),
             Parameter("output_topic", value="/test/safety/cmd_vel_out"),
+            Parameter(
+                "estop_status_topic",
+                value="/test/safety/estop_active",
+            ),
             Parameter("timeout_sec", value=0.15),
             Parameter("publish_rate_hz", value=50.0),
             Parameter("max_linear_x", value=0.05),
@@ -43,6 +49,7 @@ def test_watchdog_ros_flow() -> None:
     probe = Node("safety_watchdog_test_probe")
     executor = SingleThreadedExecutor()
     outputs: List[Twist] = []
+    statuses: List[Bool] = []
 
     publisher = probe.create_publisher(
         Twist,
@@ -55,6 +62,17 @@ def test_watchdog_ros_flow() -> None:
         outputs.append,
         10,
     )
+    status_qos = QoSProfile(
+        depth=1,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        reliability=ReliabilityPolicy.RELIABLE,
+    )
+    status_subscription = probe.create_subscription(
+        Bool,
+        "/test/safety/estop_active",
+        statuses.append,
+        status_qos,
+    )
     estop_client = probe.create_client(
         SetBool,
         "/safety_watchdog/set_estop",
@@ -65,8 +83,22 @@ def test_watchdog_ros_flow() -> None:
 
     try:
         _spin_until(executor, lambda: len(outputs) > 0)
+        _spin_until(executor, lambda: len(statuses) > 0)
         assert outputs[-1].linear.x == 0.0
         assert outputs[-1].angular.z == 0.0
+        assert statuses[-1].data is True
+
+        assert estop_client.wait_for_service(timeout_sec=1.0)
+        request = SetBool.Request()
+        request.data = False
+        future = estop_client.call_async(request)
+        _spin_until(executor, future.done)
+        assert future.result().success
+        _spin_until(executor, lambda: statuses[-1].data is False)
+
+        neutral_command = Twist()
+        publisher.publish(neutral_command)
+        _spin_until(executor, lambda: len(outputs) >= 2)
 
         outputs.clear()
         unsafe_command = Twist()
@@ -90,13 +122,12 @@ def test_watchdog_ros_flow() -> None:
             and outputs[-1].angular.z == 0.0,
         )
 
-        assert estop_client.wait_for_service(timeout_sec=1.0)
-        request = SetBool.Request()
         request.data = True
         future = estop_client.call_async(request)
         _spin_until(executor, future.done)
         assert future.result().success
         assert "activated" in future.result().message
+        _spin_until(executor, lambda: statuses[-1].data is True)
 
         outputs.clear()
         publisher.publish(unsafe_command)
@@ -110,6 +141,7 @@ def test_watchdog_ros_flow() -> None:
         _spin_until(executor, future.done)
         assert future.result().success
         assert "neutral command" in future.result().message
+        _spin_until(executor, lambda: statuses[-1].data is False)
 
         outputs.clear()
         publisher.publish(unsafe_command)
@@ -130,7 +162,6 @@ def test_watchdog_ros_flow() -> None:
         assert all(message.linear.x == 0.0 for message in outputs)
         assert all(message.angular.z == 0.0 for message in outputs)
 
-        neutral_command = Twist()
         publisher.publish(neutral_command)
         _spin_until(executor, lambda: len(outputs) >= 3)
 
@@ -142,6 +173,7 @@ def test_watchdog_ros_flow() -> None:
         )
     finally:
         probe.destroy_subscription(subscription)
+        probe.destroy_subscription(status_subscription)
         executor.remove_node(probe)
         executor.remove_node(watchdog)
         probe.destroy_node()

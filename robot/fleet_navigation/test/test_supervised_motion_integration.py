@@ -10,8 +10,10 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
 from fleet_navigation.supervised_motion import SupervisedMotion
@@ -27,6 +29,16 @@ class FakeWatchdog(Node):
         self._linear = 0.0
         self._angular = 0.0
         self._publisher = self.create_publisher(Twist, "/cmd_vel", 10)
+        status_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._status_publisher = self.create_publisher(
+            Bool,
+            "/safety/estop_active",
+            status_qos,
+        )
         self._subscription = self.create_subscription(
             Twist,
             "/safety/cmd_vel_in",
@@ -39,6 +51,7 @@ class FakeWatchdog(Node):
             self._on_estop,
         )
         self._timer = self.create_timer(0.02, self._publish)
+        self._publish_status()
 
     def _on_input(self, message: Twist) -> None:
         self._linear = message.linear.x
@@ -48,9 +61,15 @@ class FakeWatchdog(Node):
         self.estop_active = request.data
         if not request.data:
             self.release_count += 1
+        self._publish_status()
         response.success = True
         response.message = "fake e-stop updated"
         return response
+
+    def _publish_status(self) -> None:
+        status = Bool()
+        status.data = self.estop_active
+        self._status_publisher.publish(status)
 
     def _publish(self) -> None:
         output = Twist()

@@ -7,6 +7,8 @@ from typing import Optional, Tuple
 from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
 from safety_watchdog.policy import (
@@ -25,6 +27,10 @@ class SafetyWatchdog(Node):
 
         self.declare_parameter("input_topic", "/safety/cmd_vel_in")
         self.declare_parameter("output_topic", "/cmd_vel")
+        self.declare_parameter(
+            "estop_status_topic",
+            "/safety/estop_active",
+        )
         self.declare_parameter("timeout_sec", 0.5)
         self.declare_parameter("max_linear_x", 0.05)
         self.declare_parameter("max_angular_z", 0.3)
@@ -33,6 +39,9 @@ class SafetyWatchdog(Node):
 
         input_topic = self.get_parameter("input_topic").value
         output_topic = self.get_parameter("output_topic").value
+        estop_status_topic = self.get_parameter(
+            "estop_status_topic"
+        ).value
         self._timeout_sec = float(self.get_parameter("timeout_sec").value)
         publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
         self._neutral_epsilon = float(
@@ -49,6 +58,11 @@ class SafetyWatchdog(Node):
             raise ValueError("output_topic must be a non-empty string")
         if input_topic == output_topic:
             raise ValueError("input_topic and output_topic must be different")
+        if (
+            not isinstance(estop_status_topic, str)
+            or not estop_status_topic.strip()
+        ):
+            raise ValueError("estop_status_topic must be a non-empty string")
         if not math.isfinite(self._timeout_sec) or self._timeout_sec <= 0.0:
             raise ValueError("timeout_sec must be a positive finite value")
         if not math.isfinite(publish_rate_hz) or publish_rate_hz <= 0.0:
@@ -61,11 +75,21 @@ class SafetyWatchdog(Node):
 
         self._last_command: Tuple[float, float] = (0.0, 0.0)
         self._last_received_at: Optional[float] = None
-        self._estop_active = False
+        self._estop_active = True
         self._awaiting_neutral = False
         self._last_mode: Optional[str] = None
 
         self._publisher = self.create_publisher(Twist, output_topic, 10)
+        status_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._estop_status_publisher = self.create_publisher(
+            Bool,
+            estop_status_topic,
+            status_qos,
+        )
         self._subscription = self.create_subscription(
             Twist,
             input_topic,
@@ -83,6 +107,7 @@ class SafetyWatchdog(Node):
         )
 
         self.publish_stop()
+        self._publish_estop_status()
         self.get_logger().info(
             "Safety watchdog ready: "
             f"input={input_topic}, output={output_topic}, "
@@ -151,6 +176,7 @@ class SafetyWatchdog(Node):
         self._last_command = (0.0, 0.0)
         self._last_received_at = None
         self.publish_stop()
+        self._publish_estop_status()
 
         response.success = True
         if self._estop_active:
@@ -171,6 +197,11 @@ class SafetyWatchdog(Node):
         """Publish one or more explicit zero-velocity commands."""
         for _ in range(max(1, repeat)):
             self._publish_command(0.0, 0.0)
+
+    def _publish_estop_status(self) -> None:
+        status = Bool()
+        status.data = self._estop_active
+        self._estop_status_publisher.publish(status)
 
     def _log_mode_transition(self, mode: str) -> None:
         if mode == self._last_mode:
