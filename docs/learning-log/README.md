@@ -17,6 +17,7 @@
 - Phase 4: [TB1 웹 관제와 Zenoh 통신 경로](2026-07-16-phase-4-web-dashboard-and-zenoh.md)
 - Phase 5: [Nav2 환경과 안전 경계 준비](2026-07-16-phase-5-navigation-preflight.md)
 - Phase 5: [SLAM 입력과 Zenoh 안전 경계 실차 검증](2026-07-16-phase-5-slam-and-zenoh-safety-validation.md)
+- Phase 5: [잔류 텔레옵 명령 Incident와 모션 가드](2026-07-16-tb1-residual-teleop-command-incident.md)
 
 ## 공부와 면접용 문서
 
