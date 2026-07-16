@@ -76,6 +76,35 @@ def test_negated_map_reverses_occupied_and_free(tmp_path: Path) -> None:
     assert report.free_cells == 2
 
 
+def test_nav2_unknown_marker_must_survive_round_trip(tmp_path: Path) -> None:
+    yaml_path = _write_map(
+        tmp_path,
+        pixels=bytes([0, 254, 205, 0]),
+    )
+
+    with pytest.raises(MapValidationError, match="would load as free"):
+        inspect_map(yaml_path)
+
+
+def test_nav2_unknown_marker_is_preserved_at_safe_threshold(
+    tmp_path: Path,
+) -> None:
+    yaml_path = _write_map(
+        tmp_path,
+        pixels=bytes([0, 254, 205, 0]),
+    )
+    text = yaml_path.read_text(encoding="utf-8").replace(
+        "free_thresh: 0.25", "free_thresh: 0.196"
+    )
+    yaml_path.write_text(text, encoding="utf-8")
+
+    report = inspect_map(yaml_path)
+
+    assert report.known_cells == 3
+    assert report.unknown_cells == 1
+    assert report.trinary_unknown_marker_cells == 1
+
+
 def test_absolute_image_is_rejected_by_default(tmp_path: Path) -> None:
     image_path = tmp_path / "test.pgm"
     yaml_path = _write_map(tmp_path, image=str(image_path))

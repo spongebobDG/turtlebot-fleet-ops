@@ -21,3 +21,7 @@ ros2 run fleet_navigation validate_map tb1_lab.yaml \
 
 `MAP_VALIDATION=PASS`는 파일이 일관되고 최소 데이터 기준을 충족한다는 의미다. 벽 이중선,
 끊김, loop closure와 실제 공간 일치 여부는 RViz에서 별도로 검토해야 한다.
+
+지도 저장 명령에는 `--free 0.196 --occ 0.65`를 명시한다. Humble 기본
+`free_thresh=0.25`로 저장하면 trinary unknown 회색 205가 Map Server 재로드 때 free로
+분류될 수 있으며, `validate_map`은 이를 실패로 처리한다.

@@ -54,3 +54,6 @@ ros2 run fleet_navigation validate_map \
 
 지도 이미지는 YAML이 있는 디렉터리 안의 상대 경로여야 한다. 이 검사는 파일 일관성을
 보장하지만 벽 정합, loop closure나 AMCL 수렴은 보장하지 않는다.
+
+Humble의 trinary Map Saver는 unknown을 회색 205로 저장한다. 저장 시 `--free 0.196`을
+명시해야 재로드 때 이 값이 free로 바뀌지 않는다. 검사기는 이 round-trip 손실도 거부한다.

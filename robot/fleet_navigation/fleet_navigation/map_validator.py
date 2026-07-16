@@ -40,6 +40,7 @@ class MapReport:
     occupied_cells: int
     free_cells: int
     unknown_cells: int
+    trinary_unknown_marker_cells: int
 
     @property
     def total_cells(self) -> int:
@@ -262,6 +263,24 @@ def inspect_map(
     metadata = load_map_metadata(yaml_path, require_relative_image)
     width, height, max_value, pixels = read_pgm(metadata.image_path)
 
+    unknown_marker = round(205.0 / 255.0 * max_value)
+    unknown_marker_cells = sum(pixel == unknown_marker for pixel in pixels)
+    marker_shade = unknown_marker / max_value
+    marker_occupancy = (
+        marker_shade if metadata.negate else 1.0 - marker_shade
+    )
+    if marker_occupancy > metadata.occupied_thresh:
+        marker_class = "occupied"
+    elif marker_occupancy < metadata.free_thresh:
+        marker_class = "free"
+    else:
+        marker_class = "unknown"
+    if unknown_marker_cells and marker_class != "unknown":
+        raise MapValidationError(
+            "trinary unknown marker would load as "
+            f"{marker_class}; use free_thresh <= 0.196"
+        )
+
     occupied = 0
     free = 0
     for pixel in pixels:
@@ -278,6 +297,7 @@ def inspect_map(
         occupied_cells=occupied,
         free_cells=free,
         unknown_cells=len(pixels) - occupied - free,
+        trinary_unknown_marker_cells=unknown_marker_cells,
     )
     if report.known_cells < min_known_cells:
         raise MapValidationError(
@@ -339,6 +359,10 @@ def main() -> None:
     print(f"occupied_cells={report.occupied_cells}")
     print(f"free_cells={report.free_cells}")
     print(f"unknown_cells={report.unknown_cells}")
+    print(
+        "trinary_unknown_marker_cells="
+        f"{report.trinary_unknown_marker_cells}"
+    )
 
 
 if __name__ == "__main__":

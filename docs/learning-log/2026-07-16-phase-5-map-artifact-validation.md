@@ -32,6 +32,7 @@
 - `0 <= free_thresh < occupied_thresh <= 1` 검사
 - P2·P5 PGM, 8비트·16비트 raster 크기와 픽셀 범위 검사
 - map-server 임계값으로 occupied/free/unknown cell 계산
+- trinary unknown 회색 205가 재로드 때 free·occupied로 변하는 설정 거부
 - 최소 known cell 수와 비율 검사
 - 선택적으로 `.posegraph`, `.data` 쌍 검사
 - 성공 시 `MAP_VALIDATION=PASS`, 실패 시 종료 코드 2와 원인 출력
@@ -60,11 +61,11 @@ fleet_navigation: 62 tests
 fixture를 점유확률 약 0.502인 픽셀 127로 수정했다. 또한 다른 해석 규칙을 조용히
 오분류하지 않도록 `trinary` 이외의 mode를 명시적으로 거부했다.
 
-재실행 결과는 다음과 같다.
+합성 fixture 재실행 결과는 다음과 같았다.
 
 ```text
-fleet_navigation: 64 passed
-workspace total: 128 tests
+fleet_navigation: 66 passed
+workspace total: 130 tests
 errors: 0
 failures: 0
 skipped: 0
@@ -75,6 +76,32 @@ GitHub Actions PR #6 Humble build and test: pass
 다룬 경계 조건은 정상 P5, 주석이 있는 P2, 16비트 PGM, negate 반전, 절대 경로,
 상대 경로 이탈, 이미지 누락, 임계값 역전, 미지원 mode, 잘린 raster, 최소 관측량과
 pose graph 누락이다.
+
+## 실제 Map Saver round-trip에서 발견한 문제
+
+TB1의 활성 지도는 다음과 같았다.
+
+```text
+total cells: 19080
+known cells: 618
+unknown cells: 18462
+occupied cells: 108
+```
+
+모터 명령 없이 `/tmp`에 임시 YAML·PGM·pose graph·data를 저장했다. Humble 기본값은
+unknown을 PGM 회색 205로 쓰면서 YAML에 `free_thresh: 0.25`를 기록했다. 첫 검사기는
+Map Server와 같은 임계값 계산 결과로 모든 회색 205를 free로 분류했고
+`known_cells=19080`, `unknown_cells=0`인데도 잘못 PASS를 출력했다.
+
+별도 이름의 Map Server로 이 파일을 `/validation_map`에 실제 재로드하자 동일하게
+unknown이 0개, free가 18,972개가 됐다. 즉 검사기의 계산 오류가 아니라 저장과 재로드
+사이의 의미 손실이었다.
+
+재발 방지는 두 겹으로 적용했다.
+
+1. 저장 명령에 `--free 0.196 --occ 0.65`를 명시한다.
+2. PGM에 trinary unknown marker 205가 있는데 YAML 임계값이 이를 unknown으로 복원하지
+   못하면 `validate_map`이 실패한다.
 
 ## 자동 검사가 보장하는 것과 보장하지 않는 것
 
@@ -100,6 +127,7 @@ pose graph 누락이다.
 3. unknown 비율은 지도 canvas 크기에도 영향을 받으므로 known cell 수와 함께 본다.
 4. YAML·PGM은 localization용이고 pose graph·data는 SLAM 재개용이다.
 5. 자동 구조 검사 뒤에도 RViz와 실물 공간 비교가 반드시 필요하다.
+6. 저장 성공 뒤에는 round-trip 의미 보존을 검증해야 한다.
 
 ## 면접에서 이렇게 설명한다
 
@@ -131,13 +159,19 @@ pose graph 누락이다.
 정답: Nav2 localization은 YAML·PGM을 사용하지만, mapping을 이어서 수정하려면 SLAM의
 노드·제약·센서 데이터가 든 pose graph와 data가 필요하기 때문이다.
 
+### 5. unknown 회색 205와 `free_thresh=0.25` 조합이 위험한 이유는?
+
+정답: negate가 0이면 회색 205의 점유확률은 약 0.196이고, Map Server는 점유확률이
+free threshold보다 작으면 free로 읽는다. 따라서 원래 unknown 영역이 주행 가능한 free로
+바뀔 수 있다.
+
 ## 완료 체크리스트
 
 - [x] 지도 메타데이터와 PGM parser 구현
 - [x] 관측 cell 통계와 최소 기준 구현
 - [x] pose graph 쌍 검사 구현
-- [x] 12개 지도 검증 테스트 작성
-- [x] WSL ROS 2 Humble에서 128개 전체 테스트 통과
+- [x] trinary unknown round-trip 손실 탐지 테스트 작성
+- [x] WSL ROS 2 Humble에서 130개 전체 테스트 통과
 - [x] 운영 절차와 공부·면접 문서 갱신
 - [ ] TB1 실차 지도 저장 후 CLI 실행
 - [ ] RViz 지도 품질 검토
@@ -152,3 +186,8 @@ pose graph 누락이다.
 ## 관련 커밋
 
 - `feat: add saved map artifact validator`
+
+## 참고 자료
+
+- [Nav2 Humble `map_io.cpp`](https://github.com/ros-navigation/navigation2/blob/humble/nav2_map_server/src/map_io.cpp)
+- [Nav2 Map Saver 설정](https://docs.nav2.org/configuration/packages/map_server/configuring-map-saver.html)
