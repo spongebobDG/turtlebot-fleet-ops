@@ -143,8 +143,7 @@ main 최신화
 
 ## 다음 작업
 
-1. Phase 4 systemd 운영 서비스를 TB1과 WSL에 배포하고 복구를 확인한다.
-2. Phase 4 Draft PR의 테스트와 문서를 자체 리뷰하고 `main`에 squash merge한다.
-3. Phase 5 TB1 SLAM·Nav2와 웹 목적지 명령 경계를 설계한다.
-4. TB1 전용 LiDAR 포트 하드코딩을 ROS 2 launch 설정으로 일반화한다.
-5. 임시 GPIO 점퍼를 진동에 견디는 하네스로 교체한다.
+1. Phase 4 PR #5를 Ready로 전환하고 `main`에 squash merge한다.
+2. Phase 5 TB1 SLAM·Nav2와 웹 목적지 명령 경계를 설계한다.
+3. TB1 전용 LiDAR 포트 하드코딩을 ROS 2 launch 설정으로 일반화한다.
+4. 임시 GPIO 점퍼를 진동에 견디는 하네스로 교체한다.
