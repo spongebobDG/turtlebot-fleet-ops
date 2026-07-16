@@ -15,6 +15,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, LaserScan
 
 from robot_agent.node import RobotAgent
+from robot_agent.system_metrics import SystemMetrics
 
 
 def _spin_until(
@@ -30,7 +31,22 @@ def _spin_until(
     raise AssertionError("condition was not met before timeout")
 
 
-def test_robot_agent_ros_flow() -> None:
+def test_robot_agent_ros_flow(monkeypatch) -> None:
+    metrics = SystemMetrics(
+        cpu_percent=0.0,
+        memory_percent=0.0,
+        disk_percent=0.0,
+        load_average_1m=0.0,
+        uptime_sec=1,
+        wifi_valid=False,
+        wifi_interface="",
+        wifi_signal_dbm=-1.0,
+        wifi_quality_percent=-1.0,
+    )
+    monkeypatch.setattr(
+        "robot_agent.node.sample_system_metrics",
+        lambda: metrics,
+    )
     rclpy.init()
     agent = RobotAgent(
         parameter_overrides=[
