@@ -2,7 +2,7 @@
 
 단계: Phase 3
 
-진행 상태: WSL 구현·자동 테스트 완료, TB1 실차 검증 대기
+진행 상태: WSL 구현·자동 테스트 33개 완료, TB1 1차 29개 통과 후 최신 보강 재검증 대기
 
 브랜치: `feat/phase-3-robot-agent`
 
@@ -121,3 +121,25 @@ BATTERY_NOT_RECEIVED
 TB1에 최종 Phase 2 main을 먼저 반영하고 18개 watchdog 테스트를 확인한다. Phase 3
 브랜치를 받아 Robot Agent 29개 테스트를 실행한 뒤 domain 42의 실제 battery, odom,
 scan으로 `level=0`, fault 없음과 약 1 Hz를 검증한다.
+
+## 원본 요구사항 재검토 후 보강
+
+프로젝트 원본 Phase 3 수집 목록과 구현을 다시 대조해 Wi-Fi 신호와 source별 실제 마지막
+수신 시각이 빠진 것을 발견했다. 다음을 추가했다.
+
+- battery, odom, scan의 ROS clock 기반 `last_received`
+- monotonic `age_sec`와 실제 시각의 역할 분리
+- `/proc/net/wireless` 기반 interface, signal dBm, quality percent
+- Wi-Fi가 없는 환경의 `wifi_valid=false`와 JSON-safe unknown
+- wireless parser와 timestamp 통합 assertion 4개
+
+최종 WSL 결과:
+
+```text
+collected 33 items
+33 passed, 2 warnings
+Summary: 33 tests, 0 errors, 0 failures, 0 skipped
+```
+
+TB1에서 이미 확인한 29개는 보강 전 revision의 실제 결과로 유지한다. 최신 33개는 새
+revision을 배포한 뒤 다시 검증한다.

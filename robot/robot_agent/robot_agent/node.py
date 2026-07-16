@@ -5,6 +5,7 @@ import socket
 import time
 from typing import Optional, Tuple
 
+from builtin_interfaces.msg import Time as TimeMessage
 from fleet_interfaces.msg import RobotStatus
 from nav_msgs.msg import Odometry
 import rclpy
@@ -37,12 +38,14 @@ class RobotAgent(Node):
         self._load_parameters()
 
         self._last_battery_at: Optional[float] = None
+        self._battery_last_received = TimeMessage()
         self._battery_percent = UNKNOWN_VALUE
         self._battery_voltage = UNKNOWN_VALUE
         self._battery_present = False
         self._battery_valid = False
 
         self._last_odom_at: Optional[float] = None
+        self._odom_last_received = TimeMessage()
         self._odom_values = (
             UNKNOWN_VALUE,
             UNKNOWN_VALUE,
@@ -53,6 +56,7 @@ class RobotAgent(Node):
         self._odom_valid = False
 
         self._last_scan_at: Optional[float] = None
+        self._scan_last_received = TimeMessage()
         self._scan_valid_points = 0
         self._scan_min_range = UNKNOWN_VALUE
         self._scan_valid = False
@@ -155,6 +159,7 @@ class RobotAgent(Node):
 
     def _on_battery(self, message: BatteryState) -> None:
         self._last_battery_at = time.monotonic()
+        self._battery_last_received = self.get_clock().now().to_msg()
         self._battery_percent = normalize_battery_percent(
             float(message.percentage)
         )
@@ -167,6 +172,7 @@ class RobotAgent(Node):
 
     def _on_odom(self, message: Odometry) -> None:
         self._last_odom_at = time.monotonic()
+        self._odom_last_received = self.get_clock().now().to_msg()
         pose = message.pose.pose
         twist = message.twist.twist
         yaw, quaternion_valid = quaternion_to_yaw(
@@ -201,6 +207,7 @@ class RobotAgent(Node):
 
     def _on_scan(self, message: LaserScan) -> None:
         self._last_scan_at = time.monotonic()
+        self._scan_last_received = self.get_clock().now().to_msg()
         count, nearest = scan_statistics(
             message.ranges,
             float(message.range_min),
@@ -253,6 +260,7 @@ class RobotAgent(Node):
         message.battery_received = battery.received
         message.battery_fresh = battery.fresh
         message.battery_valid = self._battery_valid
+        message.battery_last_received = self._battery_last_received
         message.battery_age_sec = battery.age_sec
         message.battery_percent = self._battery_percent
         message.battery_voltage = self._battery_voltage
@@ -261,6 +269,7 @@ class RobotAgent(Node):
         message.odom_received = odom.received
         message.odom_fresh = odom.fresh
         message.odom_valid = self._odom_valid
+        message.odom_last_received = self._odom_last_received
         message.odom_age_sec = odom.age_sec
         (
             message.position_x,
@@ -273,6 +282,7 @@ class RobotAgent(Node):
         message.scan_received = scan.received
         message.scan_fresh = scan.fresh
         message.scan_valid = self._scan_valid
+        message.scan_last_received = self._scan_last_received
         message.scan_age_sec = scan.age_sec
         message.scan_valid_points = self._scan_valid_points
         message.scan_min_range = self._scan_min_range
@@ -282,6 +292,10 @@ class RobotAgent(Node):
         message.disk_percent = system.disk_percent
         message.load_average_1m = system.load_average_1m
         message.uptime_sec = system.uptime_sec
+        message.wifi_valid = system.wifi_valid
+        message.wifi_interface = system.wifi_interface
+        message.wifi_signal_dbm = system.wifi_signal_dbm
+        message.wifi_quality_percent = system.wifi_quality_percent
         message.fault_codes = list(health.fault_codes)
 
         self._publisher.publish(message)

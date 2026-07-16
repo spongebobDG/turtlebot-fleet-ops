@@ -14,6 +14,7 @@ uint8 level
 bool battery_received
 bool battery_fresh
 bool battery_valid
+builtin_interfaces/Time battery_last_received
 float32 battery_age_sec
 float32 battery_percent
 float32 battery_voltage
@@ -23,6 +24,7 @@ bool battery_present
 bool odom_received
 bool odom_fresh
 bool odom_valid
+builtin_interfaces/Time odom_last_received
 float32 odom_age_sec
 float64 position_x
 float64 position_y
@@ -34,6 +36,7 @@ float64 angular_velocity
 bool scan_received
 bool scan_fresh
 bool scan_valid
+builtin_interfaces/Time scan_last_received
 float32 scan_age_sec
 uint32 scan_valid_points
 float32 scan_min_range
@@ -44,6 +47,12 @@ float32 memory_percent
 float32 disk_percent
 float32 load_average_1m
 uint64 uptime_sec
+
+# Wi-Fi information comes from the Linux wireless interface when available.
+bool wifi_valid
+string wifi_interface
+float32 wifi_signal_dbm
+float32 wifi_quality_percent
 
 # Stable machine-readable identifiers such as ODOM_STALE or LOW_BATTERY.
 string[] fault_codes

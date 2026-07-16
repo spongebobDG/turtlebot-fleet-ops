@@ -18,6 +18,9 @@ TB1의 `/battery_state`, `/odom`, `/scan`과 Raspberry Pi 자원을 집계해
 - `fault_codes: []`
 - `scan_valid_points`가 0보다 큼
 - CPU, memory, disk 값이 0~100 범위
+- `wifi_valid: true`, `wifi_interface: wlan0`
+- Wi-Fi signal dBm과 quality percent가 유효함
+- battery/odom/scan의 `last_received`가 0이 아님
 - 상태 발행 주기가 약 1 Hz
 
 ## 1. 최종 main과 기능 브랜치 받기
@@ -102,7 +105,7 @@ colcon test-result \
   --verbose
 ```
 
-성공 기준은 Robot Agent `29 passed`, 오류와 실패 0개다. lint의
+성공 기준은 Robot Agent `33 passed`, 오류와 실패 0개다. lint의
 `SelectableGroups` deprecation warning은 Humble 도구 의존성 경고이며 실패가 아니다.
 
 ## 4. TB1 bringup 확인
@@ -207,7 +210,7 @@ ros2 topic echo /fleet/robot_status --once
 ## 현재 검증 체크리스트
 
 - [x] WSL build 성공
-- [x] Robot Agent 자동 테스트 29개 통과
+- [x] Robot Agent 자동 테스트 33개 통과
 - [x] custom interface 생성 확인
 - [x] launch 시작과 초기 missing fault 확인
 - [ ] TB1에서 정상 RobotStatus 확인

@@ -13,6 +13,10 @@ single `fleet_interfaces/msg/RobotStatus` snapshot.
 Linux resources ┘
 ```
 
+Host resources include CPU, memory, disk, load, uptime, and Linux wireless
+interface signal. Each ROS source exposes both a wall/ROS receipt timestamp and
+a monotonic age used for timeout decisions.
+
 The future fleet gateway can determine robot connectivity from the age of this
 1 Hz status heartbeat. The Robot Agent does not publish an `online=true` claim
 about itself because a stopped process cannot publish `online=false`.

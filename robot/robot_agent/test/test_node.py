@@ -131,11 +131,14 @@ def test_robot_agent_ros_flow() -> None:
         assert status.fault_codes == []
         assert status.battery_percent == pytest.approx(75.0)
         assert status.battery_voltage == pytest.approx(12.1)
+        assert status.battery_last_received.sec > 0
         assert status.position_x == pytest.approx(1.5)
         assert status.position_y == pytest.approx(-0.5)
         assert status.yaw == pytest.approx(0.0)
+        assert status.odom_last_received.sec > 0
         assert status.scan_valid_points == 2
         assert status.scan_min_range == pytest.approx(0.8)
+        assert status.scan_last_received.sec > 0
 
         _spin_until(
             executor,
