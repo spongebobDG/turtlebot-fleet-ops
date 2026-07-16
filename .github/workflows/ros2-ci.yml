@@ -25,6 +25,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Verify Linux runtime line endings
+        shell: bash
+        run: |
+          bad_files="$(
+            grep -Il $'\r' \
+              infra/zenoh/*.sh \
+              infra/systemd/user/*.service \
+              || true
+          )"
+          if [[ -n "${bad_files}" ]]; then
+            printf 'CRLF is not allowed in Linux runtime files:\n%s\n' \
+              "${bad_files}" >&2
+            exit 1
+          fi
+
       - name: Install package dependencies
         shell: bash
         run: |

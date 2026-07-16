@@ -94,6 +94,27 @@ bash infra/zenoh/start-control-gateway.sh
 `infra/systemd/user`에는 TB1 런타임과 WSL 관제 스택의 사용자 서비스 단위가 있다.
 로컬 환경 파일은 저장소 밖에 둔다.
 
+서비스를 재시작하기 전에 Linux 실행 파일의 working-tree EOL을 확인한다. 특히 Windows
+작업트리를 WSL에서 symlink로 공유하면 `.gitattributes`가 이미 있어도 규칙 추가 이전에
+checkout된 CRLF가 남을 수 있다.
+
+```bash
+git ls-files --eol 'infra/zenoh/*.sh' 'infra/systemd/user/*.service'
+```
+
+모든 항목의 working-tree 표기가 `w/lf`여야 한다. `w/crlf`가 있으면 서비스를 재시작하지
+말고 해당 Linux runtime 파일만 정규화한 뒤 index와 내용 hash가 같은지 확인한다.
+
+```bash
+sed -i 's/\r$//' infra/zenoh/*.sh infra/systemd/user/*.service
+git diff --exit-code -- infra/zenoh infra/systemd/user
+git add infra/zenoh/*.sh infra/systemd/user/*.service
+git diff --cached --exit-code
+```
+
+마지막 `git add`는 내용이 같은 파일의 stat/index 상태를 갱신하기 위한 것이다. staged
+diff가 생기면 기존 규칙과 다른 실제 내용 변경이므로 원인을 검토하기 전 커밋하지 않는다.
+
 WSL 최소 설치본에는 사용자 systemd 버스가 없을 수 있다. 다음 패키지를 설치하고
 사용자 서비스를 로그인 전에도 유지하도록 linger를 활성화한다.
 
@@ -163,6 +184,7 @@ curl http://127.0.0.1:8000/api/robots
 3. 양쪽 시스템 시각 차이가 500ms를 넘지 않는지 확인한다.
 4. 모든 ROS 노드와 브리지의 `ROS_DISTRO`, `ROS_DOMAIN_ID`, RMW를 확인한다.
 5. Gateway REST 상태와 systemd journal을 확인한다.
+6. journal에 `$'\\r': command not found`가 있으면 runtime script의 `w/lf` 여부를 확인한다.
 
 ```bash
 journalctl --user -u tb1-zenoh-bridge.service -n 100 --no-pager
