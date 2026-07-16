@@ -368,6 +368,31 @@ map occupied cells: 108
 같은 직선 방향을 반복한 뒤 known cell이 늘지 않았으므로 다음 물리 확인 뒤에는 추가 직진보다
 새 각도의 스캔을 얻는 방향 전환을 우선한다.
 
+사용자는 세 번째 10cm 전진과 방향이 정상이고 충돌과 케이블 이상이 없다고 확인했다.
+회전 반경과 케이블 여유를 다시 확보한 뒤 시계 방향 90도 보호 회전을 실행했다.
+
+```text
+목표: 1.570796 rad (90 deg)
+속도: -0.100 rad/s (clockwise)
+guard progress: 1.5747 rad
+guard elapsed: 16.59 s
+guard exit: 0
+독립 odom yaw delta: -1.594615 rad (-91.365 deg)
+종료 e-stop: true
+종료 /cmd_vel: linear.x=0.0, angular.z=0.0
+종료 /safety/cmd_vel_in Publisher: 0
+새 정면 30-scan 최소 여유: 0.672 m
+새 정면 30-scan 중앙값: 0.728 m
+map size: 180 x 106 at 0.05 m/cell
+map known cells: 618 (3.24%)
+map occupied cells: 108
+```
+
+guard와 별도 odometry가 모두 시계 방향 회전을 증명했고 종료 안전 조건도 통과했다. 제자리
+회전만으로 known cell 수는 증가하지 않았다. 이는 같은 위치의 LiDAR가 방향만 바뀌어도 전체
+360도 스캔 자체는 이미 같은 주변을 관측하고 있었기 때문이다. 다음 지도 확장은 회전의 사용자
+물리 관찰을 확인한 뒤 새 정면 방향으로 짧게 이동해야 한다.
+
 ## 병렬 CI 테스트 격리
 
 GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜 watchdog 응답
@@ -389,6 +414,7 @@ GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜
 9. **토픽 성공은 서비스 성공의 증거가 아니다. 모든 ROS 터미널의 RMW를 통일한다.**
 10. **로봇을 손으로 재배치하면 활성 SLAM의 odometry 전제가 깨지므로 지도를 새로 시작한다.**
 11. **ROS 통합 테스트의 절대 topic·service 이름도 패키지 간 격리해야 한다.**
+12. **360도 LiDAR의 제자리 회전은 방향을 바꾸지만 반드시 known 영역을 늘리지는 않는다.**
 
 ## 면접에서 이렇게 설명한다
 
@@ -477,7 +503,10 @@ GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜
 - [x] 클린 맵 두 번째 10cm 시스템 측정
 - [x] 클린 맵 두 번째 10cm 사용자 물리 관찰 확인
 - [x] 클린 맵 세 번째 10cm 시스템 측정
-- [ ] 클린 맵 세 번째 10cm 사용자 물리 관찰 확인
+- [x] 클린 맵 세 번째 10cm 사용자 물리 관찰 확인
+- [x] 클린 맵 시계 방향 90도 guard 시스템 측정
+- [ ] 클린 맵 시계 방향 90도 사용자 물리 관찰 확인
+- [x] 지도 크기·known·occupied cell 재측정
 - [ ] 깨끗한 지도 저장 및 시각 검수
 
 ## 관련 커밋
@@ -489,9 +518,10 @@ GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜
 - `edcbf87 fix: publish e-stop status heartbeat`
 - `d9a2671 test: cover low-clearance motion rejection`
 - `e4fcdf6 fix: isolate ROS integration service names`
+- `dd1f994 feat: add saved map artifact validator`
 
 ## 다음에 할 일
 
-1. 클린 맵 세 번째 10cm의 사용자 물리 관찰을 확인한다.
-2. 방향을 전환해 새 각도의 스캔으로 지도를 확장한다.
-3. 지도와 pose graph를 저장하고 시각 품질을 검수한다.
+1. 시계 방향 90도 회전의 사용자 물리 관찰을 확인한다.
+2. 새 정면의 실제 장애물·케이블 여유를 확인하고 짧은 보호 직진으로 지도를 확장한다.
+3. 지도와 pose graph를 저장하고 자동·시각 품질을 검수한다.
