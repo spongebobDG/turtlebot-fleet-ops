@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Linux entrypoint; repository attributes enforce LF endings.
 set -euo pipefail
 
 export ROS_DISTRO="${ROS_DISTRO:-humble}"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Linux and WSL entrypoint; repository attributes enforce LF endings.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
