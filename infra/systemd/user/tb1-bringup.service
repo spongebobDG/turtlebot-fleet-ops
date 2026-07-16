@@ -1,0 +1,20 @@
+[Unit]
+Description=TB1 TurtleBot3 hardware bringup
+After=default.target
+
+[Service]
+Type=simple
+Environment=ROS_DISTRO=humble
+Environment=ROS_DOMAIN_ID=42
+Environment=ROS_LOCALHOST_ONLY=0
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=TURTLEBOT3_MODEL=burger
+Environment=LDS_MODEL=LDS-02
+ExecStart=/usr/bin/bash -lc 'source /opt/ros/humble/setup.bash && source %h/turtlebot3_ws/install/setup.bash && exec ros2 launch turtlebot3_bringup robot.launch.py'
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

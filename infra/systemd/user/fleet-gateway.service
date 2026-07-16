@@ -1,0 +1,16 @@
+[Unit]
+Description=Fleet FastAPI and ROS 2 gateway
+After=fleet-control-zenoh.service
+Wants=fleet-control-zenoh.service
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/turtlebot-fleet-ops/control.env
+ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/infra/zenoh/start-control-gateway.sh
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=TB1 Zenoh ROS 2 DDS bridge
+After=default.target tb1-bringup.service tb1-safety-watchdog.service tb1-robot-agent.service
+Wants=tb1-bringup.service tb1-safety-watchdog.service tb1-robot-agent.service
+
+[Service]
+Type=simple
+Environment=ROS_DISTRO=humble
+Environment=ROS_DOMAIN_ID=42
+ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/infra/zenoh/start-robot-bridge.sh
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target
