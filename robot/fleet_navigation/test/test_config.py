@@ -39,9 +39,13 @@ def test_navigation_frames_and_scan_match_tb1_bringup() -> None:
 
     assert amcl["odom_frame_id"] == "odom"
     assert amcl["base_frame_id"] == "base_footprint"
-    assert amcl["scan_topic"] == "scan"
-    assert local["obstacle_layer"]["scan"]["topic"] == "/scan"
-    assert global_costmap["obstacle_layer"]["scan"]["topic"] == "/scan"
+    assert amcl["scan_topic"] == "/scan_normalized"
+    assert local["obstacle_layer"]["scan"]["topic"] == (
+        "/scan_normalized"
+    )
+    assert global_costmap["obstacle_layer"]["scan"]["topic"] == (
+        "/scan_normalized"
+    )
 
 
 def test_watchdog_uses_navigation_safe_input() -> None:

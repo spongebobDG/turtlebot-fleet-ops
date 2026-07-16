@@ -46,6 +46,9 @@ def generate_launch_description() -> LaunchDescription:
     """Build localization and navigation nodes for a saved TB1 map."""
     package_share = Path(get_package_share_directory("fleet_navigation"))
     nav2_share = Path(get_package_share_directory("nav2_bringup"))
+    normalizer_parameters = (
+        package_share / "config" / "tb1_scan_normalizer.yaml"
+    )
 
     map_yaml = LaunchConfiguration("map")
     params_file = LaunchConfiguration("params_file")
@@ -200,6 +203,13 @@ def generate_launch_description() -> LaunchDescription:
                 "log_level",
                 default_value="info",
                 description="ROS logger severity for Nav2 processes",
+            ),
+            Node(
+                package="fleet_navigation",
+                executable="scan_normalizer",
+                name="scan_normalizer",
+                output="screen",
+                parameters=[str(normalizer_parameters)],
             ),
             localization,
             *navigation_nodes,

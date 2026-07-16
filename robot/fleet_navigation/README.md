@@ -27,8 +27,15 @@ remapping을 명시한다. Watchdog는 0.05 m/s, 0.3 rad/s 제한, 0.5초 timeou
 
 ## Launch
 
-- `slam.launch.py`: `/scan`, `odom -> base_footprint`으로 실시간 지도를 생성한다.
+- `slam.launch.py`: LDS-02의 `/scan`을 고정 360-bin `/scan_normalized`로
+  변환하고 `odom -> base_footprint`으로 실시간 지도를 생성한다.
 - `navigation.launch.py`: 저장 지도, AMCL과 Nav2를 시작한다.
+
+LDS-02 드라이버는 회전마다 `/scan` 배열 길이와 시작·끝 각도가 달라질 수 있다.
+`scan_normalizer`는 원본 토픽을 보존하면서 각 측정값을 가장 가까운 1도 격자에
+배치한다. 같은 격자에 측정이 겹치면 더 가까운 장애물을 선택하고, 관측되지 않은
+각도는 `+inf`로 발행한다. SLAM Toolbox, AMCL과 Nav2 costmap은 모두
+`/scan_normalized`만 사용한다.
 
 지도 생성 중에는 Nav2 Goal을 보내지 않는다. 저장 지도를 검토한 뒤에만
 `navigation.launch.py`를 사용한다.

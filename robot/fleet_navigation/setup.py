@@ -37,4 +37,9 @@ setup(
     description="Safe SLAM and Nav2 bringup for TurtleBot fleet robots.",
     license="Apache-2.0",
     tests_require=["pytest"],
+    entry_points={
+        "console_scripts": [
+            "scan_normalizer = fleet_navigation.scan_normalizer:main",
+        ],
+    },
 )

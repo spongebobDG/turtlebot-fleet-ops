@@ -37,7 +37,7 @@ amcl:
     z_max: 0.05
     z_rand: 0.5
     z_short: 0.05
-    scan_topic: scan
+    scan_topic: /scan_normalized
 
 bt_navigator:
   ros__parameters:
@@ -191,7 +191,7 @@ local_costmap:
         enabled: true
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /scan_normalized
           max_obstacle_height: 2.0
           clearing: true
           marking: true
@@ -226,7 +226,7 @@ global_costmap:
         enabled: true
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /scan_normalized
           max_obstacle_height: 2.0
           clearing: true
           marking: true

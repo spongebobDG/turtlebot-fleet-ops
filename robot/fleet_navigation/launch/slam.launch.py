@@ -13,6 +13,9 @@ def generate_launch_description() -> LaunchDescription:
     """Build the TB1 mapping launch description without motion producers."""
     package_share = Path(get_package_share_directory("fleet_navigation"))
     default_parameters = package_share / "config" / "tb1_slam.yaml"
+    normalizer_parameters = (
+        package_share / "config" / "tb1_scan_normalizer.yaml"
+    )
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     parameters = LaunchConfiguration("slam_params_file")
@@ -28,6 +31,13 @@ def generate_launch_description() -> LaunchDescription:
                 "slam_params_file",
                 default_value=str(default_parameters),
                 description="Full path to the SLAM Toolbox parameter file",
+            ),
+            Node(
+                package="fleet_navigation",
+                executable="scan_normalizer",
+                name="scan_normalizer",
+                output="screen",
+                parameters=[str(normalizer_parameters)],
             ),
             Node(
                 package="slam_toolbox",
