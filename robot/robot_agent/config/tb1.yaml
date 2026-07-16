@@ -1,0 +1,15 @@
+robot_agent:
+  ros__parameters:
+    robot_id: tb1
+    status_topic: /fleet/robot_status
+    battery_topic: /battery_state
+    odom_topic: /odom
+    scan_topic: /scan
+    publish_rate_hz: 1.0
+    battery_timeout_sec: 5.0
+    odom_timeout_sec: 1.0
+    scan_timeout_sec: 2.0
+    low_battery_percent: 20.0
+    high_cpu_percent: 90.0
+    high_memory_percent: 90.0
+    high_disk_percent: 90.0
