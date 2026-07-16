@@ -49,6 +49,7 @@
 
 - [Phase 1: TB1 Bringup과 LDS-02 장애 진단](phase-1-tb1-bringup.md)
 - [Phase 2: 안전 수동 제어와 Watchdog](phase-2-safe-teleoperation.md)
+- [Phase 3: Robot Agent와 상태 계약](phase-3-robot-agent.md)
 
 ## 이해도 판정 기준
 

@@ -12,14 +12,17 @@
 - Phase 0: [PR 검토와 main 보호](2026-07-15-github-pr-review-and-main-ruleset.md)
 - Phase 1: [TB1 Bringup과 LDS-02 GPIO UART 복구](2026-07-15-phase-1-tb1-bringup-and-lds02-gpio-uart.md)
 - Phase 2: [TB1 Safety Watchdog 배포](2026-07-15-phase-2-tb1-watchdog-deployment.md)
+- Phase 3: [Robot Agent 구현](2026-07-16-phase-3-robot-agent-implementation.md)
 
 ## 공부와 면접용 문서
 
 - [공부 문서 운영 방식](../study/README.md)
 - [Phase 1 필수 개념과 모범 답변](../study/phase-1-tb1-bringup.md)
 - [Phase 2 안전 제어 필수 개념과 모범 답변](../study/phase-2-safe-teleoperation.md)
+- [Phase 3 Robot Agent 필수 개념과 모범 답변](../study/phase-3-robot-agent.md)
 - [LDS-02 `/scan` 데이터 복구 사례](../case-studies/lds02-scan-data-recovery.md)
 - [비상정지 중립 재무장 설계 사례](../case-studies/safety-watchdog-neutral-rearm.md)
+- [Phase 3 Robot Agent 설계](../design/phase-3-robot-agent.md)
 
 ## 기록 원칙
 
