@@ -229,6 +229,33 @@ safety_watchdog + fleet_navigation: 69 tests passed
 전체 테스트 결과: 115 tests, 0 errors, 0 failures, 0 skipped
 ```
 
+## 5cm 보호 이동 시스템 검증
+
+사용자가 전방 30cm 이상, 케이블 고정, 중앙 배치와 바퀴 자유 상태를 확인한 뒤 첫 저속
+직진을 실행했다. 실행 환경은 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`였고 Zenoh와 텔레옵은
+중단했으며, 시작 전 `/safety/cmd_vel_in` Publisher는 0개였다.
+
+```text
+실행 커밋: 42851f2
+목표: 0.0500 m
+속도: 0.0200 m/s
+guard progress: 0.0520 m
+guard elapsed: 2.87 s
+독립 odom delta x: 0.056323 m
+독립 odom delta y: 0.001453 m
+guard exit: 0
+종료 e-stop: true
+종료 /cmd_vel: linear.x=0.0, angular.z=0.0
+종료 /safety/cmd_vel_in Publisher: 0
+```
+
+시스템 측정은 목표 전진과 작은 횡이탈, 자동 정지를 증명했다. 실제 이동 거리·방향, 충돌과
+케이블 상태에 대한 사용자 현장 확인은 아직 대기 중이므로 30도 회전은 실행하지 않았다.
+
+그 뒤 e-stop 상태를 2Hz heartbeat로 재발행하는 커밋 `edcbf87`을 TB1에 배포했다. TB1의
+`safety_watchdog` 18개 테스트와 GitHub Actions가 통과했고, 늦게 시작한 CLI가 서비스 재호출
+없이 `/safety/estop_active data:true`를 수신했다.
+
 ## 오늘 꼭 기억해야 할 것
 
 1. **e-stop 중 `/cmd_vel=0`은 upstream 입력이 중립이라는 증거가 아니다.**
@@ -305,6 +332,8 @@ safety_watchdog + fleet_navigation: 69 tests passed
 - [x] Cyclone DDS RMW 불일치 실행 거부 구현
 - [x] watchdog 시작 e-stop과 상태 토픽 구현
 - [x] 보강 후 115개 로컬 테스트 통과
+- [x] 5cm 직진 guard 시스템 측정 통과
+- [ ] 5cm 직진 사용자 물리 관찰 확인
 - [ ] TB1 전용 가드 저속 직진·회전 통과
 - [ ] 깨끗한 지도 저장 및 시각 검수
 
@@ -314,6 +343,7 @@ safety_watchdog + fleet_navigation: 69 tests passed
 - `43cf761 feat: add fail-closed supervised motion guard`
 - `377cb64 feat: add no-motion guard preflight`
 - `22efda6 fix: enforce DDS and e-stop motion contracts`
+- `edcbf87 fix: publish e-stop status heartbeat`
 
 ## 다음에 할 일
 
