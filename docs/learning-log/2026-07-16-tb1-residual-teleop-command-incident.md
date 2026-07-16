@@ -298,6 +298,48 @@ odom delta y: -0.000000 m
 로봇 기준 `-45°`에서 `1.452m`였다. 사용자가 시계 방향 45도 회전 반경과 케이블 상태를
 확인한 뒤 보호 회전하고, 새 정면 여유를 다시 측정한다.
 
+실제로 시계 방향 45도를 회전한 뒤 정면 여유는 `0.355m`였다. guard 회전은 성공했고
+독립 odometry는 `-46.176°`, 종료 e-stop과 0속도도 정상이었지만, 1회 스캔에서 예측한
+`1.452m`와 차이가 커서 직진하지 않았다. 이후 30회 스캔의 방향별 최소값을 비교하자
+로봇 기준 `-75°`가 최소 `0.962m`, 중앙값 `1.535m`로 가장 안정적이었다. 안전 방향 선택도
+한 장의 센서값이 아니라 시간 구간의 보수적 통계로 판단해야 한다.
+
+## 재배치 후 클린 맵 첫 구간
+
+사용자가 전방 50cm 이상 여유가 있는 위치로 로봇을 손으로 재배치했다. 손 이동은 encoder
+odometry에 반영되지 않으므로 실행 중이던 SLAM 지도를 계속 사용하면 sensor pose와 motion
+prior가 불일치한다. e-stop 상태에서 기존 초기 지도를 폐기하고 `tb1-slam-mapping`을 재시작해
+현재 물리 위치를 새 지도 기준으로 삼았다.
+
+30회 LiDAR 전방 sector의 보수적 최소값 `0.677m`를 확인한 뒤 첫 10cm 구간을 실행했다.
+
+```text
+목표: 0.1000 m
+속도: 0.0200 m/s
+guard progress: 0.1012 m
+guard elapsed: 5.37 s
+독립 odom delta x: 0.105077 m
+독립 odom delta y: 0.005871 m
+guard exit: 0
+종료 e-stop: true
+종료 /cmd_vel: linear.x=0.0, angular.z=0.0
+종료 /safety/cmd_vel_in Publisher: 0
+map known cells: 288
+map occupied cells: 51
+map unknown: 96.17%
+```
+
+시스템은 목표 이동·자동 정지·SLAM 갱신을 증명했다. 사용자의 실제 10cm 전진 방향, 충돌과
+케이블 상태 확인 전에는 다음 매핑 구간을 실행하지 않는다.
+
+## 병렬 CI 테스트 격리
+
+GitHub Actions에서 `safety_watchdog` 테스트가 `fleet_navigation`의 가짜 watchdog 응답
+`fake e-stop updated`를 받아 1회 실패했다. 제품 코드 오류가 아니라 두 패키지 통합 테스트가
+같은 절대 서비스 `/safety_watchdog/set_estop`을 ROS domain 142에서 병렬 사용한 경쟁이었다.
+가짜 서비스를 `/test/fleet_navigation/set_estop`으로 분리하고 CI와 동일한 5개 패키지 병렬
+실행에서 `116 tests, 0 errors, 0 failures`를 확인했다.
+
 ## 오늘 꼭 기억해야 할 것
 
 1. **e-stop 중 `/cmd_vel=0`은 upstream 입력이 중립이라는 증거가 아니다.**
@@ -309,6 +351,8 @@ odom delta y: -0.000000 m
 7. **잘못된 실차 데이터는 보정해서 쓰지 말고 폐기 사유와 함께 다시 측정한다.**
 8. **실차 기능은 unit test → ROS 통합 test → 실제 graph dry-run → 저속 실물 순서로 올린다.**
 9. **토픽 성공은 서비스 성공의 증거가 아니다. 모든 ROS 터미널의 RMW를 통일한다.**
+10. **로봇을 손으로 재배치하면 활성 SLAM의 odometry 전제가 깨지므로 지도를 새로 시작한다.**
+11. **ROS 통합 테스트의 절대 topic·service 이름도 패키지 간 격리해야 한다.**
 
 ## 면접에서 이렇게 설명한다
 
@@ -319,7 +363,7 @@ odom delta y: -0.000000 m
 > e-stop에 가려진 것을 놓친 것이 원인이었습니다. 즉시 e-stop, 텔레옵·SLAM·bringup 종료와
 > 데이터 폐기를 수행했고, 이후 입력 Publisher 독점권, 무동작 dry-run, odom·LiDAR 기반
 > 목표 정지와 fail-closed 종료를 가진 전용 가드를 구현했습니다. 가짜 ROS graph 통합
-> 테스트를 포함한 전체 115개 테스트와 저속 실차 guard로 재발 방지를 검증했습니다.
+> 테스트를 포함한 전체 116개 테스트와 저속 실차 guard로 재발 방지를 검증했습니다.
 
 ### “왜 사용자 실수로 보지 않았나요?”
 
@@ -360,6 +404,17 @@ odom delta y: -0.000000 m
 정답: timeout이 정상적으로 동작해도 다른 Publisher가 계속 새 명령을 보내면 로봇은 멈추지 않을
 수 있다. 최종 명령 권한과 stale 정책을 함께 통제해야 한다.
 
+### 6. 로봇을 손으로 옮긴 뒤 SLAM을 재시작한 이유는?
+
+정답: 손 이동은 wheel encoder odometry에 기록되지 않아 SLAM이 가진 sensor pose와 실제 위치가
+달라진다. 오염된 pose graph를 이어 쓰지 않고 현재 위치에서 새 기준으로 시작해야 하기 때문이다.
+
+### 7. 각 패키지 테스트는 통과했는데 전체 CI가 실패할 수 있는 이유는?
+
+정답: 같은 ROS domain에서 병렬 실행된 테스트가 동일한 절대 service 이름을 사용하면 다른
+패키지의 가짜 서버에 연결될 수 있다. 테스트 전용 namespace나 고유 service 이름으로 graph를
+격리해야 한다.
+
 ## 완료 체크리스트
 
 - [x] 사용자 충돌·파손·분리 여부 확인
@@ -369,7 +424,7 @@ odom delta y: -0.000000 m
 - [x] 단독 Publisher·센서 freshness·LiDAR clearance 검사 구현
 - [x] 무동작 dry-run 구현
 - [x] 텔레옵 공존 거부 ROS 통합 테스트
-- [x] 전체 115개 로컬 테스트 통과
+- [x] 전체 116개 로컬 테스트 통과
 - [x] TB1 실제 ROS graph dry-run 통과
 - [x] Cyclone DDS RMW 불일치 실행 거부 구현
 - [x] watchdog 시작 e-stop과 상태 토픽 구현
@@ -380,6 +435,9 @@ odom delta y: -0.000000 m
 - [x] 30도 회전 사용자 물리 관찰 확인
 - [x] TB1 전용 가드 저속 직진·회전 통과
 - [x] 전방 0.30m 미만에서 직진 차단과 무이동 확인
+- [x] 병렬 ROS 테스트 service 이름 격리
+- [x] 재배치 후 SLAM 재시작과 클린 맵 첫 10cm 시스템 측정
+- [ ] 클린 맵 첫 10cm 사용자 물리 관찰 확인
 - [ ] 깨끗한 지도 저장 및 시각 검수
 
 ## 관련 커밋
@@ -389,9 +447,11 @@ odom delta y: -0.000000 m
 - `377cb64 feat: add no-motion guard preflight`
 - `22efda6 fix: enforce DDS and e-stop motion contracts`
 - `edcbf87 fix: publish e-stop status heartbeat`
+- `d9a2671 test: cover low-clearance motion rejection`
+- `e4fcdf6 fix: isolate ROS integration service names`
 
 ## 다음에 할 일
 
-1. 30도 회전의 사용자 물리 관찰을 확인한다.
+1. 클린 맵 첫 10cm의 사용자 물리 관찰을 확인한다.
 2. 짧은 보호 이동만 사용해 깨끗한 지도를 작성한다.
 3. 지도와 pose graph를 저장하고 시각 품질을 검수한다.
