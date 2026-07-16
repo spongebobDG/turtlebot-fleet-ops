@@ -297,6 +297,18 @@ graph를 격리해 해결했다.
 정답: 로봇 ID만으로 handle을 저장하지 말고 Goal ID와 handle의 소유권을 함께 저장한다.
 result callback이 정리할 때 현재 handle의 Goal ID가 자기 ID와 일치할 때만 삭제해야 한다.
 
+### 19. 재시도 버튼이 이전 HTTP 요청을 그대로 반복하면 왜 부족한가?
+
+정답: 이전 실행과 새 실행의 결과·feedback을 구분할 Goal ID와 계보가 사라지고 동시 요청이
+같은 작업을 중복 실행할 수 있기 때문이다. 실패 상태를 lock 안에서 새 `PENDING` Goal로
+교체하고 새 Goal ID, `retry_count`, `retried_from_goal_id`를 기록해야 한다.
+
+### 20. Gateway가 마지막 e-stop 해제 버튼 응답만 기억하지 않고 상태 heartbeat를 보는 이유는?
+
+정답: e-stop은 다른 터미널이나 로봇 로컬에서도 바뀔 수 있고 네트워크 재시작 뒤 Gateway의
+기억과 실제 watchdog 상태가 다를 수 있기 때문이다. 로봇이 transient-local로 발행하는 최신
+`/safety/estop_active` 상태가 없거나 stale이거나 active이면 Goal을 fail-closed로 거부한다.
+
 ## 웹 Nav2 면접 모범 답변
 
 > FastAPI 요청을 ROS 2 `NavigateToPose` Action Client에 연결했습니다. HTTP는 Goal의
@@ -306,8 +318,10 @@ result callback이 정리할 때 현재 handle의 Goal ID가 자기 ID와 일치
 > frame을 서버에서 거부합니다. timeout이나 늦은 Goal 수락 시에는 Action 취소만 믿지 않고
 > 로컬 watchdog e-stop도 함께 적용합니다. 구현 리뷰에서 종료된 Goal이 늦은 수락으로 다시
 > 실행되는 경합과 이전 result가 새 handle을 지우는 경합을 발견해 Goal ID 기반 상태 전이와
-> 소유권 검사로 막았습니다. 가짜 Nav2 Action Server 통합 테스트를 포함해 전체 169개
-> 테스트를 통과했으며, 실차 웹 Goal은 저장 지도와 터미널 Goal 검증 후 수행하도록 분리했습니다.
+> 소유권 검사로 막았습니다. 가짜 Nav2 Action Server 통합 테스트를 포함해 전체 175개
+> 테스트를 통과했습니다. 실패 재시도는 이전 target을 새 Goal ID로 복제하고 계보를 기록하며,
+> 로봇 watchdog의 최신 e-stop heartbeat가 해제 상태일 때만 허용합니다. 실차 웹 Goal은 저장
+> 지도와 터미널 Goal 검증 후 수행하도록 분리했습니다.
 
 ## 보지 않고 다시 말할 체크리스트
 
@@ -329,6 +343,8 @@ result callback이 정리할 때 현재 handle의 Goal ID가 자기 ID와 일치
 - [ ] HTTP Goal 수락과 Nav2 최종 성공의 차이를 설명할 수 있다.
 - [ ] timeout에서 cancel과 e-stop을 함께 사용하는 이유를 설명할 수 있다.
 - [ ] 늦은 Action callback의 상태·handle 경합을 Goal ID로 막는 방법을 설명할 수 있다.
+- [ ] 실패 Goal 재시도의 새 ID·계보·동시성 정책을 설명할 수 있다.
+- [ ] 웹 명령 기억보다 로봇 e-stop heartbeat가 권위 있는 이유를 설명할 수 있다.
 
 ## 아직 실차로 검증하지 않은 것
 
@@ -368,3 +384,6 @@ result callback이 정리할 때 현재 handle의 Goal ID가 자기 ID와 일치
 
 > Goal이 수락됐다는 것은 목적지 도착 성공이 아니다. 장시간 작업은 Action 상태와 Goal ID를
 > 끝까지 추적해야 하며, timeout의 최종 안전은 원격 취소가 아니라 로봇 로컬 e-stop이 맡는다.
+
+> 재시도는 같은 요청의 반복이 아니라 이전 실패와 연결된 새 작업이다. 새 Goal ID와 계보를
+> 남기고, 로봇이 보고한 최신 e-stop 해제 상태가 확인될 때만 실행한다.
