@@ -202,13 +202,14 @@ main { padding: 34px 0 80px; }
 
 .navigation-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 9px;
   margin-top: 13px;
 }
 
 .goal { background: #17684f; border-color: #25866a; }
 .cancel { background: transparent; }
+.retry { background: #5f4614; border-color: #8b6a23; }
 
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
 button { padding: 12px; color: var(--text); font: inherit; font-weight: 800; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }

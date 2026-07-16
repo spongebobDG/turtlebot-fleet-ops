@@ -10,6 +10,7 @@
         ],
         "subscribers": [
           "^/fleet/robot_status$",
+          "^/safety/estop_active$",
           "^/scan$",
           "^/scan_normalized$",
           "^/odom$",

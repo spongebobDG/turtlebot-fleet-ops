@@ -14,6 +14,9 @@ ACTIVE_NAVIGATION_STATUSES = frozenset(
 TERMINAL_NAVIGATION_STATUSES = frozenset(
     {"SUCCEEDED", "ABORTED", "CANCELED", "REJECTED", "TIMEOUT"}
 )
+RETRYABLE_NAVIGATION_STATUSES = frozenset(
+    {"ABORTED", "REJECTED", "TIMEOUT"}
+)
 
 
 class NavigationConflict(RuntimeError):
@@ -23,6 +26,17 @@ class NavigationConflict(RuntimeError):
         super().__init__(f"{robot_id} already has active goal {goal_id}")
         self.robot_id = robot_id
         self.goal_id = goal_id
+
+
+class NavigationRetryNotAllowed(RuntimeError):
+    """Raised when the latest goal is not a retryable failure."""
+
+    def __init__(self, robot_id: str, status: str) -> None:
+        super().__init__(
+            f"{robot_id} navigation status {status} cannot be retried"
+        )
+        self.robot_id = robot_id
+        self.status = status
 
 
 @dataclass
@@ -40,6 +54,8 @@ class _NavigationRecord:
     deadline_monotonic: float
     timeout_sec: float
     timeout_requested: bool = False
+    retry_count: int = 0
+    retried_from_goal_id: Optional[str] = None
 
 
 class NavigationRegistry:
@@ -86,6 +102,42 @@ class NavigationRegistry:
                 updated_at=now_wall,
                 deadline_monotonic=now_monotonic + timeout,
                 timeout_sec=timeout,
+            )
+            self._records[robot_id] = record
+            return self._snapshot(record)
+
+    def begin_retry(
+        self,
+        robot_id: str,
+        goal_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Atomically replace the latest failed goal with one retry."""
+        now_monotonic = self._monotonic_clock()
+        now_wall = self._wall_clock()
+        with self._lock:
+            current = self._records.get(robot_id)
+            status = "IDLE" if current is None else current.status
+            if current is None or status not in (
+                RETRYABLE_NAVIGATION_STATUSES
+            ):
+                raise NavigationRetryNotAllowed(robot_id, status)
+
+            identifier = goal_id or str(uuid4())
+            record = _NavigationRecord(
+                goal_id=identifier,
+                robot_id=robot_id,
+                target=deepcopy(current.target),
+                status="PENDING",
+                message="Waiting for retried Nav2 goal acceptance",
+                feedback={},
+                created_at=now_wall,
+                updated_at=now_wall,
+                deadline_monotonic=(
+                    now_monotonic + current.timeout_sec
+                ),
+                timeout_sec=current.timeout_sec,
+                retry_count=current.retry_count + 1,
+                retried_from_goal_id=current.goal_id,
             )
             self._records[robot_id] = record
             return self._snapshot(record)
@@ -242,4 +294,6 @@ class NavigationRegistry:
             "updated_at": record.updated_at,
             "timeout_sec": record.timeout_sec,
             "timeout_requested": record.timeout_requested,
+            "retry_count": record.retry_count,
+            "retried_from_goal_id": record.retried_from_goal_id,
         }

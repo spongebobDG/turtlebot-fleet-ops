@@ -2,6 +2,7 @@ import pytest
 
 from fleet_gateway.navigation import NavigationConflict
 from fleet_gateway.navigation import NavigationRegistry
+from fleet_gateway.navigation import NavigationRetryNotAllowed
 
 
 class Clocks:
@@ -70,6 +71,45 @@ def test_terminal_goal_can_be_replaced_but_stale_callback_is_ignored():
     assert registry.finish("tb1", "old", "SUCCEEDED", "late") is False
     assert registry.get("tb1")["goal_id"] == "new"
     assert registry.get("tb1")["status"] == "PENDING"
+
+
+def test_failed_goal_retry_preserves_target_and_tracks_lineage():
+    clocks = Clocks()
+    registry = make_registry(clocks)
+    registry.begin(
+        "tb1",
+        {"x": 1.0, "y": 2.0, "frame_id": "map"},
+        45.0,
+        goal_id="failed",
+    )
+    registry.finish("tb1", "failed", "ABORTED", "blocked")
+
+    clocks.monotonic = 20.0
+    clocks.wall = 1010.0
+    retried = registry.begin_retry("tb1", goal_id="retry")
+
+    assert retried["status"] == "PENDING"
+    assert retried["target"]["y"] == 2.0
+    assert retried["timeout_sec"] == 45.0
+    assert retried["retry_count"] == 1
+    assert retried["retried_from_goal_id"] == "failed"
+    with pytest.raises(NavigationRetryNotAllowed) as error:
+        registry.begin_retry("tb1")
+    assert error.value.status == "PENDING"
+
+
+@pytest.mark.parametrize("status", ["PENDING", "SUCCEEDED", "CANCELED"])
+def test_retry_rejects_non_failure_states(status):
+    clocks = Clocks()
+    registry = make_registry(clocks)
+    registry.begin("tb1", {"x": 1.0}, 30.0, goal_id="goal")
+    if status != "PENDING":
+        registry.finish("tb1", "goal", status, "terminal")
+
+    with pytest.raises(NavigationRetryNotAllowed) as error:
+        registry.begin_retry("tb1")
+
+    assert error.value.status == status
 
 
 def test_expired_goal_cannot_return_to_running_after_late_acceptance():

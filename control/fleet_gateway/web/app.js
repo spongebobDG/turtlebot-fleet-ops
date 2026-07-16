@@ -46,6 +46,7 @@ const navigationPanel = (robot, navigation) => {
   const draft = goalDrafts.get(robotId);
   const status = navigation?.status || "IDLE";
   const active = ["PENDING", "RUNNING", "CANCELING"].includes(status);
+  const retryable = ["ABORTED", "REJECTED", "TIMEOUT"].includes(status);
   const feedback = navigation?.feedback || {};
   return `
     <section class="navigation-panel" data-navigation-robot="${safeRobotId}">
@@ -66,6 +67,7 @@ const navigationPanel = (robot, navigation) => {
       <div class="navigation-actions">
         <button class="goal" data-action="goal" data-robot="${safeRobotId}" ${robot.online && !active ? "" : "disabled"}>목적지 전송</button>
         <button class="cancel" data-action="cancel" data-robot="${safeRobotId}" ${active ? "" : "disabled"}>주행 취소</button>
+        <button class="retry" data-action="retry" data-robot="${safeRobotId}" ${robot.online && retryable ? "" : "disabled"}>재시도</button>
       </div>
     </section>`;
 };
@@ -247,6 +249,27 @@ const requestCancel = async (button) => {
   }
 };
 
+const requestRetry = async (button) => {
+  const robotId = button.dataset.robot;
+  if (!window.confirm(
+    `${robotId}의 마지막 실패 목적지를 다시 전송할까요? 비상 정지를 먼저 해제하고 주변 안전을 확인해야 합니다.`,
+  )) return;
+  button.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robotId)}/navigation/retry`,
+      { method: "POST" },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "재시도 요청 실패");
+    showToast(`Goal ${body.goal_id} 재시도가 수락되었습니다.`);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+};
+
 grid.addEventListener("input", (event) => {
   const input = event.target.closest("input[data-field]");
   if (!input) return;
@@ -263,6 +286,7 @@ grid.addEventListener("click", async (event) => {
   if (button.dataset.action === "estop") await requestEStop(button);
   if (button.dataset.action === "goal") await requestGoal(button);
   if (button.dataset.action === "cancel") await requestCancel(button);
+  if (button.dataset.action === "retry") await requestRetry(button);
 });
 
 connect();

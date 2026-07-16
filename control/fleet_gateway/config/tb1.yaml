@@ -8,6 +8,9 @@ fleet_gateway:
       - tb1
     estop_services:
       - /safety_watchdog/set_estop
+    estop_status_topics:
+      - /safety/estop_active
+    estop_status_max_age_sec: 2.0
     navigation_actions:
       - /navigate_to_pose
     navigation_server_wait_sec: 1.0

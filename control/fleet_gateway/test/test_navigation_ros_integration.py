@@ -6,6 +6,8 @@ import rclpy
 from rclpy.action import ActionServer, CancelResponse
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool
 
 from fleet_gateway.ros_node import FleetGatewayNode
 
@@ -14,6 +16,17 @@ class FakeNavigateToPoseServer(Node):
 
     def __init__(self):
         super().__init__("fake_navigate_to_pose_server")
+        estop_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.estop_publisher = self.create_publisher(
+            Bool,
+            "/safety/estop_active",
+            estop_qos,
+        )
+        self.estop_publisher.publish(Bool(data=False))
         self.server = ActionServer(
             self,
             NavigateToPose,
@@ -29,6 +42,10 @@ class FakeNavigateToPoseServer(Node):
         feedback.distance_remaining = 0.75
         feedback.estimated_time_remaining.sec = 2
         goal_handle.publish_feedback(feedback)
+
+        if goal_handle.request.pose.pose.position.x < 0.0:
+            goal_handle.abort()
+            return NavigateToPose.Result()
 
         should_wait = goal_handle.request.pose.pose.position.x >= 5.0
         if should_wait:
@@ -67,6 +84,15 @@ def send(gateway, x, timeout_sec=3.0):
     )
 
 
+def wait_for_safety_gate(gateway, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if gateway._navigation_safety_failure("tb1") is None:
+            return
+        time.sleep(0.02)
+    raise AssertionError("gateway did not receive released e-stop status")
+
+
 def test_real_ros_action_success_cancel_and_timeout_flow():
     rclpy.init()
     server = FakeNavigateToPoseServer()
@@ -74,10 +100,18 @@ def test_real_ros_action_success_cancel_and_timeout_flow():
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(server)
     executor.add_node(gateway)
+    unknown = gateway._navigation_safety_failure("tb1")
+    assert unknown is not None
+    assert unknown["code"] == "estop_state_unknown"
+    gateway._estop_states["tb1"] = (False, time.monotonic() - 3.0)
+    stale = gateway._navigation_safety_failure("tb1")
+    assert stale is not None
+    assert stale["code"] == "estop_state_stale"
     thread = threading.Thread(target=executor.spin, daemon=True)
     thread.start()
 
     try:
+        wait_for_safety_gate(gateway)
         success = send(gateway, 1.0)
         assert success["success"] is True
         succeeded = wait_for_status(gateway, "SUCCEEDED")
@@ -93,6 +127,18 @@ def test_real_ros_action_success_cancel_and_timeout_flow():
         assert timed["success"] is True
         timeout = wait_for_status(gateway, "TIMEOUT")
         assert timeout["timeout_requested"] is True
+
+        gateway._record_estop_state("tb1", True)
+        blocked_retry = gateway.retry_navigation("tb1")
+        assert blocked_retry["code"] == "estop_active"
+
+        gateway._record_estop_state("tb1", False)
+        retried = gateway.retry_navigation("tb1")
+        assert retried["success"] is True
+        assert retried["retry_count"] == 1
+        assert retried["retried_from_goal_id"] == timed["goal_id"]
+        gateway.cancel_navigation("tb1")
+        wait_for_status(gateway, "CANCELED")
     finally:
         executor.shutdown(timeout_sec=2.0)
         server.destroy_node()

@@ -13,6 +13,7 @@
 - `POST /api/robots/{robot_id}/navigation/goals`: map 좌표 Goal 전송
 - `GET /api/robots/{robot_id}/navigation`: 마지막 Goal 상태 조회
 - `POST /api/robots/{robot_id}/navigation/cancel`: 활성 Goal 취소
+- `POST /api/robots/{robot_id}/navigation/retry`: 마지막 실패 Goal 재시도
 - `WS /ws/robots`: 0.5초 주기의 로봇·Goal 상태 snapshot
 - `GET /`: 단일 로봇 관제 대시보드
 
@@ -40,12 +41,18 @@ curl -X POST http://localhost:8000/api/robots/tb1/navigation/goals \
 
 curl http://localhost:8000/api/robots/tb1/navigation
 curl -X POST http://localhost:8000/api/robots/tb1/navigation/cancel
+curl -X POST http://localhost:8000/api/robots/tb1/navigation/retry
 ```
 
 좌표는 유한한 숫자와 `map` frame만 허용한다. 오프라인 로봇은 새 Goal을 거부한다.
 비상정지는 먼저 로컬 watchdog를 정지 상태로 만들고 활성 Goal 취소를 요청한다. 활성
 Goal이 남은 동안에는 비상정지 해제를 거부한다. Goal timeout이나 늦은 수락은 fail-closed로
 비상정지를 적용하고 Action 취소를 요청한다.
+
+새 Goal과 재시도는 watchdog의 `/safety/estop_active` heartbeat가 최신이고 해제 상태일
+때만 허용한다. 재시도 가능한 상태는 `ABORTED`, `REJECTED`, `TIMEOUT`이며 새 Goal ID와
+`retry_count`, `retried_from_goal_id`를 반환한다. 성공 Goal과 사용자가 취소한 Goal은
+재시도하지 않는다.
 
 ## 실행
 

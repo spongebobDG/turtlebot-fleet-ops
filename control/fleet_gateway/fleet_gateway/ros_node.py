@@ -2,6 +2,7 @@
 
 import math
 import threading
+import time
 from typing import Any, Dict, Mapping, Optional
 from uuid import UUID as PythonUUID
 
@@ -10,11 +11,17 @@ from fleet_interfaces.msg import RobotStatus
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
+from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 from unique_identifier_msgs.msg import UUID
 
 from fleet_gateway.navigation import NavigationConflict
 from fleet_gateway.navigation import NavigationRegistry
+from fleet_gateway.navigation import NavigationRetryNotAllowed
+from fleet_gateway.navigation import RETRYABLE_NAVIGATION_STATUSES
 from fleet_gateway.registry import StatusRegistry
 
 
@@ -169,6 +176,11 @@ class FleetGatewayNode(Node):
             ["/safety_watchdog/set_estop"],
         )
         self.declare_parameter(
+            "estop_status_topics",
+            ["/safety/estop_active"],
+        )
+        self.declare_parameter("estop_status_max_age_sec", 2.0)
+        self.declare_parameter(
             "navigation_actions",
             ["/navigate_to_pose"],
         )
@@ -187,20 +199,47 @@ class FleetGatewayNode(Node):
 
         robot_ids = list(self.get_parameter("robot_ids").value)
         service_names = list(self.get_parameter("estop_services").value)
+        estop_status_topics = list(
+            self.get_parameter("estop_status_topics").value
+        )
         action_names = list(
             self.get_parameter("navigation_actions").value
         )
         if not (
-            len(robot_ids) == len(service_names) == len(action_names)
+            len(robot_ids)
+            == len(service_names)
+            == len(estop_status_topics)
+            == len(action_names)
         ):
             raise ValueError(
-                "robot_ids, estop_services, and navigation_actions must "
-                "have the same length"
+                "robot_ids, estop_services, estop_status_topics, and "
+                "navigation_actions must have the same length"
             )
         self._estop_clients = {
             robot_id: self.create_client(SetBool, service_name)
             for robot_id, service_name in zip(robot_ids, service_names)
         }
+        self._estop_state_lock = threading.RLock()
+        self._estop_states: Dict[str, tuple[bool, float]] = {}
+        estop_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._estop_status_subscriptions = [
+            self.create_subscription(
+                Bool,
+                topic_name,
+                lambda message, rid=robot_id: (
+                    self._estop_status_callback(rid, message)
+                ),
+                estop_qos,
+            )
+            for robot_id, topic_name in zip(
+                robot_ids,
+                estop_status_topics,
+            )
+        ]
         self.navigation = NavigationRegistry()
         self._navigation_clients = {
             robot_id: ActionClient(self, NavigateToPose, action_name)
@@ -229,6 +268,55 @@ class FleetGatewayNode(Node):
 
     def _status_callback(self, message: RobotStatus) -> None:
         self.registry.update(status_message_to_dict(message))
+
+    def _estop_status_callback(
+        self,
+        robot_id: str,
+        message: Bool,
+    ) -> None:
+        self._record_estop_state(robot_id, bool(message.data))
+
+    def _record_estop_state(
+        self,
+        robot_id: str,
+        active: bool,
+    ) -> None:
+        with self._estop_state_lock:
+            self._estop_states[robot_id] = (
+                bool(active),
+                time.monotonic(),
+            )
+
+    def _navigation_safety_failure(
+        self,
+        robot_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self._estop_state_lock:
+            state = self._estop_states.get(robot_id)
+        if state is None:
+            return self._navigation_failure(
+                robot_id,
+                "estop_state_unknown",
+                "Emergency-stop status has not been received",
+            )
+        active, received_at = state
+        max_age = float(
+            self.get_parameter("estop_status_max_age_sec").value
+        )
+        age = time.monotonic() - received_at
+        if age > max_age:
+            return self._navigation_failure(
+                robot_id,
+                "estop_state_stale",
+                f"Emergency-stop status is stale ({age:.2f}s)",
+            )
+        if active:
+            return self._navigation_failure(
+                robot_id,
+                "estop_active",
+                "Release emergency stop before sending a navigation goal",
+            )
+        return None
 
     def set_estop(self, robot_id: str, engaged: bool) -> Dict[str, Any]:
         """Call a robot watchdog service from the HTTP worker thread."""
@@ -277,8 +365,11 @@ class FleetGatewayNode(Node):
                 "engaged": engaged,
                 "message": "Emergency-stop service returned no response",
             }
+        success = bool(response.success)
+        if success:
+            self._record_estop_state(robot_id, engaged)
         return {
-            "success": bool(response.success),
+            "success": success,
             "robot_id": robot_id,
             "engaged": engaged,
             "message": response.message,
@@ -299,22 +390,9 @@ class FleetGatewayNode(Node):
         timeout_sec: float,
     ) -> Dict[str, Any]:
         """Send a Nav2 goal and wait only for accept or reject."""
-        client = self._navigation_clients.get(robot_id)
-        if client is None:
-            return self._navigation_failure(
-                robot_id,
-                "not_configured",
-                "No NavigateToPose action configured",
-            )
-        server_wait = float(
-            self.get_parameter("navigation_server_wait_sec").value
-        )
-        if not client.wait_for_server(timeout_sec=server_wait):
-            return self._navigation_failure(
-                robot_id,
-                "action_unavailable",
-                "NavigateToPose action server is unavailable",
-            )
+        client, failure = self._ready_navigation_client(robot_id)
+        if failure is not None:
+            return failure
 
         try:
             record = self.navigation.begin(
@@ -329,7 +407,63 @@ class FleetGatewayNode(Node):
                 str(error),
                 goal_id=error.goal_id,
             )
+        return self._dispatch_navigation_goal(client, record)
 
+    def retry_navigation(self, robot_id: str) -> Dict[str, Any]:
+        """Retry the latest failed goal after all safety gates pass."""
+        current = self.navigation.get(robot_id)
+        status = "IDLE" if current is None else current["status"]
+        if status not in RETRYABLE_NAVIGATION_STATUSES:
+            return self._navigation_failure(
+                robot_id,
+                "retry_not_allowed",
+                f"{robot_id} navigation status {status} cannot be retried",
+            )
+        client, failure = self._ready_navigation_client(robot_id)
+        if failure is not None:
+            return failure
+        try:
+            record = self.navigation.begin_retry(robot_id)
+        except NavigationRetryNotAllowed as error:
+            return self._navigation_failure(
+                robot_id,
+                "retry_not_allowed",
+                str(error),
+            )
+        return self._dispatch_navigation_goal(client, record)
+
+    def _ready_navigation_client(
+        self,
+        robot_id: str,
+    ) -> tuple[Optional[Any], Optional[Dict[str, Any]]]:
+        client = self._navigation_clients.get(robot_id)
+        if client is None:
+            return None, self._navigation_failure(
+                robot_id,
+                "not_configured",
+                "No NavigateToPose action configured",
+            )
+        server_wait = float(
+            self.get_parameter("navigation_server_wait_sec").value
+        )
+        if not client.wait_for_server(timeout_sec=server_wait):
+            return None, self._navigation_failure(
+                robot_id,
+                "action_unavailable",
+                "NavigateToPose action server is unavailable",
+            )
+        safety_failure = self._navigation_safety_failure(robot_id)
+        if safety_failure is not None:
+            return None, safety_failure
+        return client, None
+
+    def _dispatch_navigation_goal(
+        self,
+        client: Any,
+        record: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        robot_id = str(record["robot_id"])
+        target = record["target"]
         goal_id = str(record["goal_id"])
         goal_uuid = UUID(uuid=list(PythonUUID(goal_id).bytes))
         goal = navigation_goal_from_target(
@@ -654,7 +788,28 @@ class FleetGatewayNode(Node):
             return
         request = SetBool.Request()
         request.data = True
-        client.call_async(request)
+        future = client.call_async(request)
+        future.add_done_callback(
+            lambda response, rid=robot_id: (
+                self._record_async_estop_response(rid, response)
+            )
+        )
+
+    def _record_async_estop_response(
+        self,
+        robot_id: str,
+        future: Any,
+    ) -> None:
+        try:
+            response = future.result()
+        except Exception as error:  # noqa: B902 - ROS future boundary
+            self.get_logger().error(
+                f"Emergency-stop callback failed robot_id={robot_id}: "
+                f"{error}"
+            )
+            return
+        if response is not None and response.success:
+            self._record_estop_state(robot_id, True)
 
     @staticmethod
     def _navigation_failure(

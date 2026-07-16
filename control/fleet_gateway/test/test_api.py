@@ -24,6 +24,8 @@ class FakeNavigationController:
     def __init__(self):
         self.goal_calls = []
         self.cancel_calls = []
+        self.retry_calls = []
+        self.retry_result = None
         self.current = None
 
     def send_navigation_goal(self, robot_id, target, timeout_sec):
@@ -46,6 +48,22 @@ class FakeNavigationController:
             "robot_id": robot_id,
             "status": "CANCELING",
         }
+
+    def retry_navigation(self, robot_id):
+        self.retry_calls.append(robot_id)
+        if self.retry_result is not None:
+            return dict(self.retry_result)
+        previous = self.current or {}
+        self.current = {
+            "robot_id": robot_id,
+            "goal_id": "goal-retry",
+            "target": previous.get("target", {}),
+            "status": "RUNNING",
+            "feedback": {},
+            "retry_count": 1,
+            "retried_from_goal_id": previous.get("goal_id"),
+        }
+        return {"success": True, **self.current}
 
     def get_navigation(self, robot_id):
         if self.current is None or self.current["robot_id"] != robot_id:
@@ -198,6 +216,44 @@ def test_navigation_goal_status_and_cancel_routes():
     assert status.json()["status"] == "RUNNING"
     assert canceled.status_code == 200
     assert navigation.cancel_calls == ["tb1"]
+
+
+def test_navigation_retry_route_returns_goal_lineage():
+    navigation = FakeNavigationController()
+    navigation.send_navigation_goal(
+        "tb1",
+        {"x": 1.0, "y": 0.0, "yaw": 0.0, "frame_id": "map"},
+        30.0,
+    )
+    navigation.current["status"] = "ABORTED"
+    client = TestClient(
+        create_app(make_registry(), navigation_controller=navigation)
+    )
+
+    response = client.post("/api/robots/tb1/navigation/retry")
+
+    assert response.status_code == 202
+    assert response.json()["retry_count"] == 1
+    assert response.json()["retried_from_goal_id"] == "goal-1"
+    assert navigation.retry_calls == ["tb1"]
+
+
+def test_navigation_retry_safety_conflict_returns_409():
+    navigation = FakeNavigationController()
+    navigation.retry_result = {
+        "success": False,
+        "robot_id": "tb1",
+        "code": "estop_active",
+        "message": "release emergency stop",
+    }
+    client = TestClient(
+        create_app(make_registry(), navigation_controller=navigation)
+    )
+
+    response = client.post("/api/robots/tb1/navigation/retry")
+
+    assert response.status_code == 409
+    assert navigation.retry_calls == ["tb1"]
 
 
 def test_navigation_goal_rejects_invalid_frame_and_non_finite_value():

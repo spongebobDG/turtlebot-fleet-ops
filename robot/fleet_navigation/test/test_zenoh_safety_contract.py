@@ -40,6 +40,8 @@ def test_robot_status_and_estop_have_both_route_halves() -> None:
 
     assert _matches(robot["publishers"], "/fleet/robot_status")
     assert _matches(control["subscribers"], "/fleet/robot_status")
+    assert _matches(robot["publishers"], "/safety/estop_active")
+    assert _matches(control["subscribers"], "/safety/estop_active")
     assert _matches(
         robot["service_servers"],
         "/safety_watchdog/set_estop",

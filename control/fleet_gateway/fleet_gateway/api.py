@@ -34,6 +34,9 @@ class NavigationController(Protocol):
     def cancel_navigation(self, robot_id: str) -> Dict[str, Any]:
         """Request cancellation of a robot's active goal."""
 
+    def retry_navigation(self, robot_id: str) -> Dict[str, Any]:
+        """Retry the latest failed goal after ROS safety checks."""
+
     def get_navigation(self, robot_id: str) -> Optional[Dict[str, Any]]:
         """Return the latest navigation state for one robot."""
 
@@ -229,6 +232,45 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail=result.get("message", "Navigation cancel failed"),
+            )
+        return result
+
+    @app.post(
+        "/api/robots/{robot_id}/navigation/retry",
+        status_code=202,
+    )
+    async def retry_navigation(robot_id: str) -> Dict[str, Any]:
+        robot = registry.get(robot_id)
+        if robot is None:
+            raise HTTPException(status_code=404, detail="Unknown robot")
+        if not robot["online"]:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot retry navigation while robot is offline",
+            )
+        if navigation_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Navigation controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            navigation_controller.retry_navigation,
+            robot_id,
+        )
+        if not result.get("success", False):
+            conflict_codes = {
+                "active_goal",
+                "retry_not_allowed",
+                "estop_active",
+                "estop_state_unknown",
+                "estop_state_stale",
+            }
+            status_code = (
+                409 if result.get("code") in conflict_codes else 503
+            )
+            raise HTTPException(
+                status_code=status_code,
+                detail=result.get("message", "Navigation retry failed"),
             )
         return result
 
