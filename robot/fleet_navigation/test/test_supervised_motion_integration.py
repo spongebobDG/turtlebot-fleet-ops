@@ -47,7 +47,7 @@ class FakeWatchdog(Node):
         )
         self._service = self.create_service(
             SetBool,
-            "/safety_watchdog/set_estop",
+            "/test/fleet_navigation/set_estop",
             self._on_estop,
         )
         self._timer = self.create_timer(0.02, self._publish)
@@ -147,6 +147,10 @@ def _motion_parameters() -> list:
         Parameter("speed", value=0.03),
         Parameter("timeout_sec", value=3.0),
         Parameter("preflight_sec", value=1.0),
+        Parameter(
+            "estop_service",
+            value="/test/fleet_navigation/set_estop",
+        ),
     ]
 
 
