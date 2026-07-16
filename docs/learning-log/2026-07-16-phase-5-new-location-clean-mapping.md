@@ -136,6 +136,32 @@ best-effort로 일치했다. `/map` timestamp도 계속 갱신됐으며 `base_sc
 진단 지도를 폐기하고, 무동작 기준 검사 후 다음 짧은 이동에서 두 번째 그래프 노드와 지도
 갱신을 함께 검증한다.
 
+## TB1 배포와 새 그래프 기준
+
+로컬 `fleet_navigation` 82개 테스트와 누적 146개 테스트가 모두 통과한 뒤 커밋
+`b1325a6`을 TB1에 fast-forward로 배포하고 패키지를 다시 빌드했다. transient systemd
+unit은 stop 뒤 정의가 사라지므로 일반 start가 실패했고, 같은 안전 환경 변수를 가진
+`systemd-run --user` 명령으로 `tb1-slam-mapping.service`를 재생성했다.
+
+```text
+deployed commit: b1325a6
+tb1-bringup: active
+tb1-slam-mapping: active
+tb1-safety-watchdog: active
+scan_queue_size: 10
+minimum_travel_distance: 0.05m
+/scan_normalized: about 9.9Hz
+new pose graph baseline: 1 node
+checkpoint dry-run: PASS, translation=0.0002m, yaw=3.28deg
+final e-stop: true
+final /cmd_vel: 0
+final safe input Publisher: 0
+```
+
+SLAM 재시작은 지도만 새로 만들고 bringup과 odom은 유지했다. 따라서 운영 pose 체크포인트는
+현재 odom과 계속 일치했고 reset 없이 dry-run을 통과했다. 새 그래프는 의도적으로 1노드에서
+시작했으며 다음 승인된 짧은 이동 뒤 2개 이상으로 늘어나는지가 설정 수정의 실차 합격 기준이다.
+
 ## 오늘 꼭 기억해야 할 것
 
 1. **새 장소로 들어 옮긴 로봇은 이전 odom·SLAM pose graph를 이어 쓰지 않는다.**
@@ -197,6 +223,8 @@ best-effort로 일치했다. `/map` timestamp도 계속 갱신됐으며 `base_sc
 - [x] 두 번째 이동 종료 e-stop·0속도·입력 Publisher 0 확인
 - [x] scan·TF·pose graph·로그 기반 지도 미갱신 진단
 - [x] scan queue와 최소 이동 등록 임계값 설정 보정
+- [x] 설정 테스트·TB1 배포·SLAM 새 그래프 재시작
+- [x] 배포 후 무동작 dry-run과 최종 안전 상태 확인
 - [ ] 지도 known cell 증가와 loop closure 검증
 - [ ] 최종 지도 저장·round-trip·시각 검수
 
@@ -210,4 +238,4 @@ best-effort로 일치했다. `/map` timestamp도 계속 갱신됐으며 `base_sc
 
 - `b490da8 feat: guard motion across command boundaries`
 - `c35bb07 test: avoid partial ROS node cleanup warning`
-- 새 장소 실차 결과 커밋: 작성 예정
+- `b1325a6 fix: retain SLAM scans during short mapping steps`
