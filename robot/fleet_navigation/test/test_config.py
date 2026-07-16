@@ -48,6 +48,14 @@ def test_navigation_frames_and_scan_match_tb1_bringup() -> None:
     )
 
 
+def test_slam_keeps_enough_scans_for_short_supervised_steps() -> None:
+    config = _load_yaml(PACKAGE_ROOT / "config" / "tb1_slam.yaml")
+    slam = config["slam_toolbox"]["ros__parameters"]
+
+    assert slam["scan_queue_size"] >= 10
+    assert slam["minimum_travel_distance"] <= slam["resolution"]
+
+
 def test_watchdog_uses_navigation_safe_input() -> None:
     config = _load_yaml(
         ROBOT_ROOT / "safety_watchdog" / "config" / "tb1.yaml"

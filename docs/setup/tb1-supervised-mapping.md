@@ -207,3 +207,24 @@ pkill -INT -f 'supervised_motion|teleop_keyboard|turtlebot3_teleop' || true
 
 관련 분석은 [잔류 텔레옵 명령 Incident](../learning-log/2026-07-16-tb1-residual-teleop-command-incident.md)와
 [RMW 혼용 서비스 시간 초과 사례](../case-studies/zenoh-service-timeout-rmw-mismatch.md)를 참고한다.
+
+## 9. 이동해도 지도가 갱신되지 않을 때
+
+안전 이동이 성공했는데 `/map`의 known/free/occupied cell이 반복해서 같다면 추가 이동부터
+하지 않는다. 다음 항목을 순서대로 확인한다.
+
+```bash
+ros2 topic hz /scan_normalized
+ros2 topic info /scan_normalized --verbose
+ros2 topic echo /map --once --field header
+ros2 run tf2_ros tf2_monitor base_scan odom
+ros2 topic echo /slam_toolbox/graph_visualization --once
+journalctl --user -u tb1-slam-mapping.service --no-pager | \
+  grep -Ei 'drop|queue|transform|warn|error'
+```
+
+TB1의 LDS-02는 약 10Hz로 발행한다. `scan_queue_size=1`은 Raspberry Pi의 짧은 TF·CPU
+스케줄링 지연에도 스캔을 버릴 수 있고 실제로 `queue is full` 로그가 관찰됐다. 프로젝트
+설정은 약 1초 분량인 10개를 보관한다. 또한 보호 매핑의 한 구간이 5cm부터 시작하므로
+`minimum_travel_distance`도 지도 해상도와 같은 5cm로 둔다. 설정을 바꾼 뒤에는 SLAM을
+재시작하고 새 그래프에서 두 번째 노드와 지도 갱신을 실차로 다시 검증한다.
