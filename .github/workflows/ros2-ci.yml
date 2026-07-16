@@ -35,7 +35,7 @@ jobs:
             --ignore-src \
             --rosdistro humble \
             --skip-keys ament_python \
-            --yes
+            -y
 
       - name: Build workspace packages
         shell: bash
