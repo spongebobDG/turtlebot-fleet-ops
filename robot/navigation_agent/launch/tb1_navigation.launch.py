@@ -58,7 +58,7 @@ def generate_launch_description() -> LaunchDescription:
             GroupAction(
                 [
                     SetRemap(
-                        src="/cmd_vel",
+                        src="cmd_vel_smoothed",
                         dst="/motion/navigation/cmd_vel",
                     ),
                     IncludeLaunchDescription(
