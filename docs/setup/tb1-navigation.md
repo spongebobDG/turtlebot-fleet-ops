@@ -4,9 +4,34 @@
 전원 스위치에 손이 닿는 위치에 있어야 한다. 아래 체크박스는 실제 측정 뒤에만
 완료로 바꾼다.
 
-저장소 자동 검증 기준선은 Draft PR #7의 Ubuntu 22.04 ROS 2 Humble 실행이다. 5개
-패키지 빌드와 격리 domain 142의 87개 테스트가 오류·실패·skip 없이 통과했다. 이 결과는
-실차의 센서 정합, 정지시간 또는 자원 사용량을 대신하지 않는다.
+저장소 자동 검증 기준선은 Draft PR #7의
+[Actions 실행 29585666278](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29585666278)이다.
+Ubuntu 22.04 ROS 2 Humble에서 5개 패키지 빌드, 격리 domain 142의 89개 테스트와
+robotless Nav2 stack smoke가 통과했다. 이 결과는 실차의 센서 정합, 정지시간 또는
+자원 사용량을 대신하지 않는다.
+
+## 로봇 없는 자동 통합 검증
+
+Ubuntu 22.04와 ROS 2 Humble에서 workspace를 빌드한 뒤 실행한다.
+
+```bash
+ROS_DOMAIN_ID=142 bash infra/navigation/run-robotless-navigation-smoke.sh
+```
+
+script는 임시 free map과 TF·odom·scan·AMCL·RobotStatus fixture를 만들고 실제
+Nav2·AMCL·navigation agent·arbiter·watchdog·Gateway를 실행한다. 웹과 같은 REST
+경로로 초기 위치, 목표 성공, 명시적 취소와 e-stop 후 무재개를 확인한다. 마지막에는
+`/cmd_vel`의 유일한 publisher, 중간 Nav2 publisher, `0.05 m/s`·`0.3 rad/s` 상한과
+최종 0을 검사한다.
+
+이 검증은 launch/parameter/lifecycle/action/REST/topic 연결을 실제 Humble graph에서
+검사한다. LiDAR와 지도 정합, 바퀴 미끄러짐, 물리 정지시간, Zenoh 단절, systemd 장애
+복구와 Raspberry Pi 자원 사용량은 아래 실차 절차에 남는다.
+
+[Nav2 Getting Started](https://docs.nav2.org/getting_started/index.html)는 TurtleBot3 Gazebo
+simulation을 사용하고, [ROBOTIS simulation 안내](https://emanual.robotis.com/docs/en/platform/turtlebot3/simulation/)도
+센서가 없는 fake node보다 SLAM·Navigation에는 Gazebo를 권장한다. 이 CI fixture는
+Gazebo 대체품이 아니라 ROS graph와 안전 계약을 빠르고 결정적으로 검사하는 계층이다.
 
 ## 1. 전제 조건
 
@@ -152,6 +177,33 @@ systemctl --user start tb1-mapping.service
 ```
 
 ## 7. 실차 완료 체크리스트
+
+### 예상 소요시간
+
+TB1 SSH 접속, 관제 WSL과 빈 시험 공간이 이미 준비됐다는 기준으로 `3시간 5분~4시간
+35분`을 예상한다. 2026-07-17 현재 관제 PC에는 WSL Ubuntu 배포판이 없고 TB1 SSH가
+연결되지 않았으므로 환경 준비 `30~60분`을 더한 총 달력 시간은 `3시간 35분~5시간
+35분`이다. 최대 추정치와 재시험 buffer 40분을 포함해 한 번의 시험 창은 `6시간
+15분`을 확보한다.
+
+[Nav2의 실물 TurtleBot3 기본 튜토리얼](https://docs.nav2.org/tutorials/docs/navigation2_on_real_turtlebot3.html)은
+기본 절차를 약 1시간으로 안내한다. 아래 산정은 여기에 지도·pose graph 작성, 웹 WARN,
+e-stop·lease·네 프로세스 장애 주입, 10분 자원 측정과 증거 문서화를 더한 프로젝트
+완료 기준이다.
+
+| 작업 | 예상 |
+| --- | ---: |
+| TB1 접속·배포·bringup·안전 preflight | 30~45분 |
+| 안전 teleop 매핑과 pose graph 저장 | 30~45분 |
+| AMCL 초기 위치와 지도·LiDAR 정합 | 15~25분 |
+| 저속 도달·취소·WARN·속도/publisher 검사 | 25~35분 |
+| e-stop과 Gateway/Zenoh lease 단절 | 20~30분 |
+| agent·Nav2·arbiter·watchdog 장애와 복구 | 30~45분 |
+| 10분 자원 주행과 로그 회수 | 15~20분 |
+| 측정값·스크린샷·학습 일지 정리 | 20~30분 |
+
+`6시간 15분` 예약에는 최대 추정치 위 40분 buffer가 포함된다. 위 범위는 실제 측정 전
+추정치이며, 완료 판정에는 아래 체크리스트의 로그가 필요하다.
 
 ### 지도와 위치추정
 

@@ -102,6 +102,79 @@ Draft PR #7의
 지도 좌표 계약의 자동 검증 기준선을 확보했다. 실제 TB1 센서 정합과 물리 정지시간은
 자동 테스트로 대신하지 않고 아래 실차 항목에 계속 남긴다.
 
+## 로봇 없는 실제 Nav2 stack smoke 확장
+
+fake action 통합 테스트만으로는 설치된 Humble Nav2의 launch, lifecycle, plugin,
+remap과 실제 Gateway 연결을 한 번에 증명하지 못한다. 로봇 없이 다음 실제 프로세스를
+격리 domain 142에서 함께 실행하는 headless smoke를 추가했다.
+
+- 임시 80×80 free map과 TF·odom·scan·AMCL·RobotStatus를 발행하고 `/cmd_vel`을
+  적분하는 `robotless_fixture.py`
+- 실제 `map_server`, AMCL, controller/planner/behavior/BT navigator와 velocity smoother
+- 실제 navigation agent, motion arbiter, safety watchdog과 Fleet Gateway
+- 실제 HTTP 초기 위치·목표 성공·명시적 취소·e-stop·중립 재무장 흐름
+- `/cmd_vel` publisher 단일성, controller의 중간 topic, watchdog 속도 상한과 최종 0
+
+이 검증을 CI에 올리는 과정에서 로봇 없이도 일곱 가지 운영 결함을 발견했다.
+
+1. ROS setup script는 `set -u`와 함께 source할 수 없으므로 source 구간만 nounset을
+   해제해야 했다.
+2. CI runner에는 선택한 `rmw_cyclonedds_cpp`가 기본 설치되지 않아 runtime 의존성을
+   명시해야 했다.
+3. Humble Nav2 launch의 `PythonExpression(['not ', use_composition])`에는 소문자
+   문자열 `false`가 아니라 Python boolean 표현인 `False`를 전달해야 했다.
+4. action server가 graph에 나타난 시점과 `bt_navigator` lifecycle ACTIVE 시점이 달라,
+   endpoint만 보고 READY를 발행하면 activation 직전 목표가 거부됐다.
+5. Nav2가 성공한 직후 새 `/amcl_pose`가 terminal `SUCCEEDED`를 `READY`로 덮어써
+   Gateway와 웹이 결과를 관찰하지 못했다.
+6. Humble bringup에서 controller는 내부 `cmd_vel_nav`를 발행하고
+   `velocity_smoother`가 `cmd_vel_smoothed → cmd_vel` remap으로 최종 속도를 발행한다.
+   바깥 `/cmd_vel` remap만 두면 이 내부 결과에 규칙이 다시 적용되지 않아 watchdog과
+   smoother가 실제 `/cmd_vel`을 함께 발행했다. 반대로 `cmd_vel_smoothed`만 remap하면
+   `behavior_server`의 네 recovery publisher가 실제 `/cmd_vel`에 남았다.
+7. 두 공통 remap을 함께 두면 실제 `/cmd_vel`은 watchdog 하나로 정리되지만, 먼저
+   적용되는 공통 `/cmd_vel` 규칙이 controller와 smoother 입력에도 걸렸다. 그 결과
+   controller와 smoother 입력·출력이 `/motion/navigation/cmd_vel`에 합쳐져 smoothing
+   경로가 무너졌다. 저장소 소유 non-composed Nav2 launch에서 controller, smoother,
+   behavior 각각에 노드별 remap을 주어야 했다.
+
+네 번째 문제는 smoke 대기 시간을 늘려 숨기지 않았다. navigation agent가
+`/bt_navigator/get_state`를 조회해 `PRIMARY_STATE_ACTIVE`와 action server 준비가 모두
+참일 때만 `nav2_ready`와 목표 접수를 허용하도록 수정했다. fake Nav2 통합 테스트에도
+inactive 동안 `_ready_for_goal`이 false인 회귀 검사를 추가했다.
+`SUCCEEDED`·`CANCELED`·`FAILED`·`LEASE_EXPIRED` terminal 상태는 새 초기 위치나 새 목표가
+들어오기 전까지 보존하며, 반복 AMCL pose가 덮어쓰지 않게 했다.
+
+e-stop scenario의 목표는 현재 pose에서 goal checker tolerance보다 충분히 멀어야 한다.
+경계 안의 목표는 `ACTIVE`를 관찰하기 전에 정상 성공할 수 있으므로, 합성 map의 1.0m
+자유 셀을 사용해 실제 이동 중 e-stop 전이를 결정적으로 만든다.
+
+robotless smoke는 실제 ROS graph 계약을 크게 넓히지만 합성 센서와 단순 운동학을 쓴다.
+실제 LiDAR 정합, 바퀴와 바닥의 동역학, Zenoh 단절 정지시간, systemd 복구와 Raspberry
+Pi 자원 사용량은 실차 증거로 남긴다.
+
+## Robotless stack 최종 CI 증거
+
+Draft PR #7의
+[Actions 실행 29585666278](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29585666278)에서
+저장소 소유 Nav2 launch와 강화된 graph 검사가 통과했다.
+
+- 실제 HTTP 초기 위치 뒤 `READY`, 목표 `SUCCEEDED`, 명시적 `CANCELED`, e-stop 취소와
+  중립 재무장 뒤 자동 재개 없음
+- 실제 `/cmd_vel`: publisher 1개 `safety_watchdog`
+- `/motion/navigation/cmd_vel`: publisher 5개
+  (`velocity_smoother` 1개 + `behavior_server` recovery 4개), subscriber 1개
+  `motion_arbiter`
+- `/cmd_vel_nav`: publisher 1개 `controller_server`, subscriber 1개
+  `velocity_smoother`
+- 최종 telemetry: 비영 명령 114개, 최대 선속도 `0.05 m/s`, 최대 각속도
+  `0.3 rad/s`, 종료 선속도·각속도 모두 0
+- 5개 패키지 build 뒤 `89 tests, 0 errors, 0 failures, 0 skipped`
+
+따라서 합성 환경에서 controller smoothing, recovery, arbiter와 watchdog 소유권까지
+ROS graph로 확인했다. 이 수치는 실제 바닥에서의 정지거리나 Raspberry Pi 부하를
+의미하지 않으므로 Phase 5 완료 근거에는 실차 결과를 추가해야 한다.
+
 ## 검토 중 발견하고 보강한 점
 
 ### stale 보조 상태
@@ -145,13 +218,22 @@ Nav2 action 서버가 사라지면 downstream result future가 끝나지 않을 
 
 ## 아직 확인하지 않은 항목
 
-- [x] Ubuntu 22.04 ROS 2 Humble `rosdep`, 5개 패키지 `colcon build`, 87개 test 통과
+- [x] Ubuntu 22.04 ROS 2 Humble `rosdep`, 5개 패키지 `colcon build`, 89개 test 통과
+- [x] 실제 Nav2·AMCL·agent·arbiter·watchdog·Gateway robotless stack smoke
 - [ ] 실제 지도와 pose graph 저장
 - [ ] AMCL READY와 지도·LiDAR 정합
 - [ ] 저속 목표 도달, 취소와 WARN 확인 주행
 - [ ] e-stop, Zenoh/Gateway 단절과 프로세스 장애 정지시간
 - [ ] `/cmd_vel` publisher 단일성 및 Nav2/watchdog 실제 속도 측정
 - [ ] 10분 CPU·메모리 측정
+
+## 실차 연결 뒤 예상 시간
+
+TB1·SSH·WSL·빈 시험 공간이 준비된 순수 실차 검증은 `3시간 5분~4시간 35분`으로
+계산했다. 현재 관제 PC에는 WSL Ubuntu 배포판이 없고 TB1 SSH도 연결되지 않아 환경
+준비 `30~60분`을 더하면 `3시간 35분~5시간 35분`이다. 최대 추정치와 재시험 buffer
+40분을 더해 한 번의 시험 창은 `6시간 15분`을 확보한다. 세부 산정은
+[운영 절차의 예상 소요시간](../setup/tb1-navigation.md#예상-소요시간)에 기록했다.
 
 ## 다음 작업
 

@@ -17,6 +17,10 @@ navigation: Nav2 -> /motion/navigation/cmd_vel -> motion_arbiter
 실제 `/cmd_vel`은 계속 `safety_watchdog`만 발행한다. arbiter는 선택하지 않은 입력,
 0.5초 넘게 갱신되지 않은 입력, 또는 0.5초 넘게 갱신되지 않은 navigation
 authorization을 모두 0으로 바꾼다.
+저장소 소유 non-composed Nav2 launch는 controller의 `cmd_vel`을 내부
+`cmd_vel_nav`로 보내고, `velocity_smoother`의 `cmd_vel_smoothed`와
+`behavior_server` recovery의 `cmd_vel`만 `/motion/navigation/cmd_vel`로 보낸다.
+노드별 remap으로 smoothing 경로와 실제 `/cmd_vel`을 모두 분리한다.
 
 ## 실행 프로필
 
@@ -47,6 +51,8 @@ ros2 run turtlebot3_teleop teleop_keyboard \
 - Gateway lease는 0.5초마다 발행되고 2초 동안 오지 않으면 목표를 취소한다.
 - agent 프로세스가 죽으면 authorization이 0.5초 안에 만료된다.
 - agent 재시작 시 arbiter를 IDLE로 만들고 Nav2의 남은 목표를 모두 취소한다.
+- Nav2 action endpoint와 `bt_navigator` lifecycle ACTIVE를 모두 확인한 뒤에만 새
+  목표를 받는다.
 - Nav2 action 서버가 1초 동안 사라지면 authorization을 닫고 목표를 `FAILED`로
   종료한다.
 - e-stop 또는 RobotStatus ERROR가 들어오면 authorization과 motion mode를 먼저
