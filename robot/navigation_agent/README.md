@@ -67,3 +67,10 @@ watchdog도 같은 상한을 독립적으로 강제한다.
 
 운영 및 실차 검증은
 [TB1 매핑·Nav2 운영 절차](../../docs/setup/tb1-navigation.md)를 따른다.
+
+로봇 없는 Humble 검증은 실제 Nav2 graph와 Zenoh action 경계를 나눠 실행한다.
+
+```bash
+ROS_DOMAIN_ID=142 bash infra/navigation/run-robotless-navigation-smoke.sh
+bash infra/navigation/run-robotless-zenoh-action-smoke.sh
+```

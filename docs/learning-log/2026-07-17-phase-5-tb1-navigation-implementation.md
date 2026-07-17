@@ -175,6 +175,28 @@ Draft PR #7의
 ROS graph로 확인했다. 이 수치는 실제 바닥에서의 정지거리나 Raspberry Pi 부하를
 의미하지 않으므로 Phase 5 완료 근거에는 실차 결과를 추가해야 한다.
 
+## Zenoh 격리-domain action smoke
+
+[Actions 실행 29587499227](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29587499227)에서
+고정 버전 Zenoh ROS 2 DDS bridge 1.9.0을 설치하고 robot domain 160과 control domain
+161 사이의 통신을 bridge TCP 경로로만 제한했다. 다음 custom action과 fleet topic
+계약이 실제 Humble graph에서 통과했다.
+
+- `NavigateRobot` 첫 목표 accept, feedback 3회 이상과 `SUCCEEDED` result
+- `NavigationLease`의 control→robot 전달과 2초 이내 lease age
+- `NavigationStatus`의 `READY`·`SUCCEEDED`·`CANCELED` robot→control 전달
+- 두 번째 목표의 원격 cancel과 `CANCELED` result
+- 같은 실행에서 실제 Nav2 stack smoke와 `89 tests, 0 errors, 0 failures, 0 skipped`
+
+이 검증을 추가하면서 이전 문서 커밋의 CI가 `rosdep update` 원격 파일 다운로드 중
+connection reset으로 실패한 것도 확인했다. 코드 실패가 아닌 일시적 네트워크 오류였고,
+`rosdep update`를 최대 3회 재시도하도록 workflow를 보강했다. 다음 실행에서는 첫 시도에
+성공했다.
+
+결과적으로 로봇 없이 확인 가능한 Nav2 local graph와 Zenoh remote action 경계를 모두
+자동화했다. 실제 TB1에서 남은 것은 센서·모터·LAN·systemd·자원 사용량을 포함한 물리
+검증이며, 이를 자동 테스트 성공으로 대체하지 않는다.
+
 ## 검토 중 발견하고 보강한 점
 
 ### stale 보조 상태
@@ -220,6 +242,7 @@ Nav2 action 서버가 사라지면 downstream result future가 끝나지 않을 
 
 - [x] Ubuntu 22.04 ROS 2 Humble `rosdep`, 5개 패키지 `colcon build`, 89개 test 통과
 - [x] 실제 Nav2·AMCL·agent·arbiter·watchdog·Gateway robotless stack smoke
+- [x] Zenoh 1.9.0 격리-domain action·feedback·result·cancel·lease·status smoke
 - [ ] 실제 지도와 pose graph 저장
 - [ ] AMCL READY와 지도·LiDAR 정합
 - [ ] 저속 목표 도달, 취소와 WARN 확인 주행

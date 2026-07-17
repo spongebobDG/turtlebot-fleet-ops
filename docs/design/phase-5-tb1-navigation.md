@@ -5,6 +5,9 @@
 코드와 자동 테스트를 구현하고 Ubuntu 22.04 ROS 2 Humble CI에서 5개 패키지 빌드,
 격리 domain 142의 89개 테스트와 실제 Nav2·AMCL·Gateway·watchdog을 함께 실행하는
 [robotless smoke](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29585666278)를
+통과했다. 별도의 robot/control domain에서 Zenoh 1.9.0만 통신 경로로 사용해
+`NavigateRobot` 목표·feedback·result·cancel과 lease/status를 왕복하는
+[action smoke](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29587499227)도
 통과했다. TB1에서 지도 작성, AMCL 정합, 목표 도달과 장애 주입을 아직 실행하지
 않았으므로 Phase 5를 완료로 표시하지 않는다.
 
@@ -157,6 +160,9 @@ API 409/422, WARN 확인, fake Nav2 성공·거부·feedback·취소·실패, Ga
 lease 만료, authorization 만료, e-stop과 재시작 취소를 다룬다. robotless smoke는
 실제 Humble Nav2·AMCL·agent·arbiter·watchdog·Gateway를 합성 map/TF/scan/odom과 함께
 띄워 HTTP 성공·취소·e-stop, 속도 상한과 `/cmd_vel` publisher 단일성을 검사한다.
+Zenoh smoke는 DDS domain 160과 161을 분리해 직접 discovery를 차단하고 Zenoh 1.9.0
+브리지 사이에서 custom action의 goal·feedback·성공 result·cancel과
+`NavigationLease`·`NavigationStatus`가 모두 전달되는지 검사한다.
 최종 완료에는
 [실차 절차](../setup/tb1-navigation.md)의 모든 측정값과 로그가 추가로 필요하다.
 

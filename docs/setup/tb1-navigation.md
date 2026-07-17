@@ -5,10 +5,11 @@
 완료로 바꾼다.
 
 저장소 자동 검증 기준선은 Draft PR #7의
-[Actions 실행 29585666278](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29585666278)이다.
+[Actions 실행 29587499227](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29587499227)이다.
 Ubuntu 22.04 ROS 2 Humble에서 5개 패키지 빌드, 격리 domain 142의 89개 테스트와
-robotless Nav2 stack smoke가 통과했다. 이 결과는 실차의 센서 정합, 정지시간 또는
-자원 사용량을 대신하지 않는다.
+robotless Nav2 stack smoke, 서로 다른 두 DDS domain 사이의 Zenoh 1.9.0 action smoke가
+통과했다. 이 결과는 실차의 센서 정합, 물리 정지시간, 실제 LAN 단절 또는 자원 사용량을
+대신하지 않는다.
 
 ## 로봇 없는 자동 통합 검증
 
@@ -16,6 +17,8 @@ Ubuntu 22.04와 ROS 2 Humble에서 workspace를 빌드한 뒤 실행한다.
 
 ```bash
 ROS_DOMAIN_ID=142 bash infra/navigation/run-robotless-navigation-smoke.sh
+bash infra/zenoh/install-standalone.sh
+bash infra/navigation/run-robotless-zenoh-action-smoke.sh
 ```
 
 script는 임시 free map과 TF·odom·scan·AMCL·RobotStatus fixture를 만들고 실제
@@ -23,6 +26,11 @@ Nav2·AMCL·navigation agent·arbiter·watchdog·Gateway를 실행한다. 웹과
 경로로 초기 위치, 목표 성공, 명시적 취소와 e-stop 후 무재개를 확인한다. 마지막에는
 `/cmd_vel`의 유일한 publisher, 중간 Nav2 publisher, `0.05 m/s`·`0.3 rad/s` 상한과
 최종 0을 검사한다.
+
+Zenoh script는 robot domain 160과 control domain 161을 사용해 DDS 직접 통신을 막고,
+두 bridge의 TCP 경로만으로 `NavigateRobot` 목표·feedback·성공 result·cancel과
+`NavigationLease`·`NavigationStatus`를 검증한다. fixture가 사용하는 loopback TCP는
+실제 LAN 또는 Gateway/bridge 단절 뒤 2.5초 이내 물리 정지를 대신하지 않는다.
 
 이 검증은 launch/parameter/lifecycle/action/REST/topic 연결을 실제 Humble graph에서
 검사한다. LiDAR와 지도 정합, 바퀴 미끄러짐, 물리 정지시간, Zenoh 단절, systemd 장애

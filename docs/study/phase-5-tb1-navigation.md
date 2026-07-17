@@ -100,6 +100,26 @@ fail-closed `UNAVAILABLE`을 유지한다. 이 사례는 “토픽/서비스 존
 Gateway/Zenoh 단절에는 lease가 대응하고 agent 프로세스 사망에는 authorization이 더
 빠르게 대응한다. 둘 중 하나가 stale이면 arbiter 또는 agent가 0과 취소를 만든다.
 
+## Zenoh에서 action을 검증하는 방법
+
+ROS 2 action은 하나의 topic만 전달하면 끝나는 계약이 아니다. goal·result·cancel
+service와 feedback/status topic이 함께 동작해야 한다. Zenoh ROS 2 DDS bridge는 이
+action endpoint들을 Zenoh query/queryable과 publish/subscribe 경로로 전달한다.
+따라서 상태 topic 하나가 보인다는 사실만으로 원격 action 성공을 증명할 수 없다.
+
+robotless Zenoh smoke는 robot domain 160과 control domain 161을 분리해 DDS 직접
+discovery를 차단한다. 두 bridge의 loopback TCP 연결만 둔 뒤 control 쪽에서 다음을
+한 번에 확인한다.
+
+1. `NavigateRobot` 첫 목표 accept, 3회 이상 feedback과 성공 result
+2. 0.1초 주기의 `NavigationLease`가 robot 쪽 execute callback에 도착
+3. robot 쪽 `READY`·`SUCCEEDED`·`CANCELED` `NavigationStatus`가 control로 복귀
+4. 두 번째 목표의 cancel request와 canceled result
+
+이 테스트는 action과 lease/status의 브리지 계약을 증명한다. 실제 LAN을 끊었을 때
+2초 lease 만료와 2.5초 이내 물리 정지는 TB1 watchdog, 모터와 네트워크를 포함하므로
+실차 장애 주입으로 별도 측정한다.
+
 ## Humble Nav2의 속도 topic 흐름
 
 Humble `nav2_bringup`은 controller의 `cmd_vel`을 내부 `cmd_vel_nav`로 바꾸고,
@@ -216,6 +236,8 @@ e-stop은 watchdog을 먼저 정지시킨 뒤 action과 lease를 취소하며, w
 11. Nav2 action server가 발견돼도 lifecycle ACTIVE를 별도로 확인해야 하는 이유는
     무엇인가?
 12. `/motion/navigation/cmd_vel`과 실제 `/cmd_vel`의 publisher가 각각 누구여야 하는가?
+13. Zenoh 건너편에서 상태 topic만 수신한 것으로 action 전달을 검증했다고 할 수 없는
+    이유는 무엇인가?
 
 답은 [Phase 5 설계](../design/phase-5-tb1-navigation.md)와
 [운영 절차](../setup/tb1-navigation.md)를 근거로 직접 설명한다.

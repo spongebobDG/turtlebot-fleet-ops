@@ -42,6 +42,20 @@ bash infra/zenoh/install-standalone.sh
 새 버전으로 올릴 때는 두 아키텍처 파일의 해시를 다시 검증하고 스크립트의 버전과
 해시를 함께 변경한다.
 
+## 로봇 없는 action 전달 검증
+
+workspace를 Humble로 빌드한 뒤 다음 smoke를 실행한다.
+
+```bash
+bash infra/navigation/run-robotless-zenoh-action-smoke.sh
+```
+
+script는 robot domain 160과 control domain 161을 분리하고 두 Zenoh bridge를 loopback
+TCP로만 연결한다. `NavigateRobot`의 goal·feedback·성공 result·cancel과
+`NavigationLease`·`NavigationStatus`가 모두 bridge를 통과해야 성공한다. 이 검증은
+실제 LAN 단절 시간과 모터 정지시간을 측정하지 않으므로 실차 lease 장애 주입을
+대체하지 않는다.
+
 ## 로봇 측 실행
 
 TB1의 ROS 노드와 브리지는 같은 `ROS_DOMAIN_ID`를 사용한다. 서비스까지 안정적으로
