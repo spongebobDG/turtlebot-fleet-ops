@@ -6,6 +6,11 @@
 안전하게 취소되는 제어 소유권을 만드는 것이다. Gateway는 명령과 lease를 소유하고,
 TB1 agent는 Nav2 목표를 소유하며, arbiter와 watchdog이 속도 권한을 독립적으로 닫는다.
 
+자동 검증에서는 Ubuntu 22.04 ROS 2 Humble로 5개 패키지를 빌드하고, 격리 domain
+142에서 fake Nav2 action, lease, e-stop, watchdog 재무장과 Gateway 계약을 포함한
+87개 테스트가 오류·실패·skip 없이 통과했다. 자동 테스트는 상태 전이 계약의 증거지만,
+실제 LiDAR 정합과 정지거리·CPU·메모리 검증을 대신하지 않는다.
+
 ## 왜 Nav2를 TB1에서 실행하는가
 
 원격 PC Nav2는 계산 자원에는 유리하지만 네트워크 단절이 제어 loop에 직접 영향을 준다.

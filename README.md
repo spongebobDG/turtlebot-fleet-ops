@@ -2,7 +2,7 @@
 
 ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 두 대의 TurtleBot3를 단독 bringup부터 시작해 상태 수집, 안전 제어, 웹 관제, 자율주행, 작업 할당과 장애 복구까지 단계적으로 구현한다.
 
-> 현재 상태: 개발 중. Phase 4는 `main` 병합과 실차 검증을 마쳤다. Phase 5 TB1 로컬 Nav2·웹 목적지 제어는 코드와 테스트를 구현했으며, Humble CI와 실차 주행 검증 전이므로 완료로 표시하지 않는다.
+> 현재 상태: 개발 중. Phase 4는 `main` 병합과 실차 검증을 마쳤다. Phase 5 TB1 로컬 Nav2·웹 목적지 제어는 코드 구현과 Humble CI 87개 테스트를 통과했으며, 실차 주행 검증 전이므로 완료로 표시하지 않는다.
 
 ## 프로젝트 목표
 
@@ -37,7 +37,7 @@ ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 
 | Phase 2 | TB1 저속 수동 제어, 정지와 watchdog | 완료 |
 | Phase 3 | TB1 Robot Agent와 상태 메시지 | 완료 |
 | Phase 4 | 단일 로봇 웹 관제 | 완료, `main` 병합 |
-| Phase 5 | TB1 SLAM·AMCL·Nav2와 웹 목적지 제어 | 구현 완료, CI·실차 검증 대기 |
+| Phase 5 | TB1 SLAM·AMCL·Nav2와 웹 목적지 제어 | 구현·Humble CI 완료, 실차 검증 대기 |
 | Phase 6 이후 | 로그, 장애 감지, TB2와 플릿 관리 | 대기 |
 
 완료 표시는 실제 검증한 범위에만 사용한다. Phase 1의 `/scan` 수신은 확인했지만 정확한 발행 주기는 아직 기록하지 못했다.
@@ -152,7 +152,6 @@ main 최신화
 
 ## 다음 작업
 
-1. Humble CI에서 Phase 5 전체 패키지와 fake Nav2 통합 테스트를 통과시킨다.
-2. TB1에서 지도·pose graph를 만들고 AMCL, 저속 목표, 취소와 WARN 흐름을 검증한다.
-3. e-stop·Zenoh 단절·agent/Nav2/arbiter 장애를 주입하고 정지시간과 복구 로그를 기록한다.
-4. 10분 주행 자원 측정까지 채운 뒤에만 Phase 5를 완료로 바꾼다.
+1. TB1에서 지도·pose graph를 만들고 AMCL, 저속 목표, 취소와 WARN 흐름을 검증한다.
+2. e-stop·Zenoh 단절·agent/Nav2/arbiter 장애를 주입하고 정지시간과 복구 로그를 기록한다.
+3. 10분 주행 자원 측정까지 채운 뒤에만 Phase 5를 완료로 바꾼다.

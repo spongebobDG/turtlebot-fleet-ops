@@ -153,14 +153,14 @@ GitHub의 `protect-main` branch ruleset을 기본 브랜치에 적용한다.
 저장소 전체 병합 설정도 squash만 허용한다. merge commit과 rebase merge는 비활성화하고, 병합된 작업 브랜치는 자동 삭제한다.
 
 팀원이 참여하면 필수 승인 수를 1명 이상으로 변경한다. `.github/workflows/ros2-ci.yml`은
-Ubuntu 22.04와 ROS 2 Humble에서 rosdep, colcon build, 64개 테스트를 실행한다.
+Ubuntu 22.04와 ROS 2 Humble에서 rosdep, 5개 패키지 colcon build와 87개 테스트를 실행한다.
 `protect-main` Ruleset은 `Humble build and test`를 required status check로 요구한다.
 
 ## 현재 적용 범위
 
-- 현재 작업 브랜치: `feat/phase-4-tb1-web-dashboard`
-- 현재 목표: TB1 웹 관제, Zenoh 브리지와 systemd 운영 검증
+- 현재 작업 브랜치: `codex/phase-5-tb1-navigation`
+- 현재 목표: TB1 로컬 Nav2, 웹 목적지 제어와 실차 안전 검증
 - 원격 저장소: `origin`으로 GitHub Public 저장소 연결 완료
-- 원격 `main`: Phase 3 PR #4까지 squash merge 완료
-- Pull Request: [PR #5](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/5) 검증 중
+- 원격 `main`: Phase 4 PR #5까지 squash merge 완료
+- Pull Request: [Draft PR #7](https://github.com/spongebobDG/turtlebot-fleet-ops/pull/7), Humble CI 통과·실차 검증 대기
 - `main` 보호: `protect-main` Ruleset과 Humble 필수 CI 활성화

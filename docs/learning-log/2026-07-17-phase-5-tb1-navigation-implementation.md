@@ -3,7 +3,7 @@
 날짜: 2026-07-17
 
 단계: Phase 5
-진행 상태: 코드·테스트·운영 문서 구현, Humble CI와 실차 검증 대기
+진행 상태: 코드·테스트·운영 문서 구현 및 Humble CI 통과, 실차 검증 대기
 
 ## 오늘의 목표
 
@@ -60,8 +60,7 @@ Python 테스트 도구를 설치해 다음 검사를 실제 실행했다.
 - `git diff --check`
 
 Windows에서 개발자 mode가 없어 symbolic link 설치 테스트 1개는 platform 조건으로
-skip됐다. 같은 테스트는 Linux Humble CI에서 실행된다. 현재까지 나머지 검사는
-통과했고 Humble `colcon build/test` 결과는 아직 미확인이다.
+skip됐다. 같은 테스트는 Linux Humble CI에서 실행됐고 이후 전체 결과가 통과했다.
 
 ## Humble CI 1차 실행
 
@@ -86,8 +85,22 @@ Jammy용 `libunwind-15-dev`를 먼저 설치한 뒤에는 `rosdep install`과
   새 안전 상태를 처리하기 전에 goal 검사가 실행되는 경쟁 조건이 있었다.
 
 제품의 안전 판정은 바꾸지 않았다. 테스트가 `pi/2` 계약을 직접 비교하고, e-stop 뒤 새
-`SafetyStatus`와 readiness가 실제로 처리될 때까지 기다리도록 보강했다. 다음 CI에서
-동일한 87개 테스트를 다시 검증한다.
+`SafetyStatus`와 readiness가 실제로 처리될 때까지 기다리도록 보강했다. 이 변경은
+아래 3차 CI에서 동일한 87개 테스트로 다시 검증했다.
+
+## Humble CI 3차 실행
+
+Draft PR #7의
+[Actions 실행 29573131531](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29573131531)에서
+웹 좌표 테스트, ROS 2 Humble 설치, Jammy Nav2 의존성 설치, `rosdep install`,
+5개 패키지 `colcon build`와 격리 domain 142 `colcon test`가 모두 통과했다.
+`colcon test-result --verbose` 최종 결과는
+`87 tests, 0 errors, 0 failures, 0 skipped`였다.
+
+이 결과로 인터페이스 생성, fake Nav2 action의 성공·거부·feedback·취소·실패,
+2초 lease, 0.5초 authorization, e-stop과 watchdog 재무장, Gateway REST·ROS graph,
+지도 좌표 계약의 자동 검증 기준선을 확보했다. 실제 TB1 센서 정합과 물리 정지시간은
+자동 테스트로 대신하지 않고 아래 실차 항목에 계속 남긴다.
 
 ## 검토 중 발견하고 보강한 점
 
@@ -132,7 +145,7 @@ Nav2 action 서버가 사라지면 downstream result future가 끝나지 않을 
 
 ## 아직 확인하지 않은 항목
 
-- [ ] Ubuntu 22.04 ROS 2 Humble `rosdep`, `colcon build`, 전체 test 통과
+- [x] Ubuntu 22.04 ROS 2 Humble `rosdep`, 5개 패키지 `colcon build`, 87개 test 통과
 - [ ] 실제 지도와 pose graph 저장
 - [ ] AMCL READY와 지도·LiDAR 정합
 - [ ] 저속 목표 도달, 취소와 WARN 확인 주행
@@ -142,6 +155,6 @@ Nav2 action 서버가 사라지면 downstream result future가 끝나지 않을 
 
 ## 다음 작업
 
-[TB1 매핑·Nav2 운영 절차](../setup/tb1-navigation.md)에 따라 CI를 먼저 통과시킨 뒤,
-전원 스위치에 접근 가능한 빈 공간에서 체크리스트 순서대로 실차 로그를 채운다. 모든
+[TB1 매핑·Nav2 운영 절차](../setup/tb1-navigation.md)에 따라 전원 스위치에 접근 가능한
+빈 공간에서 체크리스트 순서대로 실차 로그를 채운다. 모든
 미확인 항목이 실제 값으로 바뀔 때만 Phase 5를 완료로 표시한다.
