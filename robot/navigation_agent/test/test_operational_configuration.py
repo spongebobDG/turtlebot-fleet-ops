@@ -13,6 +13,9 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
         PACKAGE_ROOT / "config" / "tb1_nav2_rewrites.yaml"
     ).read_text()
     launch = (PACKAGE_ROOT / "launch" / "tb1_navigation.launch.py").read_text()
+    nav2_launch = (
+        PACKAGE_ROOT / "launch" / "tb1_nav2_navigation.launch.py"
+    ).read_text()
 
     assert "lease_timeout_sec: 2.0" in agent_config
     assert "nav2_unavailable_timeout_sec: 1.0" in agent_config
@@ -30,9 +33,14 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "scan_topic: /scan" in nav2_rewrites
     assert "odom_topic: /odom" in nav2_rewrites
     assert '"tb1_nav2_rewrites.yaml"' in launch
-    assert 'src="/cmd_vel"' in launch
-    assert 'src="cmd_vel_smoothed"' in launch
-    assert 'dst="/motion/navigation/cmd_vel"' in launch
+    assert '"localization_launch.py"' in launch
+    assert '"tb1_nav2_navigation.launch.py"' in launch
+    assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
+    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' in nav2_launch
+    assert '("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC)' in nav2_launch
+    assert 'NAVIGATION_CMD_TOPIC = "/motion/navigation/cmd_vel"' in (
+        nav2_launch
+    )
     assert 'LaunchConfiguration("use_sim_time")' in launch
     assert 'default_value="false"' in launch
     assert '"use_composition": "False"' in launch
@@ -70,9 +78,13 @@ def test_only_watchdog_owns_the_real_velocity_topic() -> None:
     navigation_launch = (
         PACKAGE_ROOT / "launch" / "tb1_navigation.launch.py"
     ).read_text()
+    nav2_launch = (
+        PACKAGE_ROOT / "launch" / "tb1_nav2_navigation.launch.py"
+    ).read_text()
 
     assert "output_topic: /cmd_vel" in watchdog_config
     assert "output_topic: /safety/cmd_vel_in" in navigation_config
-    assert 'src="/cmd_vel"' in navigation_launch
-    assert 'src="cmd_vel_smoothed"' in navigation_launch
-    assert 'dst="/motion/navigation/cmd_vel"' in navigation_launch
+    assert '"tb1_nav2_navigation.launch.py"' in navigation_launch
+    assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
+    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' in nav2_launch
+    assert '("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC)' in nav2_launch
