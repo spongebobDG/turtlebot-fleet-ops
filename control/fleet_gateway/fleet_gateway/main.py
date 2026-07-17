@@ -27,6 +27,12 @@ def main(args: Optional[List[str]] = None) -> None:
         )
     ).expanduser()
     operations_store = OperationsStore(database_path)
+    recovered_tasks = operations_store.reconcile_gateway_restart()
+    if recovered_tasks:
+        node.get_logger().warning(
+            f"Failed {recovered_tasks} nonterminal task(s) "
+            "after Gateway restart"
+        )
     node.registry.add_listener(operations_store.observe)
     task_manager = NavigationTaskManager(operations_store, node)
     executor = MultiThreadedExecutor(num_threads=2)

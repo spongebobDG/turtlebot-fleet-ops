@@ -110,3 +110,31 @@ def test_agent_restart_fails_persisted_active_task(tmp_path) -> None:
     assert failed is not None
     assert failed["state"] == "FAILED"
     assert "prior task will not resume" in failed["message"]
+
+
+def test_gateway_restart_fails_every_persisted_nonterminal_task(
+    tmp_path,
+) -> None:
+    path = tmp_path / "operations.sqlite3"
+    store = OperationsStore(path)
+    starting = store.create_task("tb1", 0.5, 0.0, 0.0, False)
+    active = store.create_task("tb1", 1.0, 0.0, 0.0, False)
+    finished = store.create_task("tb1", 1.5, 0.0, 0.0, False)
+    store.update_task(starting["task_id"], "STARTING", "sending")
+    store.update_task(active["task_id"], "ACTIVE", "accepted", "goal-1")
+    store.update_task(finished["task_id"], "SUCCEEDED", "arrived")
+
+    reopened = OperationsStore(path)
+    recovered_count = reopened.reconcile_gateway_restart()
+
+    assert recovered_count == 2
+    assert reopened.get_task(starting["task_id"])["state"] == "FAILED"
+    assert reopened.get_task(active["task_id"])["state"] == "FAILED"
+    assert reopened.get_task(finished["task_id"])["state"] == "SUCCEEDED"
+    assert reopened.reconcile_gateway_restart() == 0
+    failed_events = [
+        event
+        for event in reopened.list_events("tb1")
+        if event["event_type"] == "TASK_FAILED"
+    ]
+    assert len(failed_events) == 2

@@ -355,6 +355,24 @@ class OperationsStore:
             parent_task_id=task_id,
         )
 
+    def reconcile_gateway_restart(self) -> int:
+        """Fail tasks whose in-memory action ownership was lost on restart."""
+        with self._lock, closing(self._connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT task_id FROM tasks
+                WHERE state IN ('STARTING', 'ACTIVE')
+                ORDER BY updated_at, task_id
+                """
+            ).fetchall()
+        for row in rows:
+            self.update_task(
+                str(row["task_id"]),
+                "FAILED",
+                "Fleet Gateway restarted; prior task will not resume",
+            )
+        return len(rows)
+
     def sync_navigation(self, status: Mapping[str, Any]) -> None:
         """Reconcile the current durable task with robot navigation status."""
         robot_id = str(status.get("robot_id", "")).strip()
