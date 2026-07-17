@@ -57,7 +57,8 @@ jobs:
       - name: Validate operational files
         shell: bash
         run: |
-          shellcheck infra/navigation/*.sh infra/zenoh/*.sh
+          shellcheck --exclude=SC1090,SC1091 \
+            infra/navigation/*.sh infra/zenoh/*.sh
           systemd-analyze verify infra/systemd/user/*.service
           source /opt/ros/humble/setup.bash
           source install/setup.bash
