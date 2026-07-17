@@ -32,6 +32,8 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert 'dst="/motion/navigation/cmd_vel"' in launch
     assert 'LaunchConfiguration("use_sim_time")' in launch
     assert 'default_value="false"' in launch
+    assert '"use_composition": "False"' in launch
+    assert '"use_respawn": "True"' in launch
 
 
 def test_mapping_supports_simulation_without_changing_real_default() -> None:

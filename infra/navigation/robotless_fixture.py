@@ -87,14 +87,14 @@ class RobotlessFixture(Node):
         footprint_to_base.header.stamp = stamp
         footprint_to_base.header.frame_id = "base_footprint"
         footprint_to_base.child_frame_id = "base_link"
-        footprint_to_base.transform.position.z = 0.01
+        footprint_to_base.transform.translation.z = 0.01
         footprint_to_base.transform.rotation.w = 1.0
 
         base_to_scan = TransformStamped()
         base_to_scan.header.stamp = stamp
         base_to_scan.header.frame_id = "base_link"
         base_to_scan.child_frame_id = "base_scan"
-        base_to_scan.transform.position.z = 0.12
+        base_to_scan.transform.translation.z = 0.12
         base_to_scan.transform.rotation.w = 1.0
         self._static_broadcaster.sendTransform(
             [map_to_odom, footprint_to_base, base_to_scan]
