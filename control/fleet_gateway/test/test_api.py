@@ -52,6 +52,14 @@ class FakeNavigationController:
 
     def cancel_navigation(self, robot_id, command_id):
         self.calls.append(("cancel", robot_id, command_id))
+        if command_id != "goal-1":
+            return {
+                "success": False,
+                "robot_id": robot_id,
+                "command_id": command_id,
+                "status_code": 409,
+                "message": "No matching active navigation goal",
+            }
         return {
             "success": True,
             "robot_id": robot_id,
@@ -319,6 +327,87 @@ def test_navigation_rejects_active_goal_and_non_free_cells():
     assert unknown.status_code == 422
 
 
+def test_navigation_rejects_nonfinite_pose_and_wrong_command_id():
+    controller = FakeNavigationController()
+    client = TestClient(
+        create_app(
+            make_navigation_registry(),
+            navigation_controller=controller,
+            map_registry=make_map_registry(),
+        )
+    )
+
+    nonfinite = client.post(
+        "/api/robots/tb1/navigation/goals",
+        content='{"x": NaN, "y": 0.25, "yaw": 0.0}',
+        headers={"Content-Type": "application/json"},
+    )
+    wrong_cancel = client.delete(
+        "/api/robots/tb1/navigation/goals/wrong-command"
+    )
+
+    assert nonfinite.status_code == 422
+    assert wrong_cancel.status_code == 409
+
+
+@pytest.mark.parametrize(
+    ("blocker", "expected_detail"),
+    [
+        ("offline", "offline"),
+        ("error", "active error"),
+        ("nav2", "Nav2 is not ready"),
+        ("localization", "Localization is not ready"),
+        ("navigation_safety", "Motion safety is not ready"),
+        ("estop", "Emergency stop is active"),
+        ("unarmed", "Motion is not armed"),
+    ],
+)
+def test_navigation_rejects_every_fail_closed_readiness_state(
+    blocker,
+    expected_detail,
+):
+    if blocker == "offline":
+        registry = StatusRegistry(clock=lambda: 20.0)
+        registry.update(
+            {"robot_id": "tb1", "level": 0, "fault_codes": []},
+            now=10.0,
+        )
+    else:
+        registry = make_navigation_registry(
+            level=2 if blocker == "error" else 0
+        )
+        navigation = {
+            "robot_id": "tb1",
+            "state": "READY",
+            "nav2_ready": blocker != "nav2",
+            "localization_ready": blocker != "localization",
+            "safety_ready": blocker != "navigation_safety",
+            "active_command_id": "",
+        }
+        safety = {
+            "robot_id": "tb1",
+            "estop_active": blocker == "estop",
+            "motion_armed": blocker != "unarmed",
+        }
+        registry.update_navigation(navigation, now=10.0)
+        registry.update_safety(safety, now=10.0)
+    client = TestClient(
+        create_app(
+            registry,
+            navigation_controller=FakeNavigationController(),
+            map_registry=make_map_registry(),
+        )
+    )
+
+    response = client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+
+    assert response.status_code == 409
+    assert expected_detail in response.json()["detail"]
+
+
 def test_invalid_map_pose_remains_422_when_robot_is_offline():
     registry = StatusRegistry(clock=lambda: 20.0)
     registry.update(
@@ -463,7 +552,9 @@ def test_task_fault_and_audit_routes(tmp_path):
     assert client.get("/api/events?robot_id=tb1").json()["events"]
 
 
-def test_task_routes_reject_invalid_transitions_and_unavailable_store(tmp_path):
+def test_task_routes_reject_invalid_transitions_and_unavailable_store(
+    tmp_path,
+):
     registry = make_navigation_registry()
     controller = FakeNavigationController()
     store = OperationsStore(tmp_path / "operations.sqlite3")
@@ -482,6 +573,10 @@ def test_task_routes_reject_invalid_transitions_and_unavailable_store(tmp_path):
         json={"x": 0.25, "y": 0.25, "yaw": 0.0},
     ).json()
 
-    assert client.post(f"/api/tasks/{created['task_id']}/retry").status_code == 409
+    retry_response = client.post(
+        f"/api/tasks/{created['task_id']}/retry"
+    )
+    assert retry_response.status_code == 409
     assert client.get("/api/tasks/missing").status_code == 404
-    assert TestClient(create_app(registry)).get("/api/events").status_code == 503
+    unavailable = TestClient(create_app(registry)).get("/api/events")
+    assert unavailable.status_code == 503
