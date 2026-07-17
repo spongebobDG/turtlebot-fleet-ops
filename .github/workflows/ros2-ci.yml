@@ -73,6 +73,9 @@ jobs:
         run: |
           shellcheck --exclude=SC1090,SC1091 \
             infra/navigation/*.sh infra/zenoh/*.sh
+          python3 -m py_compile \
+            infra/navigation/robotless_operations_smoke_client.py \
+            infra/navigation/robotless_web_preview.py
           bash infra/systemd/validate-units.sh
           source /opt/ros/humble/setup.bash
           source install/setup.bash

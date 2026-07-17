@@ -35,7 +35,11 @@ def request_json(
         ) from error
 
 
-def wait_task(task_id: str, state: str, timeout_sec: float = 8.0) -> Dict[str, Any]:
+def wait_task(
+    task_id: str,
+    state: str,
+    timeout_sec: float = 8.0,
+) -> Dict[str, Any]:
     """Wait until a durable task reaches the expected state."""
     deadline = time.monotonic() + timeout_sec
     latest = {}
@@ -62,7 +66,7 @@ def create_task(x_value: float) -> Dict[str, Any]:
 
 
 def wait_robot_ready(localized: bool, timeout_sec: float = 5.0) -> None:
-    """Wait for the WebSocket-equivalent snapshot to observe mock transitions."""
+    """Wait for the dashboard snapshot to observe mock transitions."""
     deadline = time.monotonic() + timeout_sec
     latest = {}
     while time.monotonic() < deadline:
@@ -85,6 +89,19 @@ def wait_robot_ready(localized: bool, timeout_sec: float = 5.0) -> None:
     raise AssertionError(f"mock robot did not become ready: {latest}")
 
 
+def wait_no_active_goal(timeout_sec: float = 5.0) -> None:
+    """Wait for the robot status stream to confirm cancellation completion."""
+    deadline = time.monotonic() + timeout_sec
+    latest = {}
+    while time.monotonic() < deadline:
+        latest = request_json("/api/robots/tb1")
+        navigation = latest.get("navigation") or {}
+        if not navigation.get("active_command_id"):
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"mock navigation goal remained active: {latest}")
+
+
 def main() -> None:
     """Run success, cancel, failure, retry, fault and audit scenarios."""
     request_json("/api/robots/tb1/estop", "POST", {"engaged": False})
@@ -105,6 +122,7 @@ def main() -> None:
     wait_task(canceled["task_id"], "ACTIVE")
     request_json(f"/api/tasks/{canceled['task_id']}", "DELETE")
     wait_task(canceled["task_id"], "CANCELED")
+    wait_no_active_goal()
     retry = request_json(
         f"/api/tasks/{canceled['task_id']}/retry",
         "POST",
