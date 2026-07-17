@@ -63,6 +63,15 @@ Windows에서 개발자 mode가 없어 symbolic link 설치 테스트 1개는 pl
 skip됐다. 같은 테스트는 Linux Humble CI에서 실행된다. 현재까지 나머지 검사는
 통과했고 Humble `colcon build/test` 결과는 아직 미확인이다.
 
+## Humble CI 1차 실행
+
+Draft PR #7의 첫 실행은 웹 좌표 테스트와 ROS 2 Humble 설치까지 통과했지만
+`rosdep install`에서 중단됐다. Ubuntu 22.04 runner의 `libgoogle-glog-dev`가 요구하는
+`libunwind-dev`를 apt가 선택하지 못해 `ros-humble-nav2-bringup` 설치가 실패했다.
+코드 빌드 전 runner 의존성 문제이며, Jammy가 같은 virtual dependency의 제공자로
+정의한 `libunwind-15-dev`를 rosdep 전에 명시적으로 설치하도록 CI를 보강했다. 다음
+실행에서 rosdep, colcon build와 domain 142 전체 테스트 결과를 다시 기록한다.
+
 ## 검토 중 발견하고 보강한 점
 
 ### stale 보조 상태
