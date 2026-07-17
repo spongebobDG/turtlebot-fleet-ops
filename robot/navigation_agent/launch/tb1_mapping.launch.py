@@ -16,6 +16,7 @@ def generate_launch_description() -> LaunchDescription:
     slam_share = Path(get_package_share_directory("slam_toolbox"))
     config = share_dir / "config" / "tb1.yaml"
     slam_config = share_dir / "config" / "tb1_slam.yaml"
+    normalizer_config = share_dir / "config" / "tb1_scan_normalizer.yaml"
     use_sim_time = LaunchConfiguration("use_sim_time")
     return LaunchDescription(
         [
@@ -23,6 +24,18 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time",
                 default_value="false",
                 description="Use a simulator clock instead of system time",
+            ),
+            Node(
+                package="navigation_agent",
+                executable="scan_normalizer",
+                name="scan_normalizer",
+                output="screen",
+                parameters=[
+                    str(normalizer_config),
+                    {"use_sim_time": use_sim_time},
+                ],
+                respawn=True,
+                respawn_delay=3.0,
             ),
             Node(
                 package="navigation_agent",

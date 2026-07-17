@@ -37,7 +37,11 @@ def generate_launch_description() -> LaunchDescription:
         "parameters": [configured_params],
         "arguments": ["--ros-args", "--log-level", log_level],
     }
-    tf_remaps = [("/tf", "tf"), ("/tf_static", "tf_static")]
+    common_remaps = [
+        ("/tf", "tf"),
+        ("/tf_static", "tf_static"),
+        ("/scan", "/scan_normalized"),
+    ]
     lifecycle_nodes = [
         "controller_server",
         "smoother_server",
@@ -62,28 +66,28 @@ def generate_launch_description() -> LaunchDescription:
             Node(
                 package="nav2_controller",
                 executable="controller_server",
-                remappings=tf_remaps + [("cmd_vel", "cmd_vel_nav")],
+                remappings=common_remaps + [("cmd_vel", "cmd_vel_nav")],
                 **common,
             ),
             Node(
                 package="nav2_smoother",
                 executable="smoother_server",
                 name="smoother_server",
-                remappings=tf_remaps,
+                remappings=common_remaps,
                 **common,
             ),
             Node(
                 package="nav2_planner",
                 executable="planner_server",
                 name="planner_server",
-                remappings=tf_remaps,
+                remappings=common_remaps,
                 **common,
             ),
             Node(
                 package="nav2_behaviors",
                 executable="behavior_server",
                 name="behavior_server",
-                remappings=tf_remaps
+                remappings=common_remaps
                 + [("cmd_vel", NAVIGATION_CMD_TOPIC)],
                 **common,
             ),
@@ -91,21 +95,21 @@ def generate_launch_description() -> LaunchDescription:
                 package="nav2_bt_navigator",
                 executable="bt_navigator",
                 name="bt_navigator",
-                remappings=tf_remaps,
+                remappings=common_remaps,
                 **common,
             ),
             Node(
                 package="nav2_waypoint_follower",
                 executable="waypoint_follower",
                 name="waypoint_follower",
-                remappings=tf_remaps,
+                remappings=common_remaps,
                 **common,
             ),
             Node(
                 package="nav2_velocity_smoother",
                 executable="velocity_smoother",
                 name="velocity_smoother",
-                remappings=tf_remaps
+                remappings=common_remaps
                 + [
                     ("cmd_vel", "cmd_vel_nav"),
                     ("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC),

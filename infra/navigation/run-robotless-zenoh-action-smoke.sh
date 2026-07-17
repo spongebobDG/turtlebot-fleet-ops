@@ -55,12 +55,17 @@ common_env=(
 )
 
 env "${common_env[@]}" ROS_DOMAIN_ID="${robot_domain}" \
-  "${bridge}" -l "${robot_endpoint}" \
+  "${bridge}" \
+  -c "${repo_root}/infra/zenoh/robot-bridge.json5" \
+  -l "${robot_endpoint}" \
   >"${smoke_dir}/robot-bridge.log" 2>&1 &
 smoke_pids+=("$!")
 
 env "${common_env[@]}" ROS_DOMAIN_ID="${control_domain}" \
-  "${bridge}" -l "${control_endpoint}" -e "${robot_endpoint}" \
+  "${bridge}" \
+  -c "${repo_root}/infra/zenoh/control-bridge.json5" \
+  -l "${control_endpoint}" \
+  -e "${robot_endpoint}" \
   >"${smoke_dir}/control-bridge.log" 2>&1 &
 smoke_pids+=("$!")
 

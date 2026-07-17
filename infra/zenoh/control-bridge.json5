@@ -1,0 +1,42 @@
+{
+  "plugins": {
+    "ros2dds": {
+      "nodename": "control_zenoh_bridge",
+      "allow": {
+        "publishers": [
+          "^/fleet/navigation_lease$"
+        ],
+        "subscribers": [
+          "^/fleet/robot_status$",
+          "^/fleet/navigation_status$",
+          "^/fleet/safety_status$",
+          "^/scan$",
+          "^/scan_normalized$",
+          "^/odom$",
+          "^/tf$",
+          "^/tf_static$",
+          "^/robot_description$",
+          "^/joint_states$",
+          "^/map$",
+          "^/map_metadata$",
+          "^/amcl_pose$",
+          "^/particle_cloud$",
+          "^/plan$",
+          "^/local_plan$",
+          "^/local_costmap/.*",
+          "^/global_costmap/.*"
+        ],
+        "service_servers": [],
+        "service_clients": [
+          "^/safety_watchdog/set_estop$",
+          "^/tb1/navigation/set_initial_pose$",
+          "^/tb1/navigation/set_motion_mode$"
+        ],
+        "action_servers": [],
+        "action_clients": [
+          "^/tb1/navigation/navigate$"
+        ]
+      }
+    }
+  }
+}

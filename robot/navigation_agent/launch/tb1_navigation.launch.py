@@ -22,6 +22,7 @@ def generate_launch_description() -> LaunchDescription:
     tb3_share = Path(get_package_share_directory("turtlebot3_navigation2"))
     official_params = tb3_share / "param" / "humble" / "burger.yaml"
     agent_config = share_dir / "config" / "tb1.yaml"
+    normalizer_config = share_dir / "config" / "tb1_scan_normalizer.yaml"
     rewrites_file = share_dir / "config" / "tb1_nav2_rewrites.yaml"
     with rewrites_file.open(encoding="utf-8") as stream:
         rewrite_values = yaml.safe_load(stream)
@@ -66,6 +67,18 @@ def generate_launch_description() -> LaunchDescription:
                     "use_composition": "False",
                     "use_respawn": "True",
                 }.items(),
+            ),
+            Node(
+                package="navigation_agent",
+                executable="scan_normalizer",
+                name="scan_normalizer",
+                output="screen",
+                parameters=[
+                    str(normalizer_config),
+                    {"use_sim_time": use_sim_time},
+                ],
+                respawn=True,
+                respawn_delay=3.0,
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(

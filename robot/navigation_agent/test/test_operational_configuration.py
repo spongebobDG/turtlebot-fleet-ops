@@ -30,7 +30,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "max_rotational_vel: 0.3" in nav2_rewrites
     assert "base_frame_id: base_footprint" in nav2_rewrites
     assert "robot_base_frame: base_link" in nav2_rewrites
-    assert "scan_topic: /scan" in nav2_rewrites
+    assert "scan_topic: /scan_normalized" in nav2_rewrites
     assert "odom_topic: /odom" in nav2_rewrites
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
@@ -40,6 +40,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
     assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' in nav2_launch
     assert '("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC)' in nav2_launch
+    assert '("/scan", "/scan_normalized")' in nav2_launch
     assert 'NAVIGATION_CMD_TOPIC = "/motion/navigation/cmd_vel"' in (
         nav2_launch
     )
@@ -47,6 +48,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert 'default_value="false"' in launch
     assert '"use_composition": "False"' in launch
     assert '"use_respawn": "True"' in launch
+    assert '"tb1_scan_normalizer.yaml"' in launch
 
 
 def test_mapping_supports_simulation_without_changing_real_default() -> None:
@@ -55,6 +57,23 @@ def test_mapping_supports_simulation_without_changing_real_default() -> None:
     assert 'LaunchConfiguration("use_sim_time")' in launch
     assert 'default_value="false"' in launch
     assert '"use_sim_time": use_sim_time' in launch
+    assert '"tb1_scan_normalizer.yaml"' in launch
+    slam_config = (PACKAGE_ROOT / "config" / "tb1_slam.yaml").read_text()
+    assert "scan_topic: /scan_normalized" in slam_config
+    assert "scan_queue_size: 10" in slam_config
+    assert "minimum_travel_distance: 0.05" in slam_config
+    setup = (PACKAGE_ROOT / "setup.py").read_text()
+    supervised = (
+        PACKAGE_ROOT
+        / "navigation_agent"
+        / "supervised_motion.py"
+    ).read_text()
+    assert "supervised_motion = navigation_agent.supervised_motion:main" in (
+        setup
+    )
+    assert 'declare_parameter("input_topic", "/motion/manual/cmd_vel")' in (
+        supervised
+    )
 
 
 def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive(
@@ -66,6 +85,17 @@ def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive(
     assert "Conflicts=tb1-navigation.service" in mapping
     assert "Conflicts=tb1-mapping.service" in navigation
     assert "ExecStartPre=/usr/bin/test -r %h/.local/share/" in navigation
+
+
+def test_map_save_preserves_unknown_cells_and_validates_artifacts() -> None:
+    save_script = (
+        REPOSITORY_ROOT / "infra" / "navigation" / "save-tb1-map.sh"
+    ).read_text()
+
+    assert "--free 0.196" in save_script
+    assert "--occ 0.65" in save_script
+    assert "navigation_agent validate_map" in save_script
+    assert "--require-pose-graph" in save_script
 
 
 def test_only_watchdog_owns_the_real_velocity_topic() -> None:
