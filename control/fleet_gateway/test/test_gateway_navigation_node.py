@@ -27,6 +27,8 @@ def _spin_until(
 
 
 class _FakeGoalHandle:
+    """Minimal cancelable goal handle used by the lease graph test."""
+
     def __init__(self) -> None:
         self.cancel_calls = 0
 

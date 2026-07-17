@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from fleet_interfaces.msg import NavigationStatus, RobotStatus, SafetyStatus
@@ -59,7 +61,7 @@ def test_navigation_safety_and_map_messages_build_web_contracts():
     map_result = map_message_to_dict(occupancy_map)
 
     assert navigation_result["state"] == "ACTIVE"
-    assert navigation_result["target"]["yaw"] == pytest.approx(1.5708)
+    assert navigation_result["target"]["yaw"] == pytest.approx(math.pi / 2.0)
     assert navigation_result["distance_remaining"] == pytest.approx(0.75)
     assert safety_result["mode"] == "WAITING_NEUTRAL"
     assert safety_result["motion_armed"] is False

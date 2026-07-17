@@ -335,6 +335,9 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
 
         fake_nav2.mode = "fail"
         publish_readiness()
+        _wait_until(
+            lambda: agent._ready_for_goal(time.monotonic(), False)
+        )
         failed_handle = send_goal("failure")
         assert failed_handle.accepted
         lease.command_id = "failure"
