@@ -7,7 +7,12 @@ from typing import Callable, List
 from action_msgs.msg import GoalStatus
 from action_msgs.srv import CancelGoal
 from fleet_interfaces.action import NavigateRobot
-from fleet_interfaces.msg import NavigationLease, RobotStatus, SafetyStatus
+from fleet_interfaces.msg import (
+    NavigationLease,
+    NavigationStatus,
+    RobotStatus,
+    SafetyStatus,
+)
 from fleet_interfaces.srv import SetInitialPose, SetMotionMode
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from lifecycle_msgs.msg import State
@@ -315,6 +320,9 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         assert fake_nav2.received_goals == 1
         assert MODE_NAVIGATION in modes
         _wait_until(lambda: modes[-1] == MODE_IDLE)
+        publish_readiness()
+        time.sleep(0.1)
+        assert agent._state == NavigationStatus.STATE_SUCCEEDED
 
         fake_nav2.mode = "reject"
         publish_readiness()

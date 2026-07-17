@@ -362,7 +362,10 @@ class NavigationAgent(Node):
             self._amcl_received_at = now
             self._current_pose.header = message.header
             self._current_pose.pose = message.pose.pose
-            if self._active_command_id == "":
+            if (
+                self._active_command_id == ""
+                and self._state not in TERMINAL_STATES
+            ):
                 self._state = NavigationStatus.STATE_READY
                 self._message = "Localization ready"
 
