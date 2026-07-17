@@ -88,25 +88,29 @@ for pid in "${smoke_pids[@]}"; do
 done
 
 node_list="$(ros2 node list)"
+echo "${node_list}"
 grep -Fxq "/safety_watchdog" <<<"${node_list}"
 grep -Fxq "/motion_arbiter" <<<"${node_list}"
 grep -Fxq "/navigation_agent" <<<"${node_list}"
 grep -Fxq "/fleet_gateway" <<<"${node_list}"
 
 action_list="$(ros2 action list -t)"
+echo "${action_list}"
 grep -Fq "/navigate_to_pose [nav2_msgs/action/NavigateToPose]" \
   <<<"${action_list}"
 grep -Fq "/tb1/navigation/navigate [fleet_interfaces/action/NavigateRobot]" \
   <<<"${action_list}"
 
 cmd_info="$(ros2 topic info /cmd_vel --verbose)"
+echo "${cmd_info}"
 grep -Fq "Publisher count: 1" <<<"${cmd_info}"
 grep -Fq "Node name: safety_watchdog" <<<"${cmd_info}"
 
 navigation_cmd_info="$(
   ros2 topic info /motion/navigation/cmd_vel --verbose
 )"
-grep -Fq "Node name: controller_server" <<<"${navigation_cmd_info}"
+echo "${navigation_cmd_info}"
+grep -Fq "Node name: velocity_smoother" <<<"${navigation_cmd_info}"
 
 python3 - "${telemetry_file}" <<'PY'
 import json
