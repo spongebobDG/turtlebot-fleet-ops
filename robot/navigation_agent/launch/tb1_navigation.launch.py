@@ -29,6 +29,7 @@ def generate_launch_description() -> LaunchDescription:
     if not isinstance(rewrite_values, dict) or not rewrite_values:
         raise ValueError("TB1 Nav2 parameter rewrites must be a non-empty map")
     map_file = LaunchConfiguration("map")
+    use_sim_time = LaunchConfiguration("use_sim_time")
     configured_params = RewrittenYaml(
         source_file=str(official_params),
         root_key=None,
@@ -49,6 +50,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value=default_map,
                 description="Absolute path to the saved TB1 map YAML",
             ),
+            DeclareLaunchArgument(
+                "use_sim_time",
+                default_value="false",
+                description="Use a simulator clock instead of system time",
+            ),
             GroupAction(
                 [
                     SetRemap(
@@ -62,7 +68,7 @@ def generate_launch_description() -> LaunchDescription:
                         launch_arguments={
                             "map": map_file,
                             "params_file": configured_params,
-                            "use_sim_time": "false",
+                            "use_sim_time": use_sim_time,
                             "autostart": "true",
                             "use_composition": "false",
                             "use_respawn": "true",
@@ -75,7 +81,10 @@ def generate_launch_description() -> LaunchDescription:
                 executable="motion_arbiter_node",
                 name="motion_arbiter",
                 output="screen",
-                parameters=[str(agent_config), {"default_mode": 0}],
+                parameters=[
+                    str(agent_config),
+                    {"default_mode": 0, "use_sim_time": use_sim_time},
+                ],
                 respawn=True,
                 respawn_delay=3.0,
             ),
@@ -84,7 +93,10 @@ def generate_launch_description() -> LaunchDescription:
                 executable="navigation_agent_node",
                 name="navigation_agent",
                 output="screen",
-                parameters=[str(agent_config)],
+                parameters=[
+                    str(agent_config),
+                    {"use_sim_time": use_sim_time},
+                ],
                 respawn=True,
                 respawn_delay=3.0,
             ),

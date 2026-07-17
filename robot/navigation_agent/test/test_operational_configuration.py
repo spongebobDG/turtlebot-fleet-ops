@@ -30,9 +30,20 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "odom_topic: /odom" in nav2_rewrites
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert 'dst="/motion/navigation/cmd_vel"' in launch
+    assert 'LaunchConfiguration("use_sim_time")' in launch
+    assert 'default_value="false"' in launch
 
 
-def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive() -> None:
+def test_mapping_supports_simulation_without_changing_real_default() -> None:
+    launch = (PACKAGE_ROOT / "launch" / "tb1_mapping.launch.py").read_text()
+
+    assert 'LaunchConfiguration("use_sim_time")' in launch
+    assert 'default_value="false"' in launch
+    assert '"use_sim_time": use_sim_time' in launch
+
+
+def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive(
+) -> None:
     units = REPOSITORY_ROOT / "infra" / "systemd" / "user"
     mapping = (units / "tb1-mapping.service").read_text()
     navigation = (units / "tb1-navigation.service").read_text()
@@ -40,3 +51,22 @@ def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive() -> Non
     assert "Conflicts=tb1-navigation.service" in mapping
     assert "Conflicts=tb1-mapping.service" in navigation
     assert "ExecStartPre=/usr/bin/test -r %h/.local/share/" in navigation
+
+
+def test_only_watchdog_owns_the_real_velocity_topic() -> None:
+    watchdog_config = (
+        REPOSITORY_ROOT
+        / "robot"
+        / "safety_watchdog"
+        / "config"
+        / "tb1.yaml"
+    ).read_text()
+    navigation_config = (PACKAGE_ROOT / "config" / "tb1.yaml").read_text()
+    navigation_launch = (
+        PACKAGE_ROOT / "launch" / "tb1_navigation.launch.py"
+    ).read_text()
+
+    assert "output_topic: /cmd_vel" in watchdog_config
+    assert "output_topic: /safety/cmd_vel_in" in navigation_config
+    assert 'src="/cmd_vel"' in navigation_launch
+    assert 'dst="/motion/navigation/cmd_vel"' in navigation_launch

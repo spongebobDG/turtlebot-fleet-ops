@@ -34,7 +34,7 @@ jobs:
       - name: Install Jammy Nav2 unwind provider
         run: |
           sudo apt-get update
-          sudo apt-get install -y libunwind-15-dev
+          sudo apt-get install -y libunwind-15-dev shellcheck
 
       - name: Install package dependencies
         run: |
@@ -53,6 +53,22 @@ jobs:
           colcon build \
             --base-paths robot control \
             --event-handlers console_direct+
+
+      - name: Validate operational files
+        shell: bash
+        run: |
+          shellcheck infra/navigation/*.sh infra/zenoh/*.sh
+          systemd-analyze verify infra/systemd/user/*.service
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          ros2 launch navigation_agent tb1_mapping.launch.py --show-args
+          ros2 launch navigation_agent tb1_navigation.launch.py --show-args
+
+      - name: Run robotless navigation smoke test
+        shell: bash
+        env:
+          ROS_DOMAIN_ID: "142"
+        run: bash infra/navigation/run-robotless-navigation-smoke.sh
 
       - name: Run workspace tests
         shell: bash
