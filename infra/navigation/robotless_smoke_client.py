@@ -120,7 +120,7 @@ def main() -> None:
     _wait_navigation_state("CANCELED")
     print(f"PASS: explicit cancellation for {cancel_command}")
 
-    estop_command = _start_goal(0.4)
+    estop_command = _start_goal(1.0)
     _wait_navigation_state("ACTIVE")
     status, payload = _request(
         "POST",
