@@ -32,10 +32,27 @@ cd C:\project
 git clone https://github.com/spongebobDG/turtlebot-fleet-ops.git
 cd turtlebot-fleet-ops
 git fetch --prune
-git switch feat/phase-5-tb1-navigation
+git switch codex/phase-5-tb1-navigation
 git pull --ff-only
 wsl -d Ubuntu-22.04
 ```
+
+### Windows만으로 웹 화면 확인
+
+WSL과 ROS 2를 준비하기 전에도 seeded preview로 지도, WARN, 작업, fault와 감사 패널을
+확인할 수 있다. 이 경로는 ROS graph나 모터를 만들지 않는다.
+
+```powershell
+cd C:\projects\turtlebot-fleet-ops
+python -m pip install fastapi uvicorn websockets
+python infra/navigation/robotless_web_preview.py
+```
+
+브라우저에서 `http://127.0.0.1:18080`을 연다. `WEB_PORT`로 포트를 바꿀 수 있고
+`FLEET_OPERATIONS_DB`를 지정하지 않으면 임시 디렉터리의 preview DB를 매 실행 초기화한다.
+명시한 DB는 기본적으로 보존하며 의도적으로 초기화할 때만 `PREVIEW_RESET=1`을 함께 준다.
+화면 확인 뒤 `Ctrl+C`로 종료한다. 이 preview의 online 상태는 ROS heartbeat 대신 한 시간
+유효한 seeded snapshot이므로 통신 지연이나 freshness acceptance 증거로 쓰지 않는다.
 
 ## 2. WSL 자동 설치와 전체 검증
 
@@ -48,8 +65,8 @@ bash scripts/weekend/verify_workspace.sh
 ```
 
 첫 스크립트는 Ubuntu 22.04를 확인하고 ROS 2 Humble, 개발 도구와 workspace 의존성을
-설치한다. 두 번째 스크립트는 5개 패키지를 빌드하고 전체 테스트, Linux 줄바꿈과 선택적
-JavaScript 구문 검사를 수행한다.
+설치한다. 두 번째 스크립트는 현재 5개 패키지를 빌드하고 전체 테스트, Linux 줄바꿈,
+systemd unit, JavaScript 구문과 TB1 작업·고장 mock smoke를 수행한다.
 
 정상 종료 표식:
 
@@ -76,20 +93,22 @@ Windows 브라우저에서 `http://localhost:8000`을 연다. mock은 다음 계
 bash scripts/weekend/smoke_test_mock.sh
 ```
 
-정상 종료 표식은 `WEEKEND_MOCK_SMOKE_OK status=SUCCEEDED final_estop=true`다.
+정상 종료 표식은
+`WEEKEND_MOCK_SMOKE_OK tasks=faults=audit final_estop=true`다.
 
 - `tb1` 상태 heartbeat, 배터리, odom, LiDAR·시스템·Wi-Fi 예제 값
-- 기본 활성 상태의 mock e-stop과 상태 heartbeat
-- e-stop 적용·해제 서비스
-- `/navigate_to_pose` Action 성공·취소·timeout·실패 연습
-- Goal 실행 중 위치와 남은 거리 feedback
+- 기본 활성 상태의 mock e-stop과 RobotStatus·NavigationStatus·SafetyStatus
+- OccupancyGrid, 초기 위치와 e-stop 서비스
+- `/tb1/navigation/navigate` custom Action과 Gateway lease
+- 작업 생성·실행·성공·취소·실패·재시도와 SQLite 감사 기록
+- Goal 실행 중 위치, 남은 거리와 lease age feedback
 
 테스트 규칙:
 
 | 입력 | mock 결과 |
 | --- | --- |
-| e-stop 해제 후 `x=1.0` | 약 2초 뒤 성공 |
-| `x>=5.0` | 30초 실행해 cancel·timeout 연습 가능 |
+| e-stop 해제·초기 위치 뒤 `x=0.5` | 약 2초 뒤 성공 |
+| `x>=1.5` | 30초 실행해 cancel·lease 연습 가능 |
 | `x<0.0` | 수락 뒤 abort되어 retry 연습 가능 |
 | 실행 중 e-stop 적용 | Goal abort |
 
@@ -102,7 +121,7 @@ mock 프로세스는 OpenCR, LiDAR, `/cmd_vel`을 사용하지 않는다. 화면
 
 ```bash
 git fetch --prune
-git switch feat/phase-5-tb1-navigation
+git switch codex/phase-5-tb1-navigation
 git pull --ff-only
 git status
 ```
@@ -138,15 +157,11 @@ Google Drive/
 토큰, Wi-Fi 정보와 사설 IP가 포함된 터미널 캡처는 업로드하지 않는다. 코드 문서에는 필요한
 경우 Drive 파일 이름과 SHA-256만 기록하고 개인 공유 링크는 공개 저장소에 넣지 않는다.
 
-## 6. 주말에 진행할 수 있는 작업
+## 6. 로봇 없이 구현·검증하는 범위
 
-우선순위 순서:
-
-1. TB1 로그·장애 이벤트 데이터 모델과 API 테스트
-2. 단일 로봇 작업 생성·실행·취소·실패·재시도 상태 머신
-3. 웹 작업·장애·감사 로그 UI와 접근성 개선
-4. mock 기반 REST·WebSocket·Action 통합 테스트
-5. systemd 재시작·설정 validation과 운영 문서
+현재 자동 경로는 TB1 로그·장애 이벤트, 단일 작업 상태 머신, 웹 작업·고장·감사 UI,
+mock REST·WebSocket·Action과 systemd 설정 validation까지 포함한다. 새 변경은
+`verify_workspace.sh`와 CI를 모두 통과시킨다.
 
 로봇이 돌아온 뒤에만 하는 작업:
 

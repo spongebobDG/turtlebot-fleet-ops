@@ -1,0 +1,91 @@
+# Phase 6: TB1 작업 상태 머신과 운영 기록
+
+## 반드시 알아야 할 개념
+
+1. 최신 상태 snapshot과 시간 순서가 필요한 event history는 목적이 다르다.
+2. heartbeat마다 로그를 남기면 실제 장애 전이가 반복 데이터에 묻힌다.
+3. ROS action goal과 운영 task는 같은 식별자가 아니다.
+4. retry는 과거 실패를 덮지 않는 새 attempt여야 한다.
+5. 영속 저장 실패가 로봇 상태·안전 callback을 막으면 안 된다.
+6. task manager도 기존 map·WARN·e-stop·lease 검사를 그대로 통과해야 한다.
+7. SQLite WAL은 단일 Gateway의 읽기·쓰기 동시성을 단순하게 처리하는 선택이다.
+8. mock 성공은 상태 계약 증거이지 물리 주행 증거가 아니다.
+9. 취소 요청 수락과 로봇 action의 terminal 상태 반영은 같은 시점이 아니다.
+
+## 개념 설명
+
+### Snapshot과 event는 무엇이 다른가?
+
+Snapshot은 “지금 TB1이 어떤 상태인가”에 빠르게 답한다. Event는 “언제 무엇이 바뀌었고 누가
+무슨 요청을 했는가”를 복원한다. WebSocket에는 최신 snapshot을 반복 전송하고, 지도와 감사
+기록은 별도 REST로 필요할 때 가져오는 이유다.
+
+### 왜 fault heartbeat를 그대로 저장하지 않는가?
+
+2Hz 상태에서 10분 동안 같은 고장이 유지되면 1,200개의 중복 행이 생긴다. 발생 한 건,
+`last_seen` 갱신, 해제 한 건으로 모델링하면 장애 지속 시간과 복구 여부를 바로 계산할 수 있다.
+
+### Action command ID와 task ID를 왜 나누는가?
+
+command ID는 한 번의 ROS action과 lease를 묶고 잘못된 취소를 막는다. task ID는 작업 생성,
+실행 전 대기, 결과와 retry lineage까지 포함하는 운영 식별자다. task가 재시도되면 새 action과
+새 command ID가 생기므로 두 ID를 하나로 쓰면 과거 실행과 현재 실행이 섞인다.
+
+### retry 때 같은 task를 다시 ACTIVE로 바꾸면 왜 안 되는가?
+
+실패한 시도와 다음 시도의 경계가 사라져 성공률, 실패 원인과 작업자의 판단을 추적할 수 없다.
+새 task를 만들고 `parent_task_id`, `attempt`로 연결하면 모든 시도를 보존할 수 있다.
+
+### SQLite를 선택한 이유는?
+
+현재 작성자는 한 Gateway, 한 TB1과 소규모 이벤트를 운영한다. 별도 DB 서버 없이 트랜잭션,
+index와 재시작 후 복구를 얻을 수 있고 백업도 한 파일로 단순하다. 다중 Gateway와 높은 쓰기
+처리량이 필요해질 때 PostgreSQL 같은 외부 DB를 검토하면 된다.
+
+### 저장 실패를 왜 best-effort observer로 격리하는가?
+
+감사 DB 잠금이나 디스크 오류 때문에 RobotStatus callback이 예외로 중단되면 웹 freshness와
+명령 차단 판단까지 오래된 상태가 될 수 있다. 기록 오류는 별도 경보 대상이지만 안전·상태
+수신 경로를 멈추게 해서는 안 된다.
+
+### 취소 API가 202면 바로 새 목표를 보내도 되는가?
+
+아니다. 202는 취소 요청이 접수됐다는 뜻이며 action server가 terminal result를 내고
+`NavigationStatus.active_command_id`를 비울 때까지 짧은 전파 구간이 남을 수 있다. 이때 새
+목표를 허용하면 두 action의 상태와 lease가 겹칠 수 있다. Gateway는 기존 활성 목표 검사를
+유지하고, 자동 smoke도 `active_command_id`가 사라진 것을 확인한 뒤 다음 시나리오를 시작한다.
+
+## 틀리기 쉬운 설명
+
+| 틀린 설명 | 올바른 설명 |
+| --- | --- |
+| 현재 fault_codes만 보면 장애 이력을 안다 | 발생·해제 시각은 별도 event와 fault history가 필요하다 |
+| retry는 FAILED를 CREATED로 되돌리면 된다 | 새 attempt를 만들어 과거 실패를 보존한다 |
+| task가 ACTIVE면 로봇은 반드시 움직인다 | action accepted 상태이며 lease·Nav2·watchdog이 계속 허가해야 한다 |
+| 취소 API가 성공하면 즉시 새 goal을 보내도 된다 | terminal status와 active command 해제를 확인해야 한다 |
+| SQLite면 동시성 문제가 없다 | 짧은 transaction, timeout, WAL과 단일 writer 경계를 설계해야 한다 |
+| mock에서 성공했으니 TB1도 성공한다 | API·상태 전이만 검증했으며 센서·모터·LAN은 실차 항목이다 |
+
+## 면접 모범 답변
+
+> TB1 운영 기능에서는 최신 상태와 이력을 분리했습니다. Registry는 heartbeat freshness를 계산하고,
+> SQLite store는 fault의 발생·해제 전이와 task 수명주기를 저장합니다. 작업은 생성과 실행을
+> 분리하고 ROS action command ID를 연결합니다. 실패나 취소 후 retry는 기존 행을 되돌리지 않고
+> parent와 attempt를 가진 새 task로 만들어 이력을 보존합니다. 모든 실행은 기존 map, WARN,
+> e-stop과 lease 검사를 재사용하며, robotless custom-action mock으로 성공·취소·실패·retry를
+> 검증하되 물리 주행 증거와는 구분했습니다.
+
+## 복습 문제와 정답
+
+### 1. 같은 fault가 2Hz로 들어올 때 event는 몇 개가 필요한가?
+
+정답: 지속 중에는 발생 event 한 개면 되고 `last_seen`만 갱신한다. 복구 시 해제 event 한 개를
+추가한다. 심각도가 변하면 그 전이도 별도 event다.
+
+### 2. task와 command ID의 수명 차이는 무엇인가?
+
+정답: task는 생성부터 retry lineage까지, command ID는 한 번의 action과 lease까지만 산다.
+
+### 3. mock으로 검증할 수 없는 핵심 항목은 무엇인가?
+
+정답: 실제 LiDAR·지도 정합, 모터 정지시간, Zenoh LAN 단절, systemd 프로세스 복구와 Pi 자원이다.

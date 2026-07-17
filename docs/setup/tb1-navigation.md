@@ -5,11 +5,11 @@
 완료로 바꾼다.
 
 저장소 자동 검증 기준선은 Draft PR #7의
-[Actions 실행 29587499227](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29587499227)이다.
-Ubuntu 22.04 ROS 2 Humble에서 5개 패키지 빌드, 격리 domain 142의 89개 테스트와
-robotless Nav2 stack smoke, 서로 다른 두 DDS domain 사이의 Zenoh 1.9.0 action smoke가
-통과했다. 이 결과는 실차의 센서 정합, 물리 정지시간, 실제 LAN 단절 또는 자원 사용량을
-대신하지 않는다.
+[Actions 실행 29596474724](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29596474724)이다.
+Ubuntu 22.04 ROS 2 Humble에서 5개 패키지 빌드, 격리 domain 142의 173개 테스트와
+robotless Nav2 stack smoke, 서로 다른 두 DDS domain 사이의 Zenoh 1.9.0 action smoke,
+작업·fault smoke가 통과했다. 이 결과는 실차의 센서 정합, 물리 정지시간, 실제 LAN 단절
+또는 자원 사용량을 대신하지 않는다.
 
 ## 로봇 없는 자동 통합 검증
 
@@ -81,19 +81,22 @@ systemctl --user stop tb1-navigation.service 2>/dev/null || true
 ros2 launch navigation_agent tb1_mapping.launch.py
 ```
 
-다른 TB1 터미널에서 teleop을 manual 입력으로 연결한다.
+launch는 원본 `/scan`을 360개 각도 bin의 `/scan_normalized`로 재투영하고 SLAM Toolbox에는
+정규화 토픽만 연결한다. 실제 LDS-02에서 관찰한 207~219개 가변 배열이 다시 SLAM 입력을
+깨뜨리지 않는지 먼저 확인한다.
 
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/turtlebot3_ws/install/setup.bash
-export ROS_DOMAIN_ID=42
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-ros2 run turtlebot3_teleop teleop_keyboard \
-  --ros-args -r cmd_vel:=/motion/manual/cmd_vel
+ros2 topic hz /scan_normalized
+ros2 topic echo /scan_normalized --once --field ranges | head
+ros2 topic info /cmd_vel --verbose
 ```
 
-아주 천천히 공간 외곽과 주요 장애물을 관측한다. 지도 loop closure가 안정된 뒤
-저장한다.
+잔류 키 입력을 막기 위해 일반 teleop 대신
+[보호 이동 기반 매핑 절차](tb1-supervised-mapping.md)의 dry-run, 5cm 직진과 30도 회전을
+반복한다. `supervised_motion`은 `/motion/manual/cmd_vel`만 발행하고 arbiter와 기존
+watchdog을 거친다. 각 구간 뒤 `/map`, pose graph, odom과 최종 e-stop을 확인한다.
+`scan_queue_size=10`과 `minimum_travel_distance=0.05`는 실제 TB1에서 검증한 기준값이다.
+지도 loop closure가 안정된 뒤 저장한다.
 
 ```bash
 cd ~/turtlebot-fleet-ops
@@ -102,7 +105,9 @@ ls -lh ~/.local/share/turtlebot-fleet-ops/maps/tb1/
 ```
 
 최소한 `map.yaml`, map image, SLAM Toolbox pose graph 파일이 있어야 한다. 이 디렉터리는
-저장소 밖이며 실제 공간 지도는 commit하지 않는다.
+저장소 밖이며 실제 공간 지도는 commit하지 않는다. 저장 script는 trinary unknown 셀이
+free로 잘못 재분류되지 않게 `free_thresh=0.196`, `occupied_thresh=0.65`로 저장하고,
+known cell 비율과 pose graph 산출물을 `validate_map`으로 다시 검사한다.
 
 ## 4. 주행 프로필
 
@@ -189,10 +194,11 @@ systemctl --user start tb1-mapping.service
 ### 예상 소요시간
 
 TB1 SSH 접속, 관제 WSL과 빈 시험 공간이 이미 준비됐다는 기준으로 `3시간 5분~4시간
-35분`을 예상한다. 2026-07-17 현재 관제 PC에는 WSL Ubuntu 배포판이 없고 TB1 SSH가
-연결되지 않았으므로 환경 준비 `30~60분`을 더한 총 달력 시간은 `3시간 35분~5시간
-35분`이다. 최대 추정치와 재시험 buffer 40분을 포함해 한 번의 시험 창은 `6시간
-15분`을 확보한다.
+35분`을 예상한다. 2026-07-18 현재 PC는 Windows 10 build 19045, 약 15.9GiB 메모리이며
+Ubuntu 22.04 WSL·ROS 2·Docker·Node 실행 증거가 없다. 실제 관제에 필요한 WSL2·Humble
+bootstrap과 baseline 확인 `45~90분`을 더한 총 달력 시간은 `3시간 50분~6시간 5분`이다.
+최대 추정치와 재부팅·재시험 buffer 40분을 포함해 한 번의 시험 창은 `6시간 45분`을
+확보한다. Docker는 Phase 5 실차 경로의 필수 조건이 아니므로 이 준비 시간에서 제외한다.
 
 [Nav2의 실물 TurtleBot3 기본 튜토리얼](https://docs.nav2.org/tutorials/docs/navigation2_on_real_turtlebot3.html)은
 기본 절차를 약 1시간으로 안내한다. 아래 산정은 여기에 지도·pose graph 작성, 웹 WARN,
@@ -210,7 +216,7 @@ e-stop·lease·네 프로세스 장애 주입, 10분 자원 측정과 증거 문
 | 10분 자원 주행과 로그 회수 | 15~20분 |
 | 측정값·스크린샷·학습 일지 정리 | 20~30분 |
 
-`6시간 15분` 예약에는 최대 추정치 위 40분 buffer가 포함된다. 위 범위는 실제 측정 전
+`6시간 45분` 예약에는 최대 추정치 위 40분 buffer가 포함된다. 위 범위는 실제 측정 전
 추정치이며, 완료 판정에는 아래 체크리스트의 로그가 필요하다.
 
 ### 지도와 위치추정

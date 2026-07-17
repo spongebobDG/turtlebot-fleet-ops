@@ -34,7 +34,7 @@ LaserRangeScan contains 218 range readings, expected 219
 
 ## 선택한 해결책
 
-`fleet_navigation/scan_normalizer`를 추가했다.
+현재 패키지의 `navigation_agent/scan_normalizer`로 이전해 유지한다.
 
 ```text
 ld08_driver /scan

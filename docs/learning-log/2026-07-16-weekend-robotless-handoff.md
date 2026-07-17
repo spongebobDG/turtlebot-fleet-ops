@@ -2,7 +2,8 @@
 
 날짜: 2026-07-16
 단계: 개발환경 재현과 인수인계
-진행 상태: 자동화·mock·런북 구현과 기존 WSL 검증 완료, 새 PC bootstrap 실행 대기
+진행 상태: 2026-07-18 현재 후속 구현으로 대체됨. 최신 결과는
+`2026-07-18-tb1-robotless-operations.md`를 기준으로 한다.
 
 ## 목표
 
@@ -13,7 +14,7 @@
 
 - Ubuntu 22.04·ROS 2 Humble 설치와 rosdep 의존성 자동화
 - 5개 workspace 패키지 전체 빌드·테스트 스크립트
-- TB1 상태, e-stop heartbeat·서비스와 NavigateToPose를 제공하는 mock node
+- TB1 상태, e-stop·초기 위치와 당시 NavigateToPose를 제공하던 mock node
 - mock과 Fleet Gateway를 동시에 실행하는 ROS launch
 - GitHub·Google Drive 역할 분리와 기기 간 handoff 절차
 
@@ -66,7 +67,8 @@ bootstrap 결과는 새 PC에서 기록한다.
 정답: 올바른 branch와 최신 remote commit, clean working tree, Humble 환경, 전체 baseline
 테스트 통과를 확인한다. baseline이 실패하면 새 변경과 환경 문제를 구분할 수 없다.
 
-## 다음 작업
+## 후속 결과
 
-새 PC에서 bootstrap·전체 검증·mock 대시보드 실행 결과를 기록한 뒤 TB1 로그·장애·단일 로봇
-작업 수명주기 구현을 시작한다.
+TB1 로그·고장, 단일 작업 수명주기와 웹 UI는 2026-07-18에 현재 `NavigateRobot` 계약으로
+구현했다. 이 문서의 수치와 예전 mock 계약은 당시 인수인계 증거이며 현재 실행 절차는
+`docs/setup/weekend-robotless-development.md`를 따른다.
