@@ -14,7 +14,7 @@ sudo apt-get install --no-install-recommends -y \
   ca-certificates \
   curl \
   git \
-  libunwind-dev \
+  libunwind-15-dev \
   locales \
   software-properties-common
 sudo add-apt-repository -y universe
@@ -45,7 +45,16 @@ set -u
 if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
   sudo rosdep init
 fi
-rosdep update --rosdistro humble
+for attempt in 1 2 3; do
+  if rosdep update --rosdistro humble; then
+    break
+  fi
+  if (( attempt == 3 )); then
+    echo "ERROR: rosdep update failed after 3 attempts." >&2
+    exit 1
+  fi
+  sleep $((attempt * 5))
+done
 rosdep install \
   --from-paths "${repo_root}/robot" "${repo_root}/control" \
   --ignore-src \

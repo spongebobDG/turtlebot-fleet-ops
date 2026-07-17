@@ -96,8 +96,47 @@
           <div class="navigation-actions">
             <button class="primary" id="apply-map-command" type="button" disabled>목적지 전송</button>
             <button class="secondary" id="cancel-navigation" type="button" disabled>현재 목표 취소</button>
+            <button class="secondary task-create" id="create-task" type="button" disabled>선택 위치를 작업으로 저장</button>
           </div>
         </aside>
+      </section>
+
+      <section class="section-heading operations-heading">
+        <div>
+          <p class="eyebrow">TB1 OPERATIONS</p>
+          <h2>작업·고장·감사 기록</h2>
+        </div>
+        <button class="secondary compact" id="refresh-operations" type="button">기록 새로고침</button>
+      </section>
+
+      <section class="operations-grid">
+        <article class="operations-card tasks-card">
+          <div class="card-title">
+            <h3>Navigation Tasks</h3>
+            <span id="task-count">0</span>
+          </div>
+          <div class="record-list" id="task-list">
+            <p class="record-empty">저장된 작업이 없습니다.</p>
+          </div>
+        </article>
+        <article class="operations-card">
+          <div class="card-title">
+            <h3>Active Faults</h3>
+            <span id="active-fault-count">0</span>
+          </div>
+          <div class="record-list" id="fault-list">
+            <p class="record-empty">활성 고장이 없습니다.</p>
+          </div>
+        </article>
+        <article class="operations-card audit-card">
+          <div class="card-title">
+            <h3>Audit Events</h3>
+            <span id="event-count">0</span>
+          </div>
+          <div class="record-list" id="event-list">
+            <p class="record-empty">기록된 이벤트가 없습니다.</p>
+          </div>
+        </article>
       </section>
     </main>
 

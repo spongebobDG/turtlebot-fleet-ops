@@ -7,6 +7,9 @@ import time
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 
+RegistryListener = Callable[[str, Mapping[str, Any]], None]
+
+
 @dataclass(frozen=True)
 class _RobotRecord:
     """A last-known status and the local monotonic receipt time."""
@@ -30,6 +33,7 @@ class StatusRegistry:
         self._records: Dict[str, _RobotRecord] = {}
         self._navigation_records: Dict[str, _RobotRecord] = {}
         self._safety_records: Dict[str, _RobotRecord] = {}
+        self._listeners: List[RegistryListener] = []
         self._lock = threading.RLock()
 
     @property
@@ -50,6 +54,7 @@ class StatusRegistry:
         record = _RobotRecord(deepcopy(dict(status)), received)
         with self._lock:
             self._records[robot_id] = record
+        self._notify("robot", record.status)
 
     def update_navigation(
         self,
@@ -58,6 +63,7 @@ class StatusRegistry:
     ) -> None:
         """Store one robot's navigation status by local receipt time."""
         self._update_auxiliary(self._navigation_records, status, now)
+        self._notify("navigation", status)
 
     def update_safety(
         self,
@@ -66,6 +72,12 @@ class StatusRegistry:
     ) -> None:
         """Store one robot's safety status by local receipt time."""
         self._update_auxiliary(self._safety_records, status, now)
+        self._notify("safety", status)
+
+    def add_listener(self, listener: RegistryListener) -> None:
+        """Register a best-effort observer for status transition recording."""
+        with self._lock:
+            self._listeners.append(listener)
 
     def get(
         self,
@@ -140,3 +152,13 @@ class StatusRegistry:
         result["status_age_sec"] = round(age, 3)
         result["fresh"] = age <= self._online_timeout_sec
         return result
+
+    def _notify(self, kind: str, status: Mapping[str, Any]) -> None:
+        with self._lock:
+            listeners = list(self._listeners)
+        for listener in listeners:
+            try:
+                listener(kind, deepcopy(dict(status)))
+            except Exception:
+                # Audit persistence must not break status or safety callbacks.
+                continue

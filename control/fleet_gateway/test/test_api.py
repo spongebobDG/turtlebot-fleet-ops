@@ -3,7 +3,9 @@ import pytest
 
 from fleet_gateway.api import create_app
 from fleet_gateway.map_registry import MapRegistry
+from fleet_gateway.operations import OperationsStore
 from fleet_gateway.registry import StatusRegistry
+from fleet_gateway.task_manager import NavigationTaskManager
 
 
 class FakeEStopController:
@@ -405,3 +407,81 @@ def test_navigation_rejects_stale_navigation_and_safety_status():
 
     assert blocked.status_code == 409
     assert "Safety status" in blocked.json()["detail"]
+
+
+def test_task_fault_and_audit_routes(tmp_path):
+    registry = make_navigation_registry()
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    registry.add_listener(store.observe)
+    registry.update(
+        {
+            "robot_id": "tb1",
+            "hostname": "tb1",
+            "level": 1,
+            "fault_codes": ["LOW_BATTERY"],
+        },
+        now=10.0,
+    )
+    controller = FakeNavigationController()
+    manager = NavigationTaskManager(store, controller)
+    client = TestClient(
+        create_app(
+            registry,
+            navigation_controller=controller,
+            map_registry=make_map_registry(),
+            operations_store=store,
+            task_manager=manager,
+        )
+    )
+
+    created = client.post(
+        "/api/robots/tb1/tasks",
+        json={
+            "x": 0.25,
+            "y": 0.25,
+            "yaw": 0.0,
+            "confirm_warnings": True,
+        },
+    )
+    task_id = created.json()["task_id"]
+    started = client.post(f"/api/tasks/{task_id}/run")
+    canceled = client.delete(f"/api/tasks/{task_id}")
+    retried = client.post(f"/api/tasks/{task_id}/retry")
+
+    assert created.status_code == 201
+    assert started.status_code == 202
+    assert started.json()["state"] == "ACTIVE"
+    assert canceled.status_code == 202
+    assert canceled.json()["state"] == "CANCELED"
+    assert retried.status_code == 201
+    assert retried.json()["attempt"] == 2
+    assert client.get("/api/tasks").json()["tasks"]
+    assert client.get(f"/api/tasks/{task_id}").status_code == 200
+    assert client.get("/api/robots/tb1/faults").json()["faults"][0][
+        "fault_code"
+    ] == "LOW_BATTERY"
+    assert client.get("/api/events?robot_id=tb1").json()["events"]
+
+
+def test_task_routes_reject_invalid_transitions_and_unavailable_store(tmp_path):
+    registry = make_navigation_registry()
+    controller = FakeNavigationController()
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    manager = NavigationTaskManager(store, controller)
+    client = TestClient(
+        create_app(
+            registry,
+            navigation_controller=controller,
+            map_registry=make_map_registry(),
+            operations_store=store,
+            task_manager=manager,
+        )
+    )
+    created = client.post(
+        "/api/robots/tb1/tasks",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    ).json()
+
+    assert client.post(f"/api/tasks/{created['task_id']}/retry").status_code == 409
+    assert client.get("/api/tasks/missing").status_code == 404
+    assert TestClient(create_app(registry)).get("/api/events").status_code == 503

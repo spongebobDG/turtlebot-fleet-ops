@@ -19,6 +19,11 @@ const distanceRemaining = document.querySelector("#distance-remaining");
 const navigationTime = document.querySelector("#navigation-time");
 const leaseAge = document.querySelector("#lease-age");
 const recoveryCount = document.querySelector("#recovery-count");
+const createTaskButton = document.querySelector("#create-task");
+const refreshOperationsButton = document.querySelector("#refresh-operations");
+const taskList = document.querySelector("#task-list");
+const faultList = document.querySelector("#fault-list");
+const eventList = document.querySelector("#event-list");
 const mapMath = window.FleetMapMath;
 
 let reconnectTimer;
@@ -28,6 +33,9 @@ let currentMapRobot = "";
 let mapMode = "goal";
 let selectedPose = null;
 let dragStart = null;
+let tasks = [];
+let faults = [];
+let events = [];
 
 const escapeHtml = (value) => String(value ?? "").replace(
   /[&<>"']/g,
@@ -157,6 +165,7 @@ const renderNavigation = () => {
   applyMapCommand.textContent = mapMode === "initial" ? "초기 위치 적용" : "목적지 전송";
   applyMapCommand.disabled = mapMode === "initial" ? !commonReady : !goalReady;
   cancelNavigation.disabled = !activeGoal;
+  createTaskButton.disabled = mapMode !== "goal" || !commonReady;
   drawMap();
 };
 
@@ -167,6 +176,7 @@ const loadMap = async () => {
   mapFrame.classList.remove("loaded");
   mapPlaceholder.textContent = robotId ? "지도를 불러오는 중입니다." : "로봇 지도를 기다리는 중입니다.";
   renderNavigation();
+  loadOperations();
   if (!robotId) return;
   try {
     const response = await fetch(`/api/robots/${encodeURIComponent(robotId)}/map`);
@@ -351,7 +361,141 @@ cancelNavigation.addEventListener("click", async () => {
   }
 });
 
+const recordTime = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("ko-KR");
+};
+
+const taskActions = (task) => {
+  if (task.state === "CREATED") {
+    return `
+      <button data-task-action="run" data-task-id="${escapeHtml(task.task_id)}">실행</button>
+      <button class="secondary" data-task-action="cancel" data-task-id="${escapeHtml(task.task_id)}">취소</button>`;
+  }
+  if (task.state === "STARTING" || task.state === "ACTIVE") {
+    return `<button class="secondary" data-task-action="cancel" data-task-id="${escapeHtml(task.task_id)}">취소</button>`;
+  }
+  if (task.state === "FAILED" || task.state === "CANCELED") {
+    return `<button class="secondary" data-task-action="retry" data-task-id="${escapeHtml(task.task_id)}">재시도 작업 생성</button>`;
+  }
+  return "";
+};
+
+const renderOperations = () => {
+  document.querySelector("#task-count").textContent = tasks.length;
+  document.querySelector("#active-fault-count").textContent = faults.length;
+  document.querySelector("#event-count").textContent = events.length;
+  taskList.innerHTML = tasks.length ? tasks.map((task) => `
+    <div class="record-item task-item">
+      <div>
+        <span class="record-badge ${escapeHtml(task.state.toLowerCase())}">${escapeHtml(task.state)}</span>
+        <strong>시도 ${task.attempt} · ${number(task.target.x, 2)}, ${number(task.target.y, 2)}</strong>
+        <p>${escapeHtml(task.message || "상태 메시지 없음")} · ${recordTime(task.updated_at)}</p>
+      </div>
+      <div class="record-actions">${taskActions(task)}</div>
+    </div>`).join("") : '<p class="record-empty">저장된 작업이 없습니다.</p>';
+  faultList.innerHTML = faults.length ? faults.map((fault) => `
+    <div class="record-item">
+      <div>
+        <span class="record-badge ${escapeHtml(fault.severity.toLowerCase())}">${escapeHtml(fault.severity)}</span>
+        <strong>${escapeHtml(fault.fault_code)}</strong>
+        <p>최근 감지 ${recordTime(fault.last_seen)}</p>
+      </div>
+    </div>`).join("") : '<p class="record-empty">활성 고장이 없습니다.</p>';
+  eventList.innerHTML = events.length ? events.map((item) => `
+    <div class="record-item">
+      <div>
+        <span class="record-badge ${escapeHtml(item.severity.toLowerCase())}">${escapeHtml(item.event_type)}</span>
+        <strong>${escapeHtml(item.message)}</strong>
+        <p>${recordTime(item.occurred_at)} · ${escapeHtml(item.category)}</p>
+      </div>
+    </div>`).join("") : '<p class="record-empty">기록된 이벤트가 없습니다.</p>';
+};
+
+const loadOperations = async () => {
+  const robotId = robotSelect.value;
+  if (!robotId) {
+    tasks = [];
+    faults = [];
+    events = [];
+    renderOperations();
+    return;
+  }
+  try {
+    const encoded = encodeURIComponent(robotId);
+    const responses = await Promise.all([
+      fetch(`/api/tasks?robot_id=${encoded}&limit=50`),
+      fetch(`/api/robots/${encoded}/faults`),
+      fetch(`/api/events?robot_id=${encoded}&limit=50`),
+    ]);
+    const bodies = await Promise.all(responses.map((response) => response.json()));
+    const failedIndex = responses.findIndex((response) => !response.ok);
+    if (failedIndex >= 0) throw new Error(bodies[failedIndex].detail || "운영 기록 조회 실패");
+    tasks = bodies[0].tasks || [];
+    faults = bodies[1].faults || [];
+    events = bodies[2].events || [];
+    renderOperations();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+};
+
+createTaskButton.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  if (!robot) return;
+  const pose = {
+    x: Number(poseX.value),
+    y: Number(poseY.value),
+    yaw: Number(poseYaw.value),
+  };
+  if (!Object.values(pose).every(Number.isFinite)) {
+    showToast("유효한 X, Y, Yaw를 입력하세요.", true);
+    return;
+  }
+  const warningConfirmed = robot.level === 1
+    ? window.confirm(`${robot.robot_id} 경고를 확인하고 작업에 저장할까요?`)
+    : false;
+  if (robot.level === 1 && !warningConfirmed) return;
+  try {
+    const response = await fetch(`/api/robots/${encodeURIComponent(robot.robot_id)}/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...pose, confirm_warnings: warningConfirmed }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "작업 생성 실패");
+    showToast(`작업 ${body.task_id.slice(0, 8)}을 저장했습니다.`);
+    await loadOperations();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+});
+
+taskList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-task-action]");
+  if (!button) return;
+  const action = button.dataset.taskAction;
+  const taskId = button.dataset.taskId;
+  const path = action === "retry"
+    ? `/api/tasks/${encodeURIComponent(taskId)}/retry`
+    : `/api/tasks/${encodeURIComponent(taskId)}${action === "run" ? "/run" : ""}`;
+  const method = action === "cancel" ? "DELETE" : "POST";
+  button.disabled = true;
+  try {
+    const response = await fetch(path, { method });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || `작업 ${action} 실패`);
+    showToast(body.message || `작업 ${action} 요청을 처리했습니다.`);
+    await loadOperations();
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 refreshMapButton.addEventListener("click", loadMap);
+refreshOperationsButton.addEventListener("click", loadOperations);
 robotSelect.addEventListener("change", () => {
   selectedPose = null;
   loadMap();
@@ -400,3 +544,4 @@ const connect = () => {
 };
 
 connect();
+window.setInterval(loadOperations, 3000);

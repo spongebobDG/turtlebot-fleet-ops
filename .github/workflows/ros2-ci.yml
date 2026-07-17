@@ -73,11 +73,12 @@ jobs:
         run: |
           shellcheck --exclude=SC1090,SC1091 \
             infra/navigation/*.sh infra/zenoh/*.sh
-          systemd-analyze verify infra/systemd/user/*.service
+          bash infra/systemd/validate-units.sh
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           ros2 launch navigation_agent tb1_mapping.launch.py --show-args
           ros2 launch navigation_agent tb1_navigation.launch.py --show-args
+          ros2 launch fleet_gateway weekend_mock.launch.py --show-args
 
       - name: Run robotless navigation smoke test
         shell: bash
@@ -88,6 +89,12 @@ jobs:
       - name: Run robotless Zenoh action smoke test
         shell: bash
         run: bash infra/navigation/run-robotless-zenoh-action-smoke.sh
+
+      - name: Run robotless task and fault smoke test
+        shell: bash
+        env:
+          ROS_DOMAIN_ID: "142"
+        run: bash infra/navigation/run-robotless-operations-smoke.sh
 
       - name: Run workspace tests
         shell: bash

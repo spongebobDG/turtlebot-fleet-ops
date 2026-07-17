@@ -40,10 +40,16 @@ colcon test \
     fleet_interfaces \
     safety_watchdog \
     robot_agent \
-    fleet_navigation \
+    navigation_agent \
     fleet_gateway \
   --event-handlers console_direct+
 colcon test-result --verbose
+
+shellcheck --exclude=SC1090,SC1091 \
+  infra/navigation/*.sh infra/systemd/*.sh infra/zenoh/*.sh \
+  scripts/weekend/*.sh
+bash infra/systemd/validate-units.sh
+bash infra/navigation/run-robotless-operations-smoke.sh
 
 if command -v node >/dev/null 2>&1; then
   node --check control/fleet_gateway/web/app.js

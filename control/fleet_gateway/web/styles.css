@@ -230,6 +230,54 @@ input {
 .navigation-metrics span { display: block; color: var(--muted); font-size: 0.72rem; }
 .navigation-metrics strong { display: block; margin-top: 5px; font-size: 0.95rem; }
 .navigation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
+.navigation-actions .task-create { grid-column: 1 / -1; }
+
+.operations-heading { margin-top: 52px; }
+.operations-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr);
+  gap: 18px;
+}
+.operations-card {
+  min-width: 0;
+  padding: 20px;
+  background: linear-gradient(145deg, var(--panel-soft), var(--panel));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+.audit-card { grid-column: 1 / -1; }
+.card-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.card-title span { color: var(--mint); font-size: 1.2rem; font-weight: 800; }
+.record-list { display: grid; gap: 9px; max-height: 390px; margin-top: 16px; overflow: auto; }
+.record-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+.record-item strong { margin-left: 8px; font-size: 0.9rem; }
+.record-item p { margin-top: 6px; color: var(--muted); font-size: 0.72rem; }
+.record-badge {
+  display: inline-block;
+  padding: 4px 7px;
+  color: var(--mint);
+  background: rgba(88, 224, 174, 0.1);
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+.record-badge.warn,
+.record-badge.canceled { color: var(--yellow); background: rgba(255, 209, 102, 0.1); }
+.record-badge.error,
+.record-badge.failed { color: var(--red); background: rgba(255, 107, 107, 0.1); }
+.record-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.record-actions button { padding: 7px 9px; font-size: 0.72rem; }
+.record-empty { padding: 28px 8px; color: var(--muted); text-align: center; }
 
 .empty-state { grid-column: 1 / -1; color: var(--muted); text-align: center; padding: 70px 20px; }
 .empty-state h3 { color: var(--text); margin-bottom: 9px; }
@@ -260,6 +308,9 @@ input {
   .section-heading { align-items: start; flex-direction: column; gap: 8px; }
   .robot-grid { grid-template-columns: 1fr; }
   .navigation-panel { grid-template-columns: 1fr; }
+  .operations-grid { grid-template-columns: 1fr; }
+  .audit-card { grid-column: auto; }
+  .record-item { align-items: flex-start; flex-direction: column; }
   .map-frame { min-height: 280px; }
   .pose-fields { grid-template-columns: 1fr; }
 }
