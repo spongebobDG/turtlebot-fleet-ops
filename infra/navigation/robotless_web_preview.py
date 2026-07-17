@@ -120,13 +120,13 @@ def build_app():
         },
     )
 
+    configured_database = os.environ.get("FLEET_OPERATIONS_DB")
     database_path = Path(
-        os.environ.get(
-            "FLEET_OPERATIONS_DB",
-            str(Path(tempfile.gettempdir()) / "tb1-web-preview.sqlite3"),
-        )
+        configured_database
+        or str(Path(tempfile.gettempdir()) / "tb1-web-preview.sqlite3")
     )
-    if os.environ.get("PREVIEW_RESET", "1") == "1":
+    reset_default = "0" if configured_database else "1"
+    if os.environ.get("PREVIEW_RESET", reset_default) == "1":
         database_path.unlink(missing_ok=True)
     store = OperationsStore(database_path)
     store.sync_faults(

@@ -158,10 +158,23 @@ def test_robot_agent_ros_flow(monkeypatch) -> None:
 
         _spin_until(
             executor,
-            lambda: any("ODOM_STALE" in item.fault_codes for item in outputs),
+            lambda: any(
+                {
+                    "ODOM_STALE",
+                    "SCAN_STALE",
+                    "BATTERY_STALE",
+                }.issubset(item.fault_codes)
+                for item in outputs
+            ),
         )
         stale = next(
-            item for item in outputs if "ODOM_STALE" in item.fault_codes
+            item
+            for item in outputs
+            if {
+                "ODOM_STALE",
+                "SCAN_STALE",
+                "BATTERY_STALE",
+            }.issubset(item.fault_codes)
         )
         assert stale.level == RobotStatus.LEVEL_ERROR
         assert "SCAN_STALE" in stale.fault_codes

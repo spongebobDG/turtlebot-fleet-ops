@@ -49,6 +49,9 @@ shellcheck --exclude=SC1090,SC1091 \
   infra/navigation/*.sh infra/systemd/*.sh infra/zenoh/*.sh \
   scripts/weekend/*.sh
 bash infra/systemd/validate-units.sh
+python3 -m py_compile \
+  infra/navigation/robotless_operations_smoke_client.py \
+  infra/navigation/robotless_web_preview.py
 bash infra/navigation/run-robotless-operations-smoke.sh
 
 if command -v node >/dev/null 2>&1; then
