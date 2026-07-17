@@ -339,7 +339,7 @@ def test_navigation_rejects_nonfinite_pose_and_wrong_command_id():
 
     nonfinite = client.post(
         "/api/robots/tb1/navigation/goals",
-        content='{"x": NaN, "y": 0.25, "yaw": 0.0}',
+        data='{"x": NaN, "y": 0.25, "yaw": 0.0}',
         headers={"Content-Type": "application/json"},
     )
     wrong_cancel = client.delete(
