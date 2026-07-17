@@ -31,10 +31,13 @@ jobs:
         with:
           required-ros-distributions: humble
 
-      - name: Install Jammy Nav2 unwind provider
+      - name: Install Jammy navigation runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libunwind-15-dev shellcheck
+          sudo apt-get install -y \
+            libunwind-15-dev \
+            ros-humble-rmw-cyclonedds-cpp \
+            shellcheck
 
       - name: Install package dependencies
         run: |
