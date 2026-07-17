@@ -41,13 +41,24 @@ jobs:
 
       - name: Install package dependencies
         run: |
-          rosdep update
+          for attempt in 1 2 3; do
+            if rosdep update; then
+              break
+            fi
+            if [[ "${attempt}" == "3" ]]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
           rosdep install \
             --from-paths robot control \
             --ignore-src \
             --rosdistro humble \
             --skip-keys ament_python \
             -y
+
+      - name: Install pinned Zenoh ROS 2 bridge
+        run: bash infra/zenoh/install-standalone.sh
 
       - name: Build workspace packages
         shell: bash
@@ -73,6 +84,10 @@ jobs:
         env:
           ROS_DOMAIN_ID: "142"
         run: bash infra/navigation/run-robotless-navigation-smoke.sh
+
+      - name: Run robotless Zenoh action smoke test
+        shell: bash
+        run: bash infra/navigation/run-robotless-zenoh-action-smoke.sh
 
       - name: Run workspace tests
         shell: bash
