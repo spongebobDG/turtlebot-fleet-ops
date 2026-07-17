@@ -19,7 +19,7 @@ def _utc_now() -> str:
 
 
 class OperationsStore:
-    """Store operational events, active faults and navigation tasks in SQLite."""
+    """Store operational events, faults and navigation tasks in SQLite."""
 
     def __init__(self, database_path: Path) -> None:
         """Open or initialize one durable operations database."""
@@ -100,7 +100,7 @@ class OperationsStore:
         command_id: Optional[str] = None,
         details: Optional[Mapping[str, Any]] = None,
     ) -> int:
-        """Append an immutable audit event and return its database identifier."""
+        """Append an audit event and return its database identifier."""
         occurred_at = _utc_now()
         payload = json.dumps(dict(details or {}), sort_keys=True)
         with self._lock, closing(self._connect()) as connection:
@@ -152,7 +152,7 @@ class OperationsStore:
             self.sync_navigation(status)
 
     def sync_faults(self, status: Mapping[str, Any]) -> None:
-        """Persist only fault activation, severity change and clear transitions."""
+        """Persist activation, severity change and clear transitions."""
         robot_id = str(status.get("robot_id", "")).strip()
         if not robot_id:
             return
@@ -191,7 +191,9 @@ class OperationsStore:
                     if not was_active:
                         transitions.append(("FAULT_ACTIVATED", severity, code))
                     elif old_severity != severity:
-                        transitions.append(("FAULT_SEVERITY_CHANGED", severity, code))
+                        transitions.append(
+                            ("FAULT_SEVERITY_CHANGED", severity, code)
+                        )
             for code, previous in known.items():
                 if not bool(previous["active"]) or code in current:
                     continue
@@ -337,7 +339,7 @@ class OperationsStore:
         return self.get_task(task_id) or {}
 
     def retry_task(self, task_id: str) -> Dict[str, Any]:
-        """Create a new attempt from a terminal task without auto-running it."""
+        """Create a new attempt from a terminal task without running it."""
         task = self.get_task(task_id)
         if task is None:
             raise KeyError(task_id)
@@ -358,6 +360,9 @@ class OperationsStore:
         robot_id = str(status.get("robot_id", "")).strip()
         state = str(status.get("state", "")).upper()
         command_id = str(status.get("active_command_id", "")).strip()
+        if robot_id and state == "UNAVAILABLE" and not command_id:
+            self._fail_task_after_agent_restart(robot_id, status)
+            return
         if not robot_id or state not in {
             "ACTIVE",
             "SUCCEEDED",
@@ -388,8 +393,39 @@ class OperationsStore:
         if row is None:
             return
         mapped_state = "FAILED" if state == "LEASE_EXPIRED" else state
-        message = str(status.get("message", "")) or f"Navigation {state.lower()}"
-        self.update_task(str(row["task_id"]), mapped_state, message, command_id)
+        message = str(status.get("message", "")) or (
+            f"Navigation {state.lower()}"
+        )
+        self.update_task(
+            str(row["task_id"]),
+            mapped_state,
+            message,
+            command_id,
+        )
+
+    def _fail_task_after_agent_restart(
+        self,
+        robot_id: str,
+        status: Mapping[str, Any],
+    ) -> None:
+        """Close an active task when the agent restarts fail-closed."""
+        with self._lock, closing(self._connect()) as connection:
+            row = connection.execute(
+                """
+                SELECT task_id FROM tasks
+                WHERE robot_id = ? AND state = 'ACTIVE'
+                    AND command_id IS NOT NULL AND command_id != ''
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                (robot_id,),
+            ).fetchone()
+        if row is None:
+            return
+        detail = str(status.get("message", "")).strip()
+        message = "Navigation agent restarted; prior task will not resume"
+        if detail:
+            message = f"{message}: {detail}"
+        self.update_task(str(row["task_id"]), "FAILED", message)
 
     @staticmethod
     def _event_dict(row: sqlite3.Row) -> Dict[str, Any]:

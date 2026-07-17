@@ -32,7 +32,9 @@ def test_fault_transitions_are_deduplicated_and_persisted(tmp_path) -> None:
     ]
 
 
-def test_task_retry_and_navigation_reconciliation_survive_reopen(tmp_path) -> None:
+def test_task_retry_and_navigation_reconciliation_survive_reopen(
+    tmp_path,
+) -> None:
     path = tmp_path / "operations.sqlite3"
     store = OperationsStore(path)
     task = store.create_task("tb1", 0.5, 0.25, 1.0, False)
@@ -86,3 +88,25 @@ def test_lease_expiration_maps_to_failed_task(tmp_path) -> None:
     assert failed is not None
     assert failed["state"] == "FAILED"
     assert failed["message"] == "Gateway lease expired"
+
+
+def test_agent_restart_fails_persisted_active_task(tmp_path) -> None:
+    path = tmp_path / "operations.sqlite3"
+    store = OperationsStore(path)
+    task = store.create_task("tb1", 1.0, 0.0, 0.0, False)
+    store.update_task(task["task_id"], "ACTIVE", "accepted", "goal-1")
+
+    reopened = OperationsStore(path)
+    reopened.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "UNAVAILABLE",
+            "active_command_id": "",
+            "message": "Startup cancellation in progress",
+        }
+    )
+
+    failed = reopened.get_task(task["task_id"])
+    assert failed is not None
+    assert failed["state"] == "FAILED"
+    assert "prior task will not resume" in failed["message"]
