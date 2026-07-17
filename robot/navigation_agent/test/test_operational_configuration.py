@@ -30,6 +30,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "scan_topic: /scan" in nav2_rewrites
     assert "odom_topic: /odom" in nav2_rewrites
     assert '"tb1_nav2_rewrites.yaml"' in launch
+    assert 'src="/cmd_vel"' in launch
     assert 'src="cmd_vel_smoothed"' in launch
     assert 'dst="/motion/navigation/cmd_vel"' in launch
     assert 'LaunchConfiguration("use_sim_time")' in launch
@@ -72,5 +73,6 @@ def test_only_watchdog_owns_the_real_velocity_topic() -> None:
 
     assert "output_topic: /cmd_vel" in watchdog_config
     assert "output_topic: /safety/cmd_vel_in" in navigation_config
+    assert 'src="/cmd_vel"' in navigation_launch
     assert 'src="cmd_vel_smoothed"' in navigation_launch
     assert 'dst="/motion/navigation/cmd_vel"' in navigation_launch
