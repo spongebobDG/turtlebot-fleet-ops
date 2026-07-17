@@ -1,10 +1,21 @@
 fleet_gateway:
   ros__parameters:
     status_topic: /fleet/robot_status
+    navigation_status_topic: /fleet/navigation_status
+    safety_status_topic: /fleet/safety_status
+    navigation_lease_topic: /fleet/navigation_lease
     online_timeout_sec: 3.0
     web_host: 0.0.0.0
     web_port: 8000
+    lease_publish_interval_sec: 0.5
+    navigation_confirmation_timeout_sec: 2.0
     robot_ids:
       - tb1
     estop_services:
       - /safety_watchdog/set_estop
+    navigation_actions:
+      - /tb1/navigation/navigate
+    initial_pose_services:
+      - /tb1/navigation/set_initial_pose
+    map_topics:
+      - /map

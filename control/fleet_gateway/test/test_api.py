@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from fleet_gateway.api import create_app
+from fleet_gateway.map_registry import MapRegistry
 from fleet_gateway.registry import StatusRegistry
 
 
@@ -19,11 +21,97 @@ class FakeEStopController:
         }
 
 
+class FakeNavigationController:
+
+    def __init__(self):
+        self.calls = []
+
+    def set_initial_pose(self, robot_id, x, y, yaw):
+        self.calls.append(("initial", robot_id, x, y, yaw))
+        return {"success": True, "robot_id": robot_id, "message": "accepted"}
+
+    def start_navigation(
+        self,
+        robot_id,
+        x,
+        y,
+        yaw,
+        confirm_warnings,
+    ):
+        self.calls.append(
+            ("goal", robot_id, x, y, yaw, confirm_warnings)
+        )
+        return {
+            "success": True,
+            "robot_id": robot_id,
+            "command_id": "goal-1",
+            "message": "accepted",
+        }
+
+    def cancel_navigation(self, robot_id, command_id):
+        self.calls.append(("cancel", robot_id, command_id))
+        return {
+            "success": True,
+            "robot_id": robot_id,
+            "command_id": command_id,
+            "message": "canceling",
+        }
+
+
 def make_registry():
     registry = StatusRegistry(clock=lambda: 10.0)
     registry.update(
         {"robot_id": "tb1", "hostname": "tb1", "level": 0},
         now=10.0,
+    )
+    return registry
+
+
+def make_navigation_registry(level=0, active_command_id=""):
+    registry = make_registry()
+    registry.update(
+        {
+            "robot_id": "tb1",
+            "hostname": "tb1",
+            "level": level,
+            "fault_codes": ["LOW_BATTERY"] if level == 1 else [],
+        },
+        now=10.0,
+    )
+    registry.update_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "ACTIVE" if active_command_id else "READY",
+            "nav2_ready": True,
+            "localization_ready": True,
+            "safety_ready": True,
+            "active_command_id": active_command_id,
+        },
+        now=10.0,
+    )
+    registry.update_safety(
+        {
+            "robot_id": "tb1",
+            "estop_active": False,
+            "motion_armed": True,
+        },
+        now=10.0,
+    )
+    return registry
+
+
+def make_map_registry():
+    registry = MapRegistry()
+    registry.update(
+        "tb1",
+        {
+            "frame_id": "map",
+            "width": 2,
+            "height": 2,
+            "resolution": 1.0,
+            "origin": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            "data": [0, 100, -1, 0],
+        },
     )
     return registry
 
@@ -101,12 +189,219 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
     (source_dir / "index.html").write_text("<h1>Fleet</h1>")
     (source_dir / "styles.css").write_text("body { color: white; }")
     (source_dir / "app.js").write_text("console.log('fleet');")
-    for name in ("index.html", "styles.css", "app.js"):
-        (static_dir / name).symlink_to(source_dir / name)
+    (source_dir / "map_math.js").write_text("globalThis.FleetMapMath = {};")
+    for name in ("index.html", "styles.css", "app.js", "map_math.js"):
+        try:
+            (static_dir / name).symlink_to(source_dir / name)
+        except OSError:
+            pytest.skip("symbolic links are not permitted on this platform")
 
     client = TestClient(create_app(make_registry(), static_dir=static_dir))
 
     assert client.get("/").status_code == 200
     assert client.get("/static/styles.css").status_code == 200
     assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/map_math.js").status_code == 200
     assert client.get("/static/secret.txt").status_code == 404
+
+
+def test_dashboard_serves_map_math_from_regular_install(tmp_path):
+    for name, content in {
+        "index.html": "<h1>Fleet</h1>",
+        "styles.css": "body {}",
+        "app.js": "console.log('fleet');",
+        "map_math.js": "globalThis.FleetMapMath = {};",
+    }.items():
+        (tmp_path / name).write_text(content)
+    client = TestClient(create_app(make_registry(), static_dir=tmp_path))
+
+    assert client.get("/static/map_math.js").status_code == 200
+    assert client.get("/static/not-allowed.js").status_code == 404
+
+
+def test_navigation_map_initial_pose_goal_and_cancel_routes():
+    controller = FakeNavigationController()
+    app = create_app(
+        make_navigation_registry(),
+        navigation_controller=controller,
+        map_registry=make_map_registry(),
+    )
+    client = TestClient(app)
+
+    map_response = client.get("/api/robots/tb1/map")
+    initial = client.put(
+        "/api/robots/tb1/localization/initial-pose",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+    goal = client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 0.25, "y": 0.25, "yaw": 1.0},
+    )
+    cancel = client.delete(
+        "/api/robots/tb1/navigation/goals/goal-1"
+    )
+
+    assert map_response.status_code == 200
+    assert initial.status_code == 202
+    assert goal.status_code == 202
+    assert goal.json()["command_id"] == "goal-1"
+    assert cancel.status_code == 202
+    assert [call[0] for call in controller.calls] == [
+        "initial",
+        "goal",
+        "cancel",
+    ]
+
+
+def test_navigation_goal_requires_warning_confirmation():
+    controller = FakeNavigationController()
+    client = TestClient(
+        create_app(
+            make_navigation_registry(level=1),
+            navigation_controller=controller,
+            map_registry=make_map_registry(),
+        )
+    )
+
+    blocked = client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+    accepted = client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={
+            "x": 0.25,
+            "y": 0.25,
+            "yaw": 0.0,
+            "confirm_warnings": True,
+        },
+    )
+
+    assert blocked.status_code == 409
+    assert "LOW_BATTERY" in blocked.json()["detail"]
+    assert accepted.status_code == 202
+
+
+def test_navigation_rejects_active_goal_and_non_free_cells():
+    controller = FakeNavigationController()
+    active_client = TestClient(
+        create_app(
+            make_navigation_registry(active_command_id="existing"),
+            navigation_controller=controller,
+            map_registry=make_map_registry(),
+        )
+    )
+    free_client = TestClient(
+        create_app(
+            make_navigation_registry(),
+            navigation_controller=controller,
+            map_registry=make_map_registry(),
+        )
+    )
+
+    active = active_client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+    occupied = free_client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 1.25, "y": 0.25, "yaw": 0.0},
+    )
+    unknown = free_client.put(
+        "/api/robots/tb1/localization/initial-pose",
+        json={"x": 0.25, "y": 1.25, "yaw": 0.0},
+    )
+
+    assert active.status_code == 409
+    assert occupied.status_code == 422
+    assert unknown.status_code == 422
+
+
+def test_invalid_map_pose_remains_422_when_robot_is_offline():
+    registry = StatusRegistry(clock=lambda: 20.0)
+    registry.update(
+        {"robot_id": "tb1", "level": 0, "fault_codes": []},
+        now=10.0,
+    )
+    client = TestClient(
+        create_app(
+            registry,
+            navigation_controller=FakeNavigationController(),
+            map_registry=make_map_registry(),
+        )
+    )
+
+    response = client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 1.25, "y": 0.25, "yaw": 0.0},
+    )
+
+    assert response.status_code == 422
+
+
+def test_navigation_rejects_stale_navigation_and_safety_status():
+    stale_registry = StatusRegistry(clock=lambda: 14.0)
+    stale_registry.update(
+        {"robot_id": "tb1", "level": 0, "fault_codes": []},
+        now=14.0,
+    )
+    stale_registry.update_navigation(
+        {
+            "robot_id": "tb1",
+            "nav2_ready": True,
+            "localization_ready": True,
+            "safety_ready": True,
+            "active_command_id": "",
+        },
+        now=10.0,
+    )
+    stale_registry.update_safety(
+        {
+            "robot_id": "tb1",
+            "estop_active": False,
+            "motion_armed": True,
+        },
+        now=14.0,
+    )
+    stale_client = TestClient(
+        create_app(
+            stale_registry,
+            navigation_controller=FakeNavigationController(),
+            map_registry=make_map_registry(),
+        )
+    )
+
+    blocked = stale_client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+
+    assert blocked.status_code == 409
+    assert "stale" in blocked.json()["detail"]
+
+    stale_registry.update_navigation(
+        {
+            "robot_id": "tb1",
+            "nav2_ready": True,
+            "localization_ready": True,
+            "safety_ready": True,
+            "active_command_id": "",
+        },
+        now=14.0,
+    )
+    stale_registry.update_safety(
+        {
+            "robot_id": "tb1",
+            "estop_active": False,
+            "motion_armed": True,
+        },
+        now=10.0,
+    )
+
+    blocked = stale_client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+
+    assert blocked.status_code == 409
+    assert "Safety status" in blocked.json()["detail"]

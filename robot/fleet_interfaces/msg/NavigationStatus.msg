@@ -1,0 +1,26 @@
+uint8 STATE_UNAVAILABLE=0
+uint8 STATE_IDLE=1
+uint8 STATE_LOCALIZING=2
+uint8 STATE_READY=3
+uint8 STATE_ACTIVE=4
+uint8 STATE_SUCCEEDED=5
+uint8 STATE_CANCELED=6
+uint8 STATE_FAILED=7
+uint8 STATE_LEASE_EXPIRED=8
+
+std_msgs/Header header
+string robot_id
+uint8 state
+bool nav2_ready
+bool localization_ready
+bool safety_ready
+string active_command_id
+geometry_msgs/PoseStamped target_pose
+geometry_msgs/PoseStamped current_pose
+float32 distance_remaining
+builtin_interfaces/Duration navigation_time
+builtin_interfaces/Duration estimated_time_remaining
+int16 number_of_recoveries
+float32 lease_age_sec
+uint16 nav2_error_code
+string message

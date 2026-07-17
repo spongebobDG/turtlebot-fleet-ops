@@ -1,0 +1,18 @@
+[Unit]
+Description=TB1 manual SLAM mapping through the safety command path
+After=tb1-bringup.service tb1-safety-watchdog.service
+Wants=tb1-bringup.service tb1-safety-watchdog.service
+Conflicts=tb1-navigation.service
+
+[Service]
+Type=simple
+Environment=ROS_DISTRO=humble
+Environment=ROS_DOMAIN_ID=42
+ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/infra/navigation/start-tb1-mapping.sh
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

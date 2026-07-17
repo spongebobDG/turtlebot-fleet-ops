@@ -1,0 +1,20 @@
+# Fleet Gateway generated identifier used for cancellation and lease matching.
+string command_id
+geometry_msgs/PoseStamped target_pose
+bool confirm_warnings
+---
+uint8 OUTCOME_SUCCEEDED=0
+uint8 OUTCOME_CANCELED=1
+uint8 OUTCOME_ABORTED=2
+uint8 OUTCOME_LEASE_EXPIRED=3
+
+uint8 outcome
+uint16 nav2_error_code
+string message
+---
+geometry_msgs/PoseStamped current_pose
+float32 distance_remaining
+builtin_interfaces/Duration navigation_time
+builtin_interfaces/Duration estimated_time_remaining
+int16 number_of_recoveries
+float32 lease_age_sec

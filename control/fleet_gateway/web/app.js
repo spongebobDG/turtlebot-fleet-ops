@@ -3,7 +3,31 @@ const connection = document.querySelector("#connection");
 const connectionLabel = document.querySelector("#connection-label");
 const updatedAt = document.querySelector("#updated-at");
 const toast = document.querySelector("#toast");
+const robotSelect = document.querySelector("#navigation-robot");
+const mapFrame = document.querySelector("#map-frame");
+const mapCanvas = document.querySelector("#map-canvas");
+const mapPlaceholder = document.querySelector("#map-placeholder");
+const refreshMapButton = document.querySelector("#refresh-map");
+const applyMapCommand = document.querySelector("#apply-map-command");
+const cancelNavigation = document.querySelector("#cancel-navigation");
+const poseX = document.querySelector("#pose-x");
+const poseY = document.querySelector("#pose-y");
+const poseYaw = document.querySelector("#pose-yaw");
+const navigationState = document.querySelector("#navigation-state");
+const navigationMessage = document.querySelector("#navigation-message");
+const distanceRemaining = document.querySelector("#distance-remaining");
+const navigationTime = document.querySelector("#navigation-time");
+const leaseAge = document.querySelector("#lease-age");
+const recoveryCount = document.querySelector("#recovery-count");
+const mapMath = window.FleetMapMath;
+
 let reconnectTimer;
+let robots = [];
+let currentMap = null;
+let currentMapRobot = "";
+let mapMode = "goal";
+let selectedPose = null;
+let dragStart = null;
 
 const escapeHtml = (value) => String(value ?? "").replace(
   /[&<>"']/g,
@@ -37,6 +61,8 @@ const robotCard = (robot) => {
   const faults = robot.fault_codes?.length
     ? escapeHtml(robot.fault_codes.join(" · "))
     : "활성 고장 없음";
+  const navigation = robot.navigation || {};
+  const activeGoal = Boolean(navigation.active_command_id);
   return `
     <article class="robot-card">
       <div class="robot-header">
@@ -51,6 +77,8 @@ const robotCard = (robot) => {
         <div class="metric"><span>전압</span><strong>${number(robot.battery?.voltage, 2, "V")}</strong></div>
         <div class="metric"><span>위치 X / Y</span><strong>${number(robot.odom?.x, 2)} / ${number(robot.odom?.y, 2)}m</strong></div>
         <div class="metric"><span>방향 Yaw</span><strong>${number(robot.odom?.yaw, 2, "rad")}</strong></div>
+        <div class="metric"><span>Nav2</span><strong>${escapeHtml(navigation.state || "UNAVAILABLE")}</strong></div>
+        <div class="metric"><span>Safety</span><strong>${escapeHtml(robot.safety?.mode || "UNKNOWN")}</strong></div>
         <div class="metric"><span>최근 장애물</span><strong>${number(robot.scan?.min_range, 2, "m")}</strong></div>
         <div class="metric"><span>CPU / 메모리</span><strong>${number(robot.system?.cpu_percent, 0)} / ${number(robot.system?.memory_percent, 0)}%</strong></div>
         <div class="metric"><span>Wi-Fi</span><strong>${number(robot.wifi?.signal_dbm, 0, "dBm")}</strong></div>
@@ -59,12 +87,13 @@ const robotCard = (robot) => {
       <p class="faults ${robot.fault_codes?.length ? "" : "none"}">${faults}</p>
       <div class="actions">
         <button class="estop" data-robot="${safeRobotId}" data-engaged="true">비상 정지</button>
-        <button class="release" data-robot="${safeRobotId}" data-engaged="false" ${robot.online ? "" : "disabled"}>정지 해제</button>
+        <button class="release" data-robot="${safeRobotId}" data-engaged="false" ${robot.online && !activeGoal ? "" : "disabled"}>정지 해제</button>
       </div>
     </article>`;
 };
 
-const render = (robots) => {
+const render = (nextRobots) => {
+  robots = nextRobots;
   document.querySelector("#known-count").textContent = robots.length;
   document.querySelector("#online-count").textContent = robots.filter((robot) => robot.online).length;
   document.querySelector("#fault-count").textContent = robots.filter((robot) => !robot.online || robot.level > 0).length;
@@ -72,6 +101,8 @@ const render = (robots) => {
     ? robots.map(robotCard).join("")
     : `<article class="empty-state"><h3>RobotStatus를 기다리는 중입니다.</h3><p>Gateway가 ROS 2 heartbeat를 받으면 여기에 표시됩니다.</p></article>`;
   updatedAt.textContent = `최근 갱신 ${new Date().toLocaleTimeString("ko-KR")}`;
+  updateRobotOptions();
+  renderNavigation();
 };
 
 const setConnection = (state, label) => {
@@ -85,20 +116,246 @@ const showToast = (message, isError = false) => {
   window.setTimeout(() => { toast.className = "toast"; }, 3200);
 };
 
-const connect = () => {
-  window.clearTimeout(reconnectTimer);
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${protocol}://${location.host}/ws/robots`);
-  setConnection("connecting", "연결 중");
+const selectedRobot = () => robots.find(
+  (robot) => robot.robot_id === robotSelect.value,
+);
 
-  socket.addEventListener("open", () => setConnection("connected", "실시간 연결"));
-  socket.addEventListener("message", (event) => render(JSON.parse(event.data).robots || []));
-  socket.addEventListener("close", () => {
-    setConnection("offline", "재연결 중");
-    reconnectTimer = window.setTimeout(connect, 1500);
-  });
-  socket.addEventListener("error", () => socket.close());
+const updateRobotOptions = () => {
+  const previous = robotSelect.value;
+  robotSelect.innerHTML = robots.map(
+    (robot) => `<option value="${escapeHtml(robot.robot_id)}">${escapeHtml(robot.robot_id)}</option>`,
+  ).join("");
+  if (robots.some((robot) => robot.robot_id === previous)) {
+    robotSelect.value = previous;
+  }
+  if (!robotSelect.value && robots.length) robotSelect.value = robots[0].robot_id;
+  if (robotSelect.value && currentMapRobot !== robotSelect.value) loadMap();
 };
+
+const renderNavigation = () => {
+  const robot = selectedRobot();
+  const navigation = robot?.navigation || {};
+  navigationState.textContent = navigation.state || "UNAVAILABLE";
+  navigationMessage.textContent = navigation.message || "NavigationStatus를 기다리는 중입니다.";
+  distanceRemaining.textContent = number(navigation.distance_remaining, 2, "m");
+  navigationTime.textContent = number(navigation.navigation_time_sec, 1, "s");
+  leaseAge.textContent = number(navigation.lease_age_sec, 2, "s");
+  recoveryCount.textContent = navigation.number_of_recoveries ?? "—";
+
+  const activeGoal = Boolean(navigation.active_command_id);
+  const commonReady = Boolean(
+    robot?.online && robot.level < 2 && currentMap && !activeGoal,
+  );
+  const goalReady = commonReady
+    && navigation.fresh
+    && navigation.nav2_ready
+    && navigation.localization_ready
+    && navigation.safety_ready
+    && robot?.safety?.fresh
+    && !robot?.safety?.estop_active
+    && robot?.safety?.motion_armed;
+  applyMapCommand.textContent = mapMode === "initial" ? "초기 위치 적용" : "목적지 전송";
+  applyMapCommand.disabled = mapMode === "initial" ? !commonReady : !goalReady;
+  cancelNavigation.disabled = !activeGoal;
+  drawMap();
+};
+
+const loadMap = async () => {
+  const robotId = robotSelect.value;
+  currentMap = null;
+  currentMapRobot = robotId;
+  mapFrame.classList.remove("loaded");
+  mapPlaceholder.textContent = robotId ? "지도를 불러오는 중입니다." : "로봇 지도를 기다리는 중입니다.";
+  renderNavigation();
+  if (!robotId) return;
+  try {
+    const response = await fetch(`/api/robots/${encodeURIComponent(robotId)}/map`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "지도를 불러오지 못했습니다.");
+    if (body.data.length !== body.width * body.height) throw new Error("지도 크기와 데이터가 일치하지 않습니다.");
+    currentMap = body;
+    mapCanvas.width = body.width;
+    mapCanvas.height = body.height;
+    mapFrame.classList.add("loaded");
+    drawMap();
+    renderNavigation();
+  } catch (error) {
+    mapPlaceholder.textContent = error.message;
+  }
+};
+
+const drawMap = () => {
+  if (!currentMap) return;
+  const context = mapCanvas.getContext("2d");
+  const image = context.createImageData(currentMap.width, currentMap.height);
+  for (let y = 0; y < currentMap.height; y += 1) {
+    for (let x = 0; x < currentMap.width; x += 1) {
+      const value = currentMap.data[y * currentMap.width + x];
+      const displayY = currentMap.height - 1 - y;
+      const offset = (displayY * currentMap.width + x) * 4;
+      const shade = value < 0 ? 70 : Math.round(238 - (Math.min(value, 100) / 100) * 225);
+      image.data[offset] = shade;
+      image.data[offset + 1] = shade;
+      image.data[offset + 2] = value < 0 ? shade + 4 : shade;
+      image.data[offset + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  const robot = selectedRobot();
+  if (robot?.navigation?.current?.frame_id === "map") {
+    drawArrow(context, robot.navigation.current, "#44b9ff");
+  }
+  if (robot?.navigation?.target?.frame_id === "map") {
+    drawArrow(context, robot.navigation.target, "#ffd166");
+  }
+  if (selectedPose) drawArrow(context, selectedPose, "#58e0ae");
+};
+
+const drawArrow = (context, pose, color) => {
+  const start = worldToCanvas(pose.x, pose.y);
+  const length = Math.max(currentMap.resolution * 5, 0.25);
+  const end = worldToCanvas(
+    pose.x + Math.cos(pose.yaw) * length,
+    pose.y + Math.sin(pose.yaw) * length,
+  );
+  context.save();
+  context.strokeStyle = color;
+  context.fillStyle = color;
+  context.lineWidth = Math.max(1.5, currentMap.width / 260);
+  context.beginPath();
+  context.arc(start.x, start.y, Math.max(3, currentMap.width / 100), 0, Math.PI * 2);
+  context.fill();
+  context.beginPath();
+  context.moveTo(start.x, start.y);
+  context.lineTo(end.x, end.y);
+  context.stroke();
+  context.restore();
+};
+
+const worldToCanvas = (x, y) => {
+  return mapMath.worldToCanvas(currentMap, x, y);
+};
+
+const canvasToWorld = (x, y) => {
+  return mapMath.canvasToWorld(currentMap, x, y);
+};
+
+const canvasCoordinates = (event) => {
+  const bounds = mapCanvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - bounds.left) * (mapCanvas.width / bounds.width),
+    y: (event.clientY - bounds.top) * (mapCanvas.height / bounds.height),
+  };
+};
+
+mapCanvas.addEventListener("pointerdown", (event) => {
+  if (!currentMap) return;
+  mapCanvas.setPointerCapture(event.pointerId);
+  const point = canvasCoordinates(event);
+  dragStart = canvasToWorld(point.x, point.y);
+  selectedPose = { ...dragStart, yaw: Number(poseYaw.value) || 0 };
+  drawMap();
+});
+
+mapCanvas.addEventListener("pointermove", (event) => {
+  if (!currentMap || !dragStart || !mapCanvas.hasPointerCapture(event.pointerId)) return;
+  const point = canvasCoordinates(event);
+  const end = canvasToWorld(point.x, point.y);
+  selectedPose = {
+    ...dragStart,
+    yaw: Math.atan2(end.y - dragStart.y, end.x - dragStart.x),
+  };
+  poseX.value = selectedPose.x.toFixed(3);
+  poseY.value = selectedPose.y.toFixed(3);
+  poseYaw.value = selectedPose.yaw.toFixed(3);
+  drawMap();
+});
+
+mapCanvas.addEventListener("pointerup", (event) => {
+  if (!dragStart) return;
+  if (!selectedPose) selectedPose = { ...dragStart, yaw: 0 };
+  poseX.value = selectedPose.x.toFixed(3);
+  poseY.value = selectedPose.y.toFixed(3);
+  poseYaw.value = selectedPose.yaw.toFixed(3);
+  dragStart = null;
+  mapCanvas.releasePointerCapture(event.pointerId);
+  drawMap();
+});
+
+document.querySelectorAll("button[data-map-mode]").forEach((button) => {
+  button.addEventListener("click", () => {
+    mapMode = button.dataset.mapMode;
+    document.querySelectorAll("button[data-map-mode]").forEach(
+      (candidate) => candidate.classList.toggle("active", candidate === button),
+    );
+    renderNavigation();
+  });
+});
+
+applyMapCommand.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  if (!robot) return;
+  const pose = {
+    x: Number(poseX.value),
+    y: Number(poseY.value),
+    yaw: Number(poseYaw.value),
+  };
+  if (!Object.values(pose).every(Number.isFinite)) {
+    showToast("유효한 X, Y, Yaw를 입력하세요.", true);
+    return;
+  }
+  const isInitial = mapMode === "initial";
+  const warningConfirmed = !isInitial && robot.level === 1
+    ? window.confirm(`${robot.robot_id} 경고(${(robot.fault_codes || []).join(", ")})가 있습니다. 그래도 목표를 전송할까요?`)
+    : false;
+  if (!isInitial && robot.level === 1 && !warningConfirmed) return;
+  const path = isInitial
+    ? `/api/robots/${encodeURIComponent(robot.robot_id)}/localization/initial-pose`
+    : `/api/robots/${encodeURIComponent(robot.robot_id)}/navigation/goals`;
+  const method = isInitial ? "PUT" : "POST";
+  applyMapCommand.disabled = true;
+  try {
+    const response = await fetch(path, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...pose, confirm_warnings: warningConfirmed }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "지도 명령 실패");
+    showToast(body.message || "지도 명령을 전송했습니다.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    renderNavigation();
+  }
+});
+
+cancelNavigation.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  const commandId = robot?.navigation?.active_command_id;
+  if (!robot || !commandId) return;
+  if (!window.confirm(`${robot.robot_id}의 현재 목적지를 취소할까요?`)) return;
+  cancelNavigation.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robot.robot_id)}/navigation/goals/${encodeURIComponent(commandId)}`,
+      { method: "DELETE" },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "목표 취소 실패");
+    showToast(body.message || "목표 취소를 요청했습니다.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    renderNavigation();
+  }
+});
+
+refreshMapButton.addEventListener("click", loadMap);
+robotSelect.addEventListener("change", () => {
+  selectedPose = null;
+  loadMap();
+});
 
 grid.addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-robot]");
@@ -106,8 +363,8 @@ grid.addEventListener("click", async (event) => {
   const robotId = button.dataset.robot;
   const engaged = button.dataset.engaged === "true";
   const prompt = engaged
-    ? `${robotId}에 비상 정지를 적용할까요?`
-    : `${robotId}의 비상 정지를 해제할까요? 해제 후에도 중립 명령 전까지 재가동되지 않습니다.`;
+    ? `${robotId}에 비상 정지를 적용할까요? 활성 목적지도 취소됩니다.`
+    : `${robotId}의 비상 정지를 해제할까요? 이전 목적지는 재개되지 않습니다.`;
   if (!window.confirm(prompt)) return;
 
   button.disabled = true;
@@ -126,5 +383,20 @@ grid.addEventListener("click", async (event) => {
     button.disabled = false;
   }
 });
+
+const connect = () => {
+  window.clearTimeout(reconnectTimer);
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  const socket = new WebSocket(`${protocol}://${location.host}/ws/robots`);
+  setConnection("connecting", "연결 중");
+
+  socket.addEventListener("open", () => setConnection("connected", "실시간 연결"));
+  socket.addEventListener("message", (event) => render(JSON.parse(event.data).robots || []));
+  socket.addEventListener("close", () => {
+    setConnection("offline", "재연결 중");
+    reconnectTimer = window.setTimeout(connect, 1500);
+  });
+  socket.addEventListener("error", () => socket.close());
+};
 
 connect();

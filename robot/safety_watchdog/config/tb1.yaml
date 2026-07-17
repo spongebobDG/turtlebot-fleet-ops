@@ -2,8 +2,11 @@ safety_watchdog:
   ros__parameters:
     input_topic: /safety/cmd_vel_in
     output_topic: /cmd_vel
+    status_topic: /fleet/safety_status
+    robot_id: tb1
     timeout_sec: 0.5
     max_linear_x: 0.05
     max_angular_z: 0.3
     neutral_epsilon: 0.001
     publish_rate_hz: 20.0
+    status_publish_rate_hz: 2.0

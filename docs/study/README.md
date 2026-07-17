@@ -51,6 +51,7 @@
 - [Phase 2: 안전 수동 제어와 Watchdog](phase-2-safe-teleoperation.md)
 - [Phase 3: Robot Agent와 상태 계약](phase-3-robot-agent.md)
 - [Phase 4: 웹 Fleet Gateway와 분산 통신](phase-4-web-fleet-gateway.md)
+- [Phase 5: 로컬 Nav2, 좌표 변환과 lease 기반 안전](phase-5-tb1-navigation.md)
 
 ## 이해도 판정 기준
 

@@ -5,6 +5,10 @@
 > Phase 2 절차: [TB1 안전 수동주행 및 Watchdog 검증](setup/tb1-safe-teleoperation.md)
 >
 > Phase 3 절차: [TB1 Robot Agent 배포 및 검증](setup/tb1-robot-agent.md)
+>
+> Phase 4 절차: [TB1 웹 관제 대시보드 운영](setup/tb1-web-dashboard.md)
+>
+> Phase 5 절차: [TB1 매핑·Nav2·웹 목적지 운영 및 검증](setup/tb1-navigation.md)
 
 조사일: 2026-07-15
 

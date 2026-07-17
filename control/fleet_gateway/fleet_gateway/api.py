@@ -1,6 +1,7 @@
 """FastAPI application for fleet status and safety commands."""
 
 import asyncio
+import math
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from fleet_gateway.registry import StatusRegistry
+from fleet_gateway.map_registry import MapRegistry
 
 
 class EStopController(Protocol):
@@ -19,15 +21,61 @@ class EStopController(Protocol):
         """Set emergency-stop state and return an operation result."""
 
 
+class NavigationController(Protocol):
+    """ROS adapter used by the asynchronous navigation HTTP routes."""
+
+    def set_initial_pose(
+        self,
+        robot_id: str,
+        x: float,
+        y: float,
+        yaw: float,
+    ) -> Dict[str, Any]:
+        """Set a robot's map-frame initial pose."""
+
+    def start_navigation(
+        self,
+        robot_id: str,
+        x: float,
+        y: float,
+        yaw: float,
+        confirm_warnings: bool,
+    ) -> Dict[str, Any]:
+        """Start one leased navigation action."""
+
+    def cancel_navigation(
+        self,
+        robot_id: str,
+        command_id: str,
+    ) -> Dict[str, Any]:
+        """Cancel one matching navigation action."""
+
+
 class EStopRequest(BaseModel):
     """Emergency-stop HTTP request body."""
 
     engaged: bool
 
 
+class PoseRequest(BaseModel):
+    """Planar map-frame pose supplied by the dashboard."""
+
+    x: float
+    y: float
+    yaw: float
+
+
+class NavigationGoalRequest(PoseRequest):
+    """Navigation goal plus explicit warning acknowledgement."""
+
+    confirm_warnings: bool = False
+
+
 def create_app(
     registry: StatusRegistry,
     estop_controller: Optional[EStopController] = None,
+    navigation_controller: Optional[NavigationController] = None,
+    map_registry: Optional[MapRegistry] = None,
     static_dir: Optional[Path] = None,
     websocket_interval_sec: float = 0.5,
 ) -> FastAPI:
@@ -58,6 +106,93 @@ def create_app(
             raise HTTPException(status_code=404, detail="Unknown robot")
         return robot
 
+    @app.get("/api/robots/{robot_id}/map")
+    def get_robot_map(robot_id: str) -> Dict[str, Any]:
+        _robot_or_404(registry, robot_id)
+        if map_registry is None:
+            raise HTTPException(status_code=503, detail="Map registry unavailable")
+        snapshot = map_registry.get(robot_id)
+        if snapshot is None:
+            raise HTTPException(status_code=503, detail="Map is unavailable")
+        return snapshot
+
+    @app.put(
+        "/api/robots/{robot_id}/localization/initial-pose",
+        status_code=202,
+    )
+    async def set_initial_pose(
+        robot_id: str,
+        request: PoseRequest,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        _validate_pose_request(request)
+        _require_free_map_pose(map_registry, robot_id, request.x, request.y)
+        _require_online_and_no_error(robot)
+        _require_no_active_goal(robot)
+        if navigation_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Navigation controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            navigation_controller.set_initial_pose,
+            robot_id,
+            request.x,
+            request.y,
+            request.yaw,
+        )
+        return _require_controller_success(result)
+
+    @app.post(
+        "/api/robots/{robot_id}/navigation/goals",
+        status_code=202,
+    )
+    async def start_navigation(
+        robot_id: str,
+        request: NavigationGoalRequest,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        _validate_pose_request(request)
+        _require_free_map_pose(map_registry, robot_id, request.x, request.y)
+        _require_goal_ready(robot, request.confirm_warnings)
+        if navigation_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Navigation controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            navigation_controller.start_navigation,
+            robot_id,
+            request.x,
+            request.y,
+            request.yaw,
+            request.confirm_warnings,
+        )
+        return _require_controller_success(result)
+
+    @app.delete(
+        "/api/robots/{robot_id}/navigation/goals/{command_id}",
+        status_code=202,
+    )
+    async def cancel_navigation(
+        robot_id: str,
+        command_id: str,
+    ) -> Dict[str, Any]:
+        _robot_or_404(registry, robot_id)
+        if not command_id.strip():
+            raise HTTPException(status_code=422, detail="command_id is required")
+        if navigation_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Navigation controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            navigation_controller.cancel_navigation,
+            robot_id,
+            command_id,
+        )
+        return _require_controller_success(result)
+
     @app.post("/api/robots/{robot_id}/estop")
     async def set_estop(
         robot_id: str,
@@ -71,6 +206,8 @@ def create_app(
                 status_code=409,
                 detail="Cannot release emergency stop while robot is offline",
             )
+        if not request.engaged:
+            _require_no_active_goal(robot)
         if estop_controller is None:
             raise HTTPException(
                 status_code=503,
@@ -106,7 +243,7 @@ def create_app(
 
     resolved_static = Path(static_dir) if static_dir is not None else None
     if resolved_static is not None and resolved_static.is_dir():
-        allowed_assets = {"app.js", "styles.css"}
+        allowed_assets = {"app.js", "map_math.js", "styles.css"}
 
         @app.get("/static/{asset_name}", include_in_schema=False)
         def static_asset(asset_name: str) -> FileResponse:
@@ -119,3 +256,97 @@ def create_app(
             return FileResponse(str(resolved_static / "index.html"))
 
     return app
+
+
+def _robot_or_404(
+    registry: StatusRegistry,
+    robot_id: str,
+) -> Dict[str, Any]:
+    robot = registry.get(robot_id)
+    if robot is None:
+        raise HTTPException(status_code=404, detail="Unknown robot")
+    return robot
+
+
+def _validate_pose_request(request: PoseRequest) -> None:
+    if not all(math.isfinite(value) for value in (request.x, request.y, request.yaw)):
+        raise HTTPException(status_code=422, detail="Pose values must be finite")
+
+
+def _require_online_and_no_error(robot: Dict[str, Any]) -> None:
+    if not robot.get("online", False):
+        raise HTTPException(status_code=409, detail="Robot is offline")
+    if int(robot.get("level", 0)) >= 2:
+        raise HTTPException(
+            status_code=409,
+            detail="Robot has an active error",
+        )
+
+
+def _require_no_active_goal(robot: Dict[str, Any]) -> None:
+    navigation = robot.get("navigation") or {}
+    if navigation.get("active_command_id"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cancel the active navigation goal first",
+        )
+
+
+def _require_goal_ready(
+    robot: Dict[str, Any],
+    confirm_warnings: bool,
+) -> None:
+    _require_online_and_no_error(robot)
+    if int(robot.get("level", 0)) == 1 and not confirm_warnings:
+        faults = robot.get("fault_codes", [])
+        detail = "Robot warnings require confirmation"
+        if faults:
+            detail += f": {', '.join(faults)}"
+        raise HTTPException(status_code=409, detail=detail)
+    _require_no_active_goal(robot)
+    navigation = robot.get("navigation") or {}
+    if not navigation.get("fresh", False):
+        raise HTTPException(
+            status_code=409,
+            detail="Navigation status is unavailable or stale",
+        )
+    if not navigation.get("nav2_ready", False):
+        raise HTTPException(status_code=409, detail="Nav2 is not ready")
+    if not navigation.get("localization_ready", False):
+        raise HTTPException(status_code=409, detail="Localization is not ready")
+    if not navigation.get("safety_ready", False):
+        raise HTTPException(status_code=409, detail="Motion safety is not ready")
+    safety = robot.get("safety") or {}
+    if not safety.get("fresh", False):
+        raise HTTPException(
+            status_code=409,
+            detail="Safety status is unavailable or stale",
+        )
+    if safety.get("estop_active", False):
+        raise HTTPException(status_code=409, detail="Emergency stop is active")
+    if safety and not safety.get("motion_armed", False):
+        raise HTTPException(status_code=409, detail="Motion is not armed")
+
+
+def _require_free_map_pose(
+    registry: Optional[MapRegistry],
+    robot_id: str,
+    x: float,
+    y: float,
+) -> None:
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Map registry unavailable")
+    valid, detail = registry.validate_pose(robot_id, x, y)
+    if valid:
+        return
+    status_code = 503 if detail == "Map is unavailable" else 422
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
+def _require_controller_success(result: Dict[str, Any]) -> Dict[str, Any]:
+    if result.get("success", False):
+        return result
+    raise HTTPException(
+        status_code=int(result.get("status_code", 503)),
+        detail=result.get("message", "Navigation request failed"),
+    )

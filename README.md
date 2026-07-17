@@ -2,7 +2,7 @@
 
 ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 두 대의 TurtleBot3를 단독 bringup부터 시작해 상태 수집, 안전 제어, 웹 관제, 자율주행, 작업 할당과 장애 복구까지 단계적으로 구현한다.
 
-> 현재 상태: 개발 중. Phase 4 TB1 실시간 웹 관제, 웹 비상정지, 오프라인 차단과 통신 복구 검증을 완료했으며 운영 자동화와 PR 검증을 진행 중이다.
+> 현재 상태: 개발 중. Phase 4는 `main` 병합과 실차 검증을 마쳤다. Phase 5 TB1 로컬 Nav2·웹 목적지 제어는 코드와 테스트를 구현했으며, Humble CI와 실차 주행 검증 전이므로 완료로 표시하지 않는다.
 
 ## 프로젝트 목표
 
@@ -36,8 +36,9 @@ ROS 2 기반 다중 TurtleBot 웹 관제·플릿 관리 학습 프로젝트다. 
 | Phase 1 | TB1 단독 bringup, OpenCR·LiDAR·주요 토픽 검증 | 완료, 설정 일반화 필요 |
 | Phase 2 | TB1 저속 수동 제어, 정지와 watchdog | 완료 |
 | Phase 3 | TB1 Robot Agent와 상태 메시지 | 완료 |
-| Phase 4 | 단일 로봇 웹 관제 | 구현·실차 검증 완료, PR 준비 중 |
-| Phase 5 이후 | Nav2, 로그, 장애 감지, TB2와 플릿 관리 | 대기 |
+| Phase 4 | 단일 로봇 웹 관제 | 완료, `main` 병합 |
+| Phase 5 | TB1 SLAM·AMCL·Nav2와 웹 목적지 제어 | 구현 완료, CI·실차 검증 대기 |
+| Phase 6 이후 | 로그, 장애 감지, TB2와 플릿 관리 | 대기 |
 
 완료 표시는 실제 검증한 범위에만 사용한다. Phase 1의 `/scan` 수신은 확인했지만 정확한 발행 주기는 아직 기록하지 못했다.
 
@@ -56,6 +57,10 @@ OpenCR ── USB ───> Raspberry Pi ── turtlebot3_node ──> /odom, 
                                       WSL Zenoh bridge
                                                │ loopback DDS
                                       Fleet Gateway ──> Web Dashboard
+                                               │ action + lease
+                                      navigation_agent
+                                               │
+                     Nav2 ──> motion_arbiter ──> safety_watchdog ──> /cmd_vel
 ```
 
 최종 목표 구조:
@@ -91,6 +96,7 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 - [TB1 안전 수동주행 및 Watchdog 검증 절차](docs/setup/tb1-safe-teleoperation.md)
 - [TB1 Robot Agent 배포 및 검증 절차](docs/setup/tb1-robot-agent.md)
 - [TB1 웹 관제 대시보드 운영 절차](docs/setup/tb1-web-dashboard.md)
+- [TB1 매핑·Nav2·웹 목적지 운영 및 검증](docs/setup/tb1-navigation.md)
 - [Zenoh ROS 2 DDS 브리지 운영](infra/zenoh/README.md)
 - [Git 작업 흐름](docs/git-workflow.md)
 
@@ -101,11 +107,13 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 - [Phase 2 안전 제어 필수 개념과 모범 답변](docs/study/phase-2-safe-teleoperation.md)
 - [Phase 3 Robot Agent 필수 개념과 모범 답변](docs/study/phase-3-robot-agent.md)
 - [Phase 4 웹 Fleet Gateway 필수 개념과 모범 답변](docs/study/phase-4-web-fleet-gateway.md)
+- [Phase 5 로컬 Nav2·좌표·lease 안전 필수 개념](docs/study/phase-5-tb1-navigation.md)
 - [비상정지 중립 재무장 설계 사례](docs/case-studies/safety-watchdog-neutral-rearm.md)
 - [Robot Agent stale 감지·복구 사례](docs/case-studies/robot-agent-stale-recovery.md)
 - [Zenoh 서비스 시간 초과와 RMW 혼용 사례](docs/case-studies/zenoh-service-timeout-rmw-mismatch.md)
 - [Phase 3 Robot Agent 설계](docs/design/phase-3-robot-agent.md)
 - [Phase 4 Fleet Gateway 설계](docs/design/phase-4-tb1-web-dashboard.md)
+- [Phase 5 TB1 Nav2와 웹 목적지 설계](docs/design/phase-5-tb1-navigation.md)
 
 ### 실제 작업 이력
 
@@ -115,6 +123,7 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 - [Phase 3 Robot Agent 구현 일지](docs/learning-log/2026-07-16-phase-3-robot-agent-implementation.md)
 - [Phase 3 TB1 Robot Agent 실차 검증 일지](docs/learning-log/2026-07-16-phase-3-tb1-robot-agent-validation.md)
 - [Phase 4 TB1 웹 관제와 Zenoh 통신 일지](docs/learning-log/2026-07-16-phase-4-web-dashboard-and-zenoh.md)
+- [Phase 5 TB1 Nav2 구현 일지](docs/learning-log/2026-07-17-phase-5-tb1-navigation-implementation.md)
 
 ## 개발 원칙
 
@@ -143,7 +152,7 @@ main 최신화
 
 ## 다음 작업
 
-1. Phase 4 PR #5를 Ready로 전환하고 `main`에 squash merge한다.
-2. Phase 5 TB1 SLAM·Nav2와 웹 목적지 명령 경계를 설계한다.
-3. TB1 전용 LiDAR 포트 하드코딩을 ROS 2 launch 설정으로 일반화한다.
-4. 임시 GPIO 점퍼를 진동에 견디는 하네스로 교체한다.
+1. Humble CI에서 Phase 5 전체 패키지와 fake Nav2 통합 테스트를 통과시킨다.
+2. TB1에서 지도·pose graph를 만들고 AMCL, 저속 목표, 취소와 WARN 흐름을 검증한다.
+3. e-stop·Zenoh 단절·agent/Nav2/arbiter 장애를 주입하고 정지시간과 복구 로그를 기록한다.
+4. 10분 주행 자원 측정까지 채운 뒤에만 Phase 5를 완료로 바꾼다.

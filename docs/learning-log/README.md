@@ -15,6 +15,7 @@
 - Phase 3: [Robot Agent 구현](2026-07-16-phase-3-robot-agent-implementation.md)
 - Phase 3: [TB1 Robot Agent 실차 검증](2026-07-16-phase-3-tb1-robot-agent-validation.md)
 - Phase 4: [TB1 웹 관제와 Zenoh 통신 경로](2026-07-16-phase-4-web-dashboard-and-zenoh.md)
+- Phase 5: [TB1 로컬 Nav2와 웹 목적지 구현](2026-07-17-phase-5-tb1-navigation-implementation.md)
 
 ## 공부와 면접용 문서
 
@@ -23,12 +24,14 @@
 - [Phase 2 안전 제어 필수 개념과 모범 답변](../study/phase-2-safe-teleoperation.md)
 - [Phase 3 Robot Agent 필수 개념과 모범 답변](../study/phase-3-robot-agent.md)
 - [Phase 4 웹 Fleet Gateway 필수 개념과 모범 답변](../study/phase-4-web-fleet-gateway.md)
+- [Phase 5 로컬 Nav2와 lease 안전 필수 개념](../study/phase-5-tb1-navigation.md)
 - [LDS-02 `/scan` 데이터 복구 사례](../case-studies/lds02-scan-data-recovery.md)
 - [비상정지 중립 재무장 설계 사례](../case-studies/safety-watchdog-neutral-rearm.md)
 - [Robot Agent stale 감지·복구 사례](../case-studies/robot-agent-stale-recovery.md)
 - [Zenoh 서비스 시간 초과와 RMW 혼용 사례](../case-studies/zenoh-service-timeout-rmw-mismatch.md)
 - [Phase 3 Robot Agent 설계](../design/phase-3-robot-agent.md)
 - [Phase 4 Fleet Gateway 설계](../design/phase-4-tb1-web-dashboard.md)
+- [Phase 5 TB1 Nav2와 웹 목적지 설계](../design/phase-5-tb1-navigation.md)
 
 ## 기록 원칙
 

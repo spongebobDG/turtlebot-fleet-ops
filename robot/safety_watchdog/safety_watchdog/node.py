@@ -4,6 +4,7 @@ import math
 import time
 from typing import Optional, Tuple
 
+from fleet_interfaces.msg import SafetyStatus
 from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
@@ -25,16 +26,24 @@ class SafetyWatchdog(Node):
 
         self.declare_parameter("input_topic", "/safety/cmd_vel_in")
         self.declare_parameter("output_topic", "/cmd_vel")
+        self.declare_parameter("status_topic", "/fleet/safety_status")
+        self.declare_parameter("robot_id", "tb1")
         self.declare_parameter("timeout_sec", 0.5)
         self.declare_parameter("max_linear_x", 0.05)
         self.declare_parameter("max_angular_z", 0.3)
         self.declare_parameter("neutral_epsilon", 0.001)
         self.declare_parameter("publish_rate_hz", 20.0)
+        self.declare_parameter("status_publish_rate_hz", 2.0)
 
         input_topic = self.get_parameter("input_topic").value
         output_topic = self.get_parameter("output_topic").value
+        status_topic = self.get_parameter("status_topic").value
+        self._robot_id = str(self.get_parameter("robot_id").value).strip()
         self._timeout_sec = float(self.get_parameter("timeout_sec").value)
         publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
+        status_publish_rate_hz = float(
+            self.get_parameter("status_publish_rate_hz").value
+        )
         self._neutral_epsilon = float(
             self.get_parameter("neutral_epsilon").value
         )
@@ -49,10 +58,21 @@ class SafetyWatchdog(Node):
             raise ValueError("output_topic must be a non-empty string")
         if input_topic == output_topic:
             raise ValueError("input_topic and output_topic must be different")
+        if not isinstance(status_topic, str) or not status_topic.strip():
+            raise ValueError("status_topic must be a non-empty string")
+        if not self._robot_id:
+            raise ValueError("robot_id must be a non-empty string")
         if not math.isfinite(self._timeout_sec) or self._timeout_sec <= 0.0:
             raise ValueError("timeout_sec must be a positive finite value")
         if not math.isfinite(publish_rate_hz) or publish_rate_hz <= 0.0:
             raise ValueError("publish_rate_hz must be a positive finite value")
+        if (
+            not math.isfinite(status_publish_rate_hz)
+            or status_publish_rate_hz <= 0.0
+        ):
+            raise ValueError(
+                "status_publish_rate_hz must be a positive finite value"
+            )
         if (
             not math.isfinite(self._neutral_epsilon)
             or self._neutral_epsilon < 0.0
@@ -62,10 +82,16 @@ class SafetyWatchdog(Node):
         self._last_command: Tuple[float, float] = (0.0, 0.0)
         self._last_received_at: Optional[float] = None
         self._estop_active = False
-        self._awaiting_neutral = False
+        self._awaiting_neutral = True
         self._last_mode: Optional[str] = None
+        self._current_mode = "WAITING_NEUTRAL"
 
         self._publisher = self.create_publisher(Twist, output_topic, 10)
+        self._status_publisher = self.create_publisher(
+            SafetyStatus,
+            status_topic,
+            10,
+        )
         self._subscription = self.create_subscription(
             Twist,
             input_topic,
@@ -81,8 +107,13 @@ class SafetyWatchdog(Node):
             1.0 / publish_rate_hz,
             self._on_timer,
         )
+        self._status_timer = self.create_timer(
+            1.0 / status_publish_rate_hz,
+            self._publish_status,
+        )
 
         self.publish_stop()
+        self._publish_status()
         self.get_logger().info(
             "Safety watchdog ready: "
             f"input={input_topic}, output={output_topic}, "
@@ -139,6 +170,7 @@ class SafetyWatchdog(Node):
             command = (0.0, 0.0)
 
         self._publish_command(*command)
+        self._current_mode = mode
         self._log_mode_transition(mode)
 
     def _on_set_estop(
@@ -150,7 +182,11 @@ class SafetyWatchdog(Node):
         self._awaiting_neutral = not self._estop_active
         self._last_command = (0.0, 0.0)
         self._last_received_at = None
+        self._current_mode = (
+            "ESTOP" if self._estop_active else "WAITING_NEUTRAL"
+        )
         self.publish_stop()
+        self._publish_status()
 
         response.success = True
         if self._estop_active:
@@ -160,6 +196,22 @@ class SafetyWatchdog(Node):
                 "Emergency stop released; waiting for a neutral command"
             )
         return response
+
+    def _publish_status(self) -> None:
+        message = SafetyStatus()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.robot_id = self._robot_id
+        message.mode = {
+            "TIMEOUT": SafetyStatus.MODE_TIMEOUT,
+            "ACTIVE": SafetyStatus.MODE_ACTIVE,
+            "ESTOP": SafetyStatus.MODE_ESTOP,
+            "WAITING_NEUTRAL": SafetyStatus.MODE_WAITING_NEUTRAL,
+        }[self._current_mode]
+        message.estop_active = self._estop_active
+        message.motion_armed = (
+            not self._estop_active and not self._awaiting_neutral
+        )
+        self._status_publisher.publish(message)
 
     def _publish_command(self, linear_x: float, angular_z: float) -> None:
         message = Twist()
@@ -182,7 +234,7 @@ class SafetyWatchdog(Node):
             self.get_logger().error("Emergency stop active; publishing zero")
         elif mode == "WAITING_NEUTRAL":
             self.get_logger().warning(
-                "Emergency stop released; waiting for neutral command"
+                "Motion disarmed; waiting for neutral command"
             )
         else:
             self.get_logger().warning(

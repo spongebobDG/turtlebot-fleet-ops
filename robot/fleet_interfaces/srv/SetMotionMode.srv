@@ -1,0 +1,8 @@
+uint8 MODE_IDLE=0
+uint8 MODE_MANUAL=1
+uint8 MODE_NAVIGATION=2
+
+uint8 mode
+---
+bool success
+string message

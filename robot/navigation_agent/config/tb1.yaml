@@ -1,0 +1,36 @@
+navigation_agent:
+  ros__parameters:
+    robot_id: tb1
+    command_action: /tb1/navigation/navigate
+    lease_topic: /fleet/navigation_lease
+    status_topic: /fleet/navigation_status
+    robot_status_topic: /fleet/robot_status
+    safety_status_topic: /fleet/safety_status
+    initial_pose_service: /tb1/navigation/set_initial_pose
+    motion_mode_service: /tb1/navigation/set_motion_mode
+    authorization_topic: /navigation/motion_authorized
+    nav2_action: /navigate_to_pose
+    nav2_cancel_service: /navigate_to_pose/_action/cancel_goal
+    initial_pose_topic: /initialpose
+    amcl_pose_topic: /amcl_pose
+    map_topic: /map
+    lease_timeout_sec: 2.0
+    nav2_unavailable_timeout_sec: 1.0
+    localization_timeout_sec: 2.0
+    robot_status_timeout_sec: 3.0
+    safety_status_timeout_sec: 1.5
+    authorization_rate_hz: 10.0
+    status_rate_hz: 2.0
+    map_free_value_max: 0
+
+motion_arbiter:
+  ros__parameters:
+    manual_input_topic: /motion/manual/cmd_vel
+    navigation_input_topic: /motion/navigation/cmd_vel
+    output_topic: /safety/cmd_vel_in
+    authorization_topic: /navigation/motion_authorized
+    mode_service: /tb1/navigation/set_motion_mode
+    default_mode: 0
+    input_timeout_sec: 0.5
+    authorization_timeout_sec: 0.5
+    publish_rate_hz: 20.0

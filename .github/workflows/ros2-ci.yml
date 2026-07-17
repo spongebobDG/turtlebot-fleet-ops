@@ -17,11 +17,14 @@ jobs:
   build-and-test:
     name: Humble build and test
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Test web map coordinate transforms
+        run: node --test control/fleet_gateway/test/test_map_math.js
 
       - name: Set up ROS 2 Humble
         uses: ros-tooling/setup-ros@v0.7
@@ -58,6 +61,7 @@ jobs:
               fleet_interfaces \
               safety_watchdog \
               robot_agent \
+              navigation_agent \
               fleet_gateway \
             --event-handlers console_direct+
           colcon test-result --verbose

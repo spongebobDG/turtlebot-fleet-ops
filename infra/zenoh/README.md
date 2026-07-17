@@ -111,6 +111,14 @@ systemctl --user enable --now \
   tb1-zenoh-bridge.service
 ```
 
+Phase 5에서는 매핑과 주행 프로필 중 하나만 추가로 실행한다. 두 unit은 상호
+`Conflicts=`이므로 동시에 active가 되면 안 된다.
+
+```bash
+systemctl --user enable --now tb1-navigation.service
+systemctl --user is-active tb1-mapping.service
+```
+
 WSL 관제 서비스:
 
 ```bash
@@ -130,6 +138,7 @@ systemctl --user --no-pager status tb1-zenoh-bridge.service
 systemctl --user --no-pager status fleet-control-zenoh.service
 curl http://127.0.0.1:8000/api/health
 curl http://127.0.0.1:8000/api/robots
+curl http://127.0.0.1:8000/api/robots/tb1/map
 ```
 
 `active`만 보고 복구 완료로 판단하지 않는다. ROS 2 discovery와 Zenoh endpoint
@@ -143,7 +152,9 @@ curl http://127.0.0.1:8000/api/robots
 2. 양쪽 Zenoh 브리지 프로세스와 TCP 7447 연결을 확인한다.
 3. 양쪽 시스템 시각 차이가 500ms를 넘지 않는지 확인한다.
 4. 모든 ROS 노드와 브리지의 `ROS_DISTRO`, `ROS_DOMAIN_ID`, RMW를 확인한다.
-5. Gateway REST 상태와 systemd journal을 확인한다.
+5. Gateway REST 상태, navigation/safety freshness와 systemd journal을 확인한다.
+6. 활성 목표가 있었다면 `/fleet/navigation_lease`와
+   `/fleet/navigation_status`의 `LEASE_EXPIRED`를 확인한다.
 
 ```bash
 journalctl --user -u tb1-zenoh-bridge.service -n 100 --no-pager
