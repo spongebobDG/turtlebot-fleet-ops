@@ -35,6 +35,8 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
+    assert "SetRemap" not in launch
+    assert '"bringup_launch.py"' not in launch
     assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
     assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' in nav2_launch
     assert '("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC)' in nav2_launch
