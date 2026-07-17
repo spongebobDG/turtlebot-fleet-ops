@@ -5,8 +5,8 @@
 완료로 바꾼다.
 
 저장소 자동 검증 기준선은 Draft PR #7의
-[Actions 실행 29596474724](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29596474724)이다.
-Ubuntu 22.04 ROS 2 Humble에서 5개 패키지 빌드, 격리 domain 142의 173개 테스트와
+[Actions 실행 29601662765](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29601662765)이다.
+Ubuntu 22.04 ROS 2 Humble에서 5개 패키지 빌드, 격리 domain 142의 183개 테스트와
 robotless Nav2 stack smoke, 서로 다른 두 DDS domain 사이의 Zenoh 1.9.0 action smoke,
 작업·fault smoke가 통과했다. 이 결과는 실차의 센서 정합, 물리 정지시간, 실제 LAN 단절
 또는 자원 사용량을 대신하지 않는다.

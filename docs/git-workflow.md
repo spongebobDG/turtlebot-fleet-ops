@@ -153,7 +153,7 @@ GitHub의 `protect-main` branch ruleset을 기본 브랜치에 적용한다.
 저장소 전체 병합 설정도 squash만 허용한다. merge commit과 rebase merge는 비활성화하고, 병합된 작업 브랜치는 자동 삭제한다.
 
 팀원이 참여하면 필수 승인 수를 1명 이상으로 변경한다. `.github/workflows/ros2-ci.yml`은
-Ubuntu 22.04와 ROS 2 Humble에서 rosdep, 5개 패키지 colcon build, 173개 테스트와
+Ubuntu 22.04와 ROS 2 Humble에서 rosdep, 5개 패키지 colcon build, 183개 테스트와
 robotless Nav2 stack, Zenoh 1.9.0 격리-domain action, 작업·fault smoke를 실행한다.
 `protect-main` Ruleset은 `Humble build and test`를 required status check로 요구한다.
 

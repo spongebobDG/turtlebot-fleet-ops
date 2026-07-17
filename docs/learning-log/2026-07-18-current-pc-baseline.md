@@ -30,8 +30,8 @@
 WSL이 없다고 단정하기보다 현재 명령으로 배포판과 Humble 실행을 확인하지 못한 상태로
 기록한다. 따라서 ROS graph 테스트는 Ubuntu 22.04 GitHub Actions를 권위 있는 증거로 사용한다.
 최종 robotless 기준선은
-[Actions run 29596474724](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29596474724)의
-`173 tests, 0 errors, 0 failures, 0 skipped`와 세 ROS smoke 통과다.
+[Actions run 29601662765](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29601662765)의
+`183 tests, 0 errors, 0 failures, 0 skipped`와 세 ROS smoke 통과다.
 
 ## 현재 PC에서 추가한 검증 도구
 
@@ -41,11 +41,11 @@ ROS 메시지 생성·action·launch는 CI에서 실행한다.
 
 현재 로컬 결과:
 
-- Gateway SQLite·FastAPI·task·registry·map: 29 passed, 1 Windows symlink skip
+- Gateway SQLite·FastAPI·task·registry·map: 39 passed, 1 Windows symlink skip
 - navigation 지도 validator·model·motion 정책·pose checkpoint·운영 설정·Zenoh 계약: 62 passed
 - watchdog policy: 15 passed
 - Robot Agent model·system metrics: 30 passed
-- 로컬 비ROS Python 합계: 136 passed, 1 skip
+- 로컬 비ROS Python 합계: 146 passed, 1 skip
 - Python AST, pycodestyle, pyflakes, Git Bash `bash -n`: 통과
 - bundled Node.js `app.js --check`와 map 좌표 테스트 3개: 통과
 - in-app browser: 실시간 WebSocket 연결, seeded 지도·WARN·fault·audit 표시, 작업

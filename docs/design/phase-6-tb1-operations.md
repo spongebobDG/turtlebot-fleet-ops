@@ -64,6 +64,12 @@ adapter가 goal을 거부하거나 command ID를 주지 않으면 task를 `FAILE
 취소 API의 202 응답은 요청 접수이며 로봇의 terminal 상태와 동일 시점이 아니다. 다음 목표는
 `NavigationStatus.active_command_id`가 비워질 때까지 기존 중복 목표 검사로 차단한다.
 
+Gateway 프로세스가 재시작되면 이전 프로세스가 가진 ROS action handle에는 다시 연결할 수
+없다. 시작 시 DB의 `STARTING`과 `ACTIVE` task를 `FAILED`로 닫고 감사 event를 남긴다. 이
+처리는 반복 실행해도 이미 terminal인 task를 바꾸지 않는다. 새 Gateway는 이전 lease도
+재개하지 않으므로 로봇 agent가 2초 안에 목표를 취소한다. navigation agent 자체가 재시작해
+`UNAVAILABLE`과 빈 command ID를 알릴 때도 대응하는 `ACTIVE` task를 `FAILED`로 닫는다.
+
 ## HTTP 인터페이스
 
 - `GET /api/events?robot_id=tb1&limit=100`
@@ -89,9 +95,10 @@ watchdog 물리 정지와 Raspberry Pi 부하의 증거가 아니다.
 - 저장소 재개방 뒤 task와 fault history가 유지된다.
 - 중복 heartbeat가 fault event를 증폭하지 않는다.
 - 작업 성공·취소·실패·retry가 REST, DB와 웹에서 일치한다.
+- Gateway·navigation agent 재시작 뒤 비종료 task가 자동 재개되지 않고 `FAILED`로 남는다.
 - mock REST·WebSocket·Action smoke와 Humble 전체 테스트가 통과한다.
 - 실제 TB1 목표의 terminal NavigationStatus가 같은 task 상태로 남는다.
 
-앞의 네 항목은
-[Humble CI run 29596474724](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29596474724)에서
+앞의 다섯 항목은
+[Humble CI run 29601662765](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29601662765)에서
 검증했다. 마지막 TB1 연동 항목은 실차 acceptance 전까지 미완료다.
