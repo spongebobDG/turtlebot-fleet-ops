@@ -11,11 +11,11 @@ cleanup() {
   local exit_code=$?
   set +e
   for pid in "${smoke_pids[@]}"; do
-    kill -INT "${pid}" 2>/dev/null || true
+    kill -INT -- "-${pid}" 2>/dev/null || true
   done
   sleep 2
   for pid in "${smoke_pids[@]}"; do
-    kill -TERM "${pid}" 2>/dev/null || true
+    kill -TERM -- "-${pid}" 2>/dev/null || true
     wait "${pid}" 2>/dev/null || true
   done
   if (( exit_code != 0 )); then
@@ -60,16 +60,16 @@ occupied_thresh: 0.65
 free_thresh: 0.196
 EOF
 
-python3 "${repo_root}/infra/navigation/robotless_fixture.py" \
+setsid python3 "${repo_root}/infra/navigation/robotless_fixture.py" \
   >"${smoke_dir}/fixture.log" 2>&1 &
 smoke_pids+=("$!")
-ros2 launch safety_watchdog safety_watchdog.launch.py \
+setsid ros2 launch safety_watchdog safety_watchdog.launch.py \
   >"${smoke_dir}/watchdog.log" 2>&1 &
 smoke_pids+=("$!")
-ros2 launch navigation_agent tb1_navigation.launch.py map:="${map_yaml}" \
+setsid ros2 launch navigation_agent tb1_navigation.launch.py map:="${map_yaml}" \
   >"${smoke_dir}/navigation.log" 2>&1 &
 smoke_pids+=("$!")
-ros2 launch fleet_gateway fleet_gateway.launch.py \
+setsid ros2 launch fleet_gateway fleet_gateway.launch.py \
   >"${smoke_dir}/gateway.log" 2>&1 &
 smoke_pids+=("$!")
 

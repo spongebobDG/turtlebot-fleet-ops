@@ -32,7 +32,11 @@ class FakeWatchdog(Node):
         self.release_count = 0
         self._linear = 0.0
         self._angular = 0.0
-        self._publisher = self.create_publisher(Twist, "/cmd_vel", 10)
+        self._publisher = self.create_publisher(
+            Twist,
+            "/test/navigation_agent/cmd_vel",
+            10,
+        )
         status_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -40,12 +44,23 @@ class FakeWatchdog(Node):
         )
         self._status_publisher = self.create_publisher(
             Bool,
-            "/safety/estop_active",
+            "/test/navigation_agent/estop_active",
             status_qos,
+        )
+        self._safety_publisher = self.create_publisher(
+            Twist,
+            "/test/navigation_agent/safety_input",
+            10,
+        )
+        self._manual_subscription = self.create_subscription(
+            Twist,
+            "/motion/manual/cmd_vel",
+            self._on_manual_input,
+            10,
         )
         self._subscription = self.create_subscription(
             Twist,
-            "/safety/cmd_vel_in",
+            "/test/navigation_agent/safety_input",
             self._on_input,
             10,
         )
@@ -56,6 +71,9 @@ class FakeWatchdog(Node):
         )
         self._timer = self.create_timer(0.02, self._publish)
         self._publish_status()
+
+    def _on_manual_input(self, message: Twist) -> None:
+        self._safety_publisher.publish(message)
 
     def _on_input(self, message: Twist) -> None:
         self._linear = message.linear.x
@@ -97,18 +115,18 @@ class FakeTurtleBot(Node):
         self._last_update = time.monotonic()
         self._subscription = self.create_subscription(
             Twist,
-            "/cmd_vel",
+            "/test/navigation_agent/cmd_vel",
             self._on_command,
             10,
         )
         self._odom_publisher = self.create_publisher(
             Odometry,
-            "/odom",
+            "/test/navigation_agent/odom",
             10,
         )
         self._scan_publisher = self.create_publisher(
             LaserScan,
-            "/scan_normalized",
+            "/test/navigation_agent/scan",
             qos_profile_sensor_data,
         )
         self._timer = self.create_timer(0.02, self._update)
@@ -148,7 +166,17 @@ class FakeTurtleBot(Node):
 
 def _motion_parameters() -> list:
     return [
-        Parameter("input_topic", value="/safety/cmd_vel_in"),
+        Parameter("input_topic", value="/motion/manual/cmd_vel"),
+        Parameter(
+            "output_topic",
+            value="/test/navigation_agent/cmd_vel",
+        ),
+        Parameter("odom_topic", value="/test/navigation_agent/odom"),
+        Parameter("scan_topic", value="/test/navigation_agent/scan"),
+        Parameter(
+            "estop_status_topic",
+            value="/test/navigation_agent/estop_active",
+        ),
         Parameter("mode", value="translate"),
         Parameter("target_distance_m", value=0.02),
         Parameter("speed", value=0.03),
@@ -221,7 +249,7 @@ def test_supervised_motion_rejects_teleop_publisher() -> None:
     teleop = Node("teleop_keyboard")
     teleop_publisher = teleop.create_publisher(
         Twist,
-        "/safety/cmd_vel_in",
+        "/motion/manual/cmd_vel",
         10,
     )
     executor.add_node(teleop)

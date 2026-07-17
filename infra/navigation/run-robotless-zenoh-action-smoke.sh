@@ -15,11 +15,11 @@ cleanup() {
   local exit_code=$?
   set +e
   for pid in "${smoke_pids[@]}"; do
-    kill -INT "${pid}" 2>/dev/null || true
+    kill -INT -- "-${pid}" 2>/dev/null || true
   done
   sleep 1
   for pid in "${smoke_pids[@]}"; do
-    kill -TERM "${pid}" 2>/dev/null || true
+    kill -TERM -- "-${pid}" 2>/dev/null || true
     wait "${pid}" 2>/dev/null || true
   done
   if (( exit_code != 0 )); then
@@ -54,14 +54,14 @@ common_env=(
   RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 )
 
-env "${common_env[@]}" ROS_DOMAIN_ID="${robot_domain}" \
+setsid env "${common_env[@]}" ROS_DOMAIN_ID="${robot_domain}" \
   "${bridge}" \
   -c "${repo_root}/infra/zenoh/robot-bridge.json5" \
   -l "${robot_endpoint}" \
   >"${smoke_dir}/robot-bridge.log" 2>&1 &
 smoke_pids+=("$!")
 
-env "${common_env[@]}" ROS_DOMAIN_ID="${control_domain}" \
+setsid env "${common_env[@]}" ROS_DOMAIN_ID="${control_domain}" \
   "${bridge}" \
   -c "${repo_root}/infra/zenoh/control-bridge.json5" \
   -l "${control_endpoint}" \
@@ -69,7 +69,7 @@ env "${common_env[@]}" ROS_DOMAIN_ID="${control_domain}" \
   >"${smoke_dir}/control-bridge.log" 2>&1 &
 smoke_pids+=("$!")
 
-env "${common_env[@]}" ROS_DOMAIN_ID="${robot_domain}" \
+setsid env "${common_env[@]}" ROS_DOMAIN_ID="${robot_domain}" \
   python3 \
   "${repo_root}/infra/navigation/robotless_zenoh_action_fixture.py" \
   server >"${smoke_dir}/server.log" 2>&1 &
