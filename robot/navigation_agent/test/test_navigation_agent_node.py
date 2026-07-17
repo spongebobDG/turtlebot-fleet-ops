@@ -10,6 +10,8 @@ from fleet_interfaces.action import NavigateRobot
 from fleet_interfaces.msg import NavigationLease, RobotStatus, SafetyStatus
 from fleet_interfaces.srv import SetInitialPose, SetMotionMode
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from lifecycle_msgs.msg import State
+from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
 import rclpy
@@ -116,6 +118,7 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
     probe = Node("navigation_agent_test_probe")
     modes: List[int] = []
     residual_cancel_requests = []
+    nav2_lifecycle = {"active": False}
 
     def set_mode(request, response):
         modes.append(int(request.mode))
@@ -132,6 +135,15 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         )
         return response
 
+    def get_nav2_state(request, response):
+        del request
+        response.current_state.id = (
+            State.PRIMARY_STATE_ACTIVE
+            if nav2_lifecycle["active"]
+            else State.PRIMARY_STATE_INACTIVE
+        )
+        return response
+
     mode_service = probe.create_service(
         SetMotionMode,
         "/test/motion/set_mode",
@@ -141,6 +153,11 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         CancelGoal,
         "/test/nav2/cancel_all",
         cancel_all,
+    )
+    lifecycle_service = probe.create_service(
+        GetState,
+        "/test/nav2/get_state",
+        get_nav2_state,
     )
     agent = NavigationAgent(
         parameter_overrides=[
@@ -160,6 +177,10 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
             Parameter(
                 "nav2_cancel_service",
                 value="/test/nav2/cancel_all",
+            ),
+            Parameter(
+                "nav2_lifecycle_service",
+                value="/test/nav2/get_state",
             ),
             Parameter("initial_pose_topic", value="/test/initialpose"),
             Parameter("amcl_pose_topic", value="/test/amcl_pose"),
@@ -268,6 +289,9 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         )
         assert initial_response.success
         publish_readiness()
+        _wait_until(lambda: not agent._nav2_lifecycle_active)
+        assert not agent._ready_for_goal(time.monotonic(), False)
+        nav2_lifecycle["active"] = True
         _wait_until(
             lambda: agent._ready_for_goal(time.monotonic(), False)
         )
@@ -390,6 +414,7 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         executor.remove_node(fake_nav2)
         action_client.destroy()
         probe.destroy_service(cancel_all_service)
+        probe.destroy_service(lifecycle_service)
         probe.destroy_service(mode_service)
         agent.destroy_node()
         probe.destroy_node()

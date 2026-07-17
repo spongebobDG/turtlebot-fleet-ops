@@ -17,6 +17,8 @@ from fleet_interfaces.msg import (
 )
 from fleet_interfaces.srv import SetInitialPose, SetMotionMode
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from lifecycle_msgs.msg import State
+from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
 import rclpy
@@ -76,6 +78,8 @@ class NavigationAgent(Node):
         self._nav_goal_handle = None
         self._nav_result_waiter: Optional[Future] = None
         self._nav2_unavailable_since: Optional[float] = None
+        self._nav2_lifecycle_active = False
+        self._nav2_lifecycle_query_in_flight = False
         self._lease_expired = False
         self._cancel_requested = False
         self._cancel_reason = ""
@@ -159,6 +163,11 @@ class NavigationAgent(Node):
             self._nav2_cancel_service,
             callback_group=self._callback_group,
         )
+        self._nav2_lifecycle_client = self.create_client(
+            GetState,
+            self._nav2_lifecycle_service,
+            callback_group=self._callback_group,
+        )
         self._nav_client = ActionClient(
             self,
             NavigateToPose,
@@ -201,6 +210,11 @@ class NavigationAgent(Node):
             self._startup_fail_closed,
             callback_group=self._callback_group,
         )
+        self._nav2_lifecycle_timer = self.create_timer(
+            0.2,
+            self._poll_nav2_lifecycle,
+            callback_group=self._callback_group,
+        )
         self.get_logger().info(
             f"Navigation agent ready: robot={self._robot_id}, "
             f"lease timeout={self._lease_timeout_sec:.1f}s"
@@ -219,6 +233,7 @@ class NavigationAgent(Node):
             "authorization_topic": "/navigation/motion_authorized",
             "nav2_action": "/navigate_to_pose",
             "nav2_cancel_service": "/navigate_to_pose/_action/cancel_goal",
+            "nav2_lifecycle_service": "/bt_navigator/get_state",
             "initial_pose_topic": "/initialpose",
             "amcl_pose_topic": "/amcl_pose",
             "map_topic": "/map",
@@ -249,6 +264,7 @@ class NavigationAgent(Node):
         self._authorization_topic = text("authorization_topic")
         self._nav2_action = text("nav2_action")
         self._nav2_cancel_service = text("nav2_cancel_service")
+        self._nav2_lifecycle_service = text("nav2_lifecycle_service")
         self._initial_pose_topic = text("initial_pose_topic")
         self._amcl_pose_topic = text("amcl_pose_topic")
         self._map_topic = text("map_topic")
@@ -285,6 +301,7 @@ class NavigationAgent(Node):
             self._status_topic,
             self._initial_pose_service,
             self._nav2_action,
+            self._nav2_lifecycle_service,
             self._map_topic,
         )
         if any(not value for value in text_values):
@@ -630,7 +647,7 @@ class NavigationAgent(Node):
             if not self._localization_ready(now):
                 self._request_stop("Localization became unavailable or stale")
                 return
-            if not self._nav_client.server_is_ready():
+            if not self._nav2_is_ready():
                 if self._nav2_unavailable_since is None:
                     self._nav2_unavailable_since = now
                 elif (
@@ -722,7 +739,7 @@ class NavigationAgent(Node):
             )
             nav2_ready = (
                 self._grid is not None
-                and self._nav_client.server_is_ready()
+                and self._nav2_is_ready()
                 and startup_safe
             )
             localization_ready = self._localization_ready(now)
@@ -803,6 +820,42 @@ class NavigationAgent(Node):
         if self._startup_motion_idle_sent and self._startup_cancel_sent:
             self._startup_timer.cancel()
 
+    def _poll_nav2_lifecycle(self) -> None:
+        """Cache whether bt_navigator reached its ACTIVE lifecycle state."""
+        if not self._nav2_lifecycle_client.service_is_ready():
+            with self._lock:
+                self._nav2_lifecycle_active = False
+            return
+        with self._lock:
+            if self._nav2_lifecycle_query_in_flight:
+                return
+            self._nav2_lifecycle_query_in_flight = True
+        try:
+            future = self._nav2_lifecycle_client.call_async(GetState.Request())
+        except Exception as error:  # noqa: B902 - retry on the next timer
+            with self._lock:
+                self._nav2_lifecycle_query_in_flight = False
+                self._nav2_lifecycle_active = False
+            self.get_logger().warning(
+                f"Nav2 lifecycle query could not be sent: {error}"
+            )
+            return
+        future.add_done_callback(self._on_nav2_lifecycle_response)
+
+    def _on_nav2_lifecycle_response(self, future) -> None:
+        try:
+            response = future.result()
+            active = (
+                response is not None
+                and int(response.current_state.id)
+                == State.PRIMARY_STATE_ACTIVE
+            )
+        except Exception:  # noqa: B902 - readiness fails closed
+            active = False
+        with self._lock:
+            self._nav2_lifecycle_query_in_flight = False
+            self._nav2_lifecycle_active = active
+
     def _on_startup_motion_idle_response(self, future) -> None:
         try:
             response = future.result()
@@ -859,7 +912,7 @@ class NavigationAgent(Node):
     def _ready_for_goal(self, now: float, confirm_warnings: bool) -> bool:
         if not self._startup_motion_idle_sent or not self._startup_cancel_sent:
             return False
-        if not self._nav_client.server_is_ready():
+        if not self._nav2_is_ready():
             return False
         if not self._localization_ready(now) or not self._safety_ready(now):
             return False
@@ -875,6 +928,12 @@ class NavigationAgent(Node):
         ):
             return False
         return True
+
+    def _nav2_is_ready(self) -> bool:
+        return (
+            self._nav2_lifecycle_active
+            and self._nav_client.server_is_ready()
+        )
 
     def _robot_ready(self, now: float) -> bool:
         return (
