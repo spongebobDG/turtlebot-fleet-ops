@@ -30,8 +30,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+set +u
 source /opt/ros/humble/setup.bash
 source "${repo_root}/install/setup.bash"
+set -u
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-142}"
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export TURTLEBOT3_MODEL=burger
