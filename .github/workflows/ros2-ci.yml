@@ -72,7 +72,8 @@ jobs:
         shell: bash
         run: |
           shellcheck --exclude=SC1090,SC1091 \
-            infra/navigation/*.sh infra/zenoh/*.sh
+            infra/navigation/*.sh infra/zenoh/*.sh scripts/tb1/*.sh
+          bash scripts/tb1/deploy_acceptance.sh --dry-run
           python3 -m py_compile \
             infra/navigation/robotless_operations_smoke_client.py \
             infra/navigation/robotless_web_preview.py
@@ -82,6 +83,10 @@ jobs:
           ros2 launch navigation_agent tb1_mapping.launch.py --show-args
           ros2 launch navigation_agent tb1_navigation.launch.py --show-args
           ros2 launch fleet_gateway weekend_mock.launch.py --show-args
+
+      - name: Validate Windows control scripts
+        shell: pwsh
+        run: scripts/control-pc/validate_scripts.ps1
 
       - name: Run robotless navigation smoke test
         shell: bash

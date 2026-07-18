@@ -48,7 +48,8 @@ colcon test-result --verbose
 
 shellcheck --exclude=SC1090,SC1091 \
   infra/navigation/*.sh infra/systemd/*.sh infra/zenoh/*.sh \
-  scripts/control-pc/*.sh scripts/weekend/*.sh
+  scripts/control-pc/*.sh scripts/tb1/*.sh scripts/weekend/*.sh
+bash scripts/tb1/deploy_acceptance.sh --dry-run >/dev/null
 bash infra/systemd/validate-units.sh
 python3 -m py_compile \
   infra/navigation/robotless_operations_smoke_client.py \

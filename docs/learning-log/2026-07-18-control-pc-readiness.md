@@ -147,3 +147,15 @@ Windows `Test-NetConnection` 대신 2초 제한의 `TcpClient` 연결 검사를 
 - 10분 CPU·메모리 측정과 증거 문서화
 
 이 항목이 실제 로그로 채워질 때만 Phase 5·6과 TB1 MVP를 완료로 바꾼다.
+
+## 2026-07-18 유선 재연결 시도
+
+TB1과 관제 PC를 Wi‑Fi가 아닌 Ethernet으로 직결해 확인했다. PC 이더넷은 준비된
+TB1 LAN `/24` 서브넷으로 올라왔지만 TB1 기준 주소는 ping·ARP와 SSH `22`·Zenoh
+`7447` 포트 모두 응답하지 않았다. 원격 배포나 motion 명령은
+실행하지 않았고, 케이블을 제거해도 되는 안전한 미연결 상태로 종료했다.
+
+다음 연결 때는 TB1 전원·부팅과 유선 인터페이스 주소를 먼저 확인하고
+`test_tb1_connection.ps1 -RequireRobot`를 다시 실행한다. SSH 키 등록이 필요하면
+`setup_tb1_ssh.ps1 -GenerateOnly`로 전용 키를 만든 뒤 TB1 `dcu` 비밀번호를 한 번만
+입력해 등록한다.

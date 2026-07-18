@@ -3,6 +3,8 @@
 [CmdletBinding()]
 param(
     [string]$RobotAddress = "",
+    [string]$RobotUser = "dcu",
+    [string]$IdentityFile = (Join-Path $HOME ".ssh\id_ed25519_tb1"),
     [string]$Distro = "Ubuntu-22.04",
     [switch]$RequireRobot
 )
@@ -126,7 +128,34 @@ catch {
 
 $sshReady = Test-TcpPort -Address $RobotAddress -Port 22
 $zenohReady = Test-TcpPort -Address $RobotAddress -Port 7447
-if ($sshReady) { Write-Pass "TB1 SSH $RobotAddress`:22" }
+if ($sshReady) {
+    Write-Pass "TB1 SSH $RobotAddress`:22"
+    if (Test-Path -LiteralPath $IdentityFile) {
+        $sshResult = & "$env:SystemRoot\System32\OpenSSH\ssh.exe" `
+            -o BatchMode=yes `
+            -o ConnectTimeout=8 `
+            -o StrictHostKeyChecking=accept-new `
+            -o IdentitiesOnly=yes `
+            -i $IdentityFile `
+            "$RobotUser@$RobotAddress" `
+            "printf TB1_SSH_AUTH_OK" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $sshResult -eq "TB1_SSH_AUTH_OK") {
+            Write-Pass "TB1 non-interactive SSH authentication"
+        }
+        elseif ($RequireRobot) {
+            Write-Fail "TB1 SSH key is not authorized; run setup_tb1_ssh.ps1 once"
+        }
+        else {
+            Write-Warn "TB1 SSH port is open but key authentication is not ready"
+        }
+    }
+    elseif ($RequireRobot) {
+        Write-Fail "dedicated TB1 SSH key is missing; run setup_tb1_ssh.ps1"
+    }
+    else {
+        Write-Warn "dedicated TB1 SSH key is not generated"
+    }
+}
 elseif ($RequireRobot) { Write-Fail "TB1 SSH is unreachable" }
 else { Write-Warn "TB1 SSH is offline; expected until the robot is connected" }
 if ($zenohReady) { Write-Pass "TB1 Zenoh $RobotAddress`:7447" }
