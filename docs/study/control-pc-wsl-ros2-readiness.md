@@ -39,11 +39,11 @@ Windows-side `wsl.exe`가 끝난 뒤 Ubuntu가 멈추고 Gateway도 사라지는
 | 계층 | 확인하는 것 | 이 프로젝트의 증거 |
 | --- | --- | --- |
 | 정적 검사 | 구문, 줄바꿈, unit 계약 | PowerShell parser, Node check, ShellCheck, unit validator |
-| 패키지 | 의존성과 API 정책 | rosdep, 183개 단위·통합 테스트 |
+| 패키지 | 의존성과 API 정책 | rosdep, 격리 Humble 189개 단위·통합 테스트 |
 | ROS graph | launch, lifecycle, Action, 토픽 경계 | robotless Nav2 smoke |
 | bridge | DDS 격리 상태의 원격 action 전달 | Zenoh domain 160↔161 smoke |
 | 운영 | 재시작, health, 로봇 부재 판정 | systemd, keepalive, preflight |
-| 실차 | 센서·모터·물리 시간·자원 | TB1 연결 뒤 acceptance |
+| 실차 | 센서·모터·물리 시간·자원 | 2026-07-19 TB1 Phase 5 acceptance |
 
 아래 계층이 통과해도 위 계층을 자동으로 증명하지 않는다. 예를 들어 unit test 성공은 WSL
 로그인 뒤 Gateway가 계속 살아 있는지 알려주지 않고, robotless Nav2 성공은 바퀴 미끄러짐과
@@ -78,19 +78,21 @@ ROS launch, systemd unit, bridge allowlist처럼 재현해야 하는 설정은 G
 
 > 관제 PC는 WSL2 Ubuntu 22.04에 ROS 2 Humble, CycloneDDS, Zenoh와 Gateway를 설치했습니다.
 > Windows 로그인 시 숨김 WSL keepalive와 systemd 서비스를 함께 시작해 재부팅 뒤에도
-> 대시보드가 유지됩니다. 183개 테스트와 Nav2·Zenoh smoke로 소프트웨어 경계를 검증했고,
-> TB1 연결 뒤에는 `-RequireRobot` preflight부터 센서·모터 acceptance를 진행합니다.
+> 대시보드가 유지됩니다. 격리 Humble 189개 테스트와 Nav2·Zenoh smoke로 소프트웨어 경계를
+> 검증했고, `-RequireRobot` preflight 뒤 TB1의 지도·AMCL·목표·e-stop·lease·프로세스
+> 장애와 10분 자원 acceptance까지 완료했습니다.
 
 ## 1분 설명
 
 > 새 PC 준비를 설치, ROS graph, bridge, 운영 지속성의 네 계층으로 나눴습니다. Humble
-> workspace의 183개 테스트 뒤 실제 Nav2 stack으로 Goal 성공·취소·e-stop·속도 제한과
+> workspace의 격리 Humble 189개 테스트 뒤 실제 Nav2 stack으로 Goal 성공·취소·e-stop·속도 제한과
 > `/cmd_vel` 단일 publisher를 검사했습니다. 별도 DDS domain 160과 161 사이에서는 Zenoh
 > bridge만으로 Action과 lease가 왕복하는지 확인했습니다. 운영 검증 중 systemd 서비스가
 > active여도 마지막 Windows WSL client가 끝나면 배포판이 멈추는 문제를 발견해 로그인
 > keepalive를 추가했습니다. 이제 로봇 없는 검사는 SSH·Zenoh만 WARN으로 남고, 연결 뒤
-> `-RequireRobot`에서 이를 FAIL 조건으로 바꿉니다. 따라서 PC 환경은 준비됐지만 실차 센서,
-> 물리 정지시간과 자원 사용량은 완료라고 과장하지 않습니다.
+> `-RequireRobot`에서 이를 FAIL 조건으로 바꿉니다. 실제 TB1에서는 Zenoh 단절 뒤 2.112초
+> 0 출력과 2.263초 lease 만료, 10분 CPU 최대 85.20%와 메모리 최대 20.70%를 측정해
+> PC 준비와 물리 acceptance를 별도 증거로 연결했습니다.
 
 ## 실무형 질문과 모범 답변
 
@@ -126,11 +128,15 @@ TB1 SSH와 Zenoh 포트를 확인한다. 그 다음 `/cmd_vel` publisher가 watc
 - `start_control_stack.ps1`과 `test_tb1_connection.ps1 -RequireRobot`의 역할을 설명할 수 있다.
 - robotless smoke가 증명하는 것과 증명하지 못하는 것을 구분할 수 있다.
 
-## 아직 실차로 확인할 것
+## 실차 확인 결과
 
-- SSH 인증과 TB1 배포 revision
-- 실제 Zenoh LAN 경로와 2초 lease 만료
-- 지도·LiDAR 정합, AMCL READY와 Nav2 도달
-- e-stop 후 2.5초 이내 물리 0속도와 자동 무재개
-- navigation agent·Nav2·arbiter·watchdog 장애 복구
-- 10분 CPU·메모리 측정
+- 전용 SSH 키와 TB1 최종 배포 revision `4b4e609`
+- 실제 Zenoh LAN 단절 뒤 2.112초 0과 2.263초 `LEASE_EXPIRED`
+- 저장 지도, scan-map/AMCL 4.4 cm 정합, READY와 짧은 Nav2 목표 성공
+- e-stop 비영점→0 0.003초, action·lease 폐기와 자동 무재개
+- navigation agent·Nav2·arbiter·Python policy·C++ guard 장애 복구
+- 10분 CPU 평균 69.14%/최대 85.20%, 메모리 평균 20.63%/최대 20.70%
+
+자세한 조건과 운영 제한은
+[Phase 5 실차 수용 시험](../learning-log/2026-07-19-phase-5-tb1-navigation-acceptance.md)에
+있다.

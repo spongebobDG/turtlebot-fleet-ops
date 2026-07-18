@@ -199,3 +199,11 @@ pose를 계속 발행하지 않으므로, 정지 상태에서 pose stream freshn
 위치나 agent 재시작 때만 다시 확인하도록 수정했다. robot status, safety status, Nav2와
 lease freshness는 계속 별도로 검사한다. 이 수정본을 재배포하고 초기 위치를 다시 적용하기
 전에는 실제 Nav2 Goal을 보내지 않는다.
+
+## 후속 결과
+
+위 수정본은 2026-07-19 TB1에 재배포했다. READY latch, 웹 목표, 취소, WARN, e-stop,
+Zenoh lease 단절, 프로세스 장애와 10분 자원 표본까지 완료했으며 단일 watchdog 구조에서
+발견한 Publisher 공백은 C++ guard로 보강했다. 최종 결과와 완료 판정은
+[Phase 5 TB1 로컬 Nav2 실차 수용 시험](2026-07-19-phase-5-tb1-navigation-acceptance.md)에
+이어 기록했다.

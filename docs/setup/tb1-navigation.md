@@ -2,14 +2,18 @@
 
 이 절차는 TB1 한 대를 빈 실습 공간에서 저속으로 검증한다. 작업자는 시험 내내
 전원 스위치에 손이 닿는 위치에 있어야 한다. 아래 체크박스는 실제 측정 뒤에만
-완료로 바꾼다.
+완료로 바꾼다. 2026-07-19의 체크 표시는 TB1 실차 증거에 근거하며, 재시험 때도 같은
+fail-closed 순서를 사용한다.
 
 저장소 자동 검증 기준선은 Draft PR #7의
 [Actions 실행 29601662765](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29601662765)이다.
-Ubuntu 22.04 ROS 2 Humble에서 5개 패키지 빌드, 격리 domain 142의 183개 테스트와
+초기 기준선은 Ubuntu 22.04 ROS 2 Humble에서 5개 패키지 빌드, 격리 domain 142의
+183개 테스트와
 robotless Nav2 stack smoke, 서로 다른 두 DDS domain 사이의 Zenoh 1.9.0 action smoke,
-작업·fault smoke가 통과했다. 이 결과는 실차의 센서 정합, 물리 정지시간, 실제 LAN 단절
-또는 자원 사용량을 대신하지 않는다.
+작업·fault smoke가 통과한 결과다. 최종 구조에는 C++ watchdog guard 패키지를 추가해
+6개 패키지 격리 Humble 189개와 TB1 전체 223개 테스트까지 통과했다. robotless 결과는
+실차의 센서 정합, 물리
+정지시간, 실제 LAN 단절 또는 자원 사용량을 대신하지 않는다.
 
 ## 로봇 없는 자동 통합 검증
 
@@ -22,7 +26,8 @@ bash infra/navigation/run-robotless-zenoh-action-smoke.sh
 ```
 
 script는 임시 free map과 TF·odom·scan·AMCL·RobotStatus fixture를 만들고 실제
-Nav2·AMCL·navigation agent·arbiter·watchdog·Gateway를 실행한다. 웹과 같은 REST
+Nav2·AMCL·navigation agent·arbiter·watchdog policy·C++ guard·Gateway를 실행한다.
+웹과 같은 REST
 경로로 초기 위치, 목표 성공, 명시적 취소와 e-stop 후 무재개를 확인한다. 마지막에는
 `/cmd_vel`의 유일한 publisher, 중간 Nav2 publisher, `0.05 m/s`·`0.3 rad/s` 상한과
 최종 0을 검사한다.
@@ -86,8 +91,10 @@ ros2 topic info /cmd_vel --verbose
 ros2 topic echo /fleet/safety_status --once
 ```
 
-정상 운용에서 `/cmd_vel` publisher의 node name은 `/safety_watchdog` 하나여야 한다.
-Nav2, teleop 또는 arbiter가 직접 보이면 시험을 중단한다.
+정상 운용에서 `/cmd_vel` publisher의 node name은 C++ guard인 `/safety_watchdog`
+하나여야 한다. Python 정책 노드는 `/safety_watchdog_policy`이며
+`/safety/watchdog_cmd_vel`까지만 발행한다. Nav2, teleop, arbiter 또는 policy가
+`/cmd_vel`에 직접 보이면 시험을 중단한다.
 
 ## 3. 매핑 프로필
 
@@ -208,59 +215,49 @@ systemctl --user start tb1-mapping.service
 
 ## 7. 실차 완료 체크리스트
 
-### 정지 상태 사전검증 결과
+### 실차 수용 시험 결과
 
-2026-07-18에 새 관제 PC의 SSH·Zenoh 연결, TB1 배포, 217개 robot 테스트와 센서 수신을
-확인했다. mapping과 navigation 프로필은 모두 inactive인 `IDLE`에서 `/cmd_vel` publisher가
-watchdog 하나뿐이고 5초간 출력이 0임을 측정했다. 정지 상태 e-stop 해제 뒤에는
-`WAITING_NEUTRAL`, motion-armed false를 유지했고 자동 재출발이 없었다. 저장 지도는 아직
-없으며 LiDAR 최소 거리가 약 0.203 m여서 실제 motion은 빈 공간으로 옮길 때까지 보류했다.
+2026-07-18에는 새 관제 PC의 SSH·Zenoh 연결, 배포, 217개 robot 테스트와 정지 상태를
+사전검증했다. 2026-07-19에는 빈 공간에서 아래 동적 체크리스트를 수행하고 watchdog
+구조 보강 후 TB1 223개 테스트를 다시 통과했다.
 
-이 결과는 연결·배포 사전검증만 완료한 것이다. 아래 주행 중 e-stop, lease, 장애 주입과
-10분 자원 측정 체크박스는 실제 동적 시험 전까지 미완료로 둔다. 상세 기록은
-[TB1 acceptance 배포와 정지 상태 사전검증](../learning-log/2026-07-18-tb1-acceptance-deployment.md)에
+| 항목 | 실제 결과 |
+| --- | --- |
+| 지도 | 58×96, 0.05 m/cell, known 2,971, known ratio 0.5336 |
+| 위치추정 | 직접 scan-map 정합과 AMCL 차이 4.4 cm, 정지 12초 뒤에도 READY latch 유지 |
+| 짧은 목표 | 약 18.7 cm 및 장애물 제거 후 약 9.6 cm, recovery 0으로 성공 |
+| 속도 | navigation·arbiter·guard 모두 최대 0.05 m/s, 0.3 rad/s |
+| e-stop | 비영점→0 0.003초, API 요청부터 안전 terminal 0.983초, 무재개 |
+| Zenoh 단절 | 0 출력 2.112초, `LEASE_EXPIRED` 2.263초, 재연결 후 무재개 |
+| explicit cancel | 취소 요청부터 안전 terminal 0.978초 |
+| guard 장애 | 프로세스 재생성 약 0.105초, 관찰된 첫 0 0.955초, 목표 취소·무재개 |
+| 자원 10분 | CPU 평균 69.14%/최대 85.20%, 메모리 평균 20.63%/최대 20.70% |
+
+지도 산출물은 `~/.local/share/turtlebot-fleet-ops/maps/tb1/`에만 있고 Git에 넣지 않았다.
+로컬 evidence는 Git에서 제외되는 `output/tb1-acceptance/` 아래에 수집했다. 정확한 시각,
+command ID와 실패 주입별 결과는
+[Phase 5 TB1 실차 수용 시험](../learning-log/2026-07-19-phase-5-tb1-navigation-acceptance.md)에
 있다.
 
-### 예상 소요시간
-
-TB1 SSH 접속·배포·정지 상태 preflight가 끝난 현재, 빈 시험 공간이 준비됐다는 기준으로
-남은 작업은 `2시간 35분~3시간 50분`을 예상한다. 최대 추정치에 재시험 여유 40분을 더한
-한 번의 시험 창은 최대 `4시간 30분`을 권장한다. Docker는 Phase 5 실차 경로의 필수
-조건이 아니다.
-
-[Nav2의 실물 TurtleBot3 기본 튜토리얼](https://docs.nav2.org/tutorials/docs/navigation2_on_real_turtlebot3.html)은
-기본 절차를 약 1시간으로 안내한다. 아래 산정은 여기에 지도·pose graph 작성, 웹 WARN,
-e-stop·lease·네 프로세스 장애 주입, 10분 자원 측정과 증거 문서화를 더한 프로젝트
-완료 기준이다.
-
-| 작업 | 예상 |
-| --- | ---: |
-| TB1 접속·배포·bringup·안전 preflight | 완료 |
-| 안전 teleop 매핑과 pose graph 저장 | 30~45분 |
-| AMCL 초기 위치와 지도·LiDAR 정합 | 15~25분 |
-| 저속 도달·취소·WARN·속도/publisher 검사 | 25~35분 |
-| e-stop과 Gateway/Zenoh lease 단절 | 20~30분 |
-| agent·Nav2·arbiter·watchdog 장애와 복구 | 30~45분 |
-| 10분 자원 주행과 로그 회수 | 15~20분 |
-| 측정값·스크린샷·학습 일지 정리 | 20~30분 |
-
-`4시간 30분` 예약에는 최대 추정치 위 40분 buffer가 포함된다. 위 범위는 실제 측정 전
-추정치이며, 완료 판정에는 아래 체크리스트의 로그가 필요하다.
+한 번의 큰 방향 전환 왕복 목표는 recovery 12회 뒤 상태 stale로 fail-safe 취소됐다.
+또한 LiDAR 평면 아래의 낮은 장애물은 costmap에 보이지 않았다. 두 현상 모두 숨기지 않고
+운영 제한으로 기록한다. 첫 목표는 짧고 완전히 비어 있는 자유 셀만 사용하고, 저상 장애물은
+작업자가 별도 육안 점검한다.
 
 ### 지도와 위치추정
 
-- [ ] 안전 teleop으로 지도와 pose graph 저장
-- [ ] 저장 지도 프로필로 재시작
-- [ ] 웹 초기 위치 적용 뒤 `READY`
-- [ ] 지도와 LiDAR 정합을 스크린샷 또는 rosbag으로 기록
+- [x] 안전 teleop으로 지도와 pose graph 저장
+- [x] 저장 지도 프로필로 재시작
+- [x] 웹 초기 위치 적용 뒤 `READY`
+- [x] scan-map 직접 정합과 AMCL 위치 차이 4.4 cm를 수치 로그로 기록
 
 ### 기본 주행
 
-- [ ] 가까운 목표를 `0.05 m/s`, `0.3 rad/s` 이하로 도달
-- [ ] 활성 목표 명시적 취소와 정지
-- [ ] WARN 확인 전 409, 확인 후 목표 접수
-- [ ] 중복 목표 409
-- [ ] `/cmd_vel` publisher가 watchdog 하나뿐
+- [x] 가까운 목표를 `0.05 m/s`, `0.3 rad/s` 이하로 도달
+- [x] 활성 목표 명시적 취소와 정지
+- [x] WARN 확인 전 409, 확인 후 목표 접수
+- [x] 중복 목표 409
+- [x] `/cmd_vel` publisher가 C++ watchdog guard 하나뿐
 
 속도 상한은 동시에 기록한다.
 
@@ -271,10 +268,10 @@ ros2 topic echo /cmd_vel
 
 ### e-stop
 
-- [ ] 주행 중 e-stop 직후 `/cmd_vel` 0
-- [ ] 활성 command와 Gateway lease 제거
-- [ ] 해제 직후 `WAITING_NEUTRAL`
-- [ ] IDLE 0으로 재무장한 뒤에도 이전 목표 자동 재출발 없음
+- [x] 주행 중 e-stop 직후 `/cmd_vel` 0
+- [x] 활성 command와 Gateway lease 제거
+- [x] 해제 직후 `WAITING_NEUTRAL`
+- [x] IDLE 0으로 재무장한 뒤에도 이전 목표 자동 재출발 없음
 
 ### 통신 단절
 
@@ -287,23 +284,25 @@ ros2 topic echo /fleet/navigation_status
 ros2 topic echo /cmd_vel
 ```
 
-- [ ] 2초 후 `LEASE_EXPIRED`
-- [ ] 단절 시작 2.5초 이내 `/cmd_vel=0`
-- [ ] 복구 뒤 이전 목표 자동 재개 없음
+- [x] 2초 후 `LEASE_EXPIRED`
+- [x] 단절 시작 2.5초 이내 `/cmd_vel=0`
+- [x] 복구 뒤 이전 목표 자동 재개 없음
 
 ### 프로세스 장애
 
 각 시험은 한 번에 하나의 PID만 종료하고 systemd의 새 `MainPID`를 기록한다.
 
-- [ ] `navigation_agent` 종료: authorization 0.5초 만료와 0 출력
-- [ ] agent 재시작: 남은 Nav2 목표 취소, IDLE 시작
-- [ ] Nav2 종료: 안전 정지, 1초 부재 뒤 `FAILED`, systemd 복구
-- [ ] arbiter 종료: watchdog timeout 정지와 respawn
-- [ ] watchdog 종료: 재시작 후 `WAITING_NEUTRAL`, 활성 목표 취소와 자동 재출발 없음
+- [x] `navigation_agent` 종료: authorization 폐기와 0 출력
+- [x] agent 재시작: launch 전체 재시작, 남은 Nav2 목표 취소, IDLE 시작
+- [x] Nav2 종료: 안전 정지, 1초 부재 뒤 `FAILED`, systemd 복구
+- [x] arbiter 종료: watchdog timeout 정지와 respawn
+- [x] Python watchdog policy 종료: guard timeout 0, policy 재시작과 무재개
+- [x] C++ watchdog guard 종료: 즉시 재생성, 중립 전 차단, 활성 목표 취소와 무재개
 
 ### 자원 사용량
 
-10분 주행 동안 10초 간격으로 기록한다.
+10분 동안 5~10초 간격으로 navigation stack과 시스템 자원을 기록한다. 2026-07-19
+수용 시험은 5초 간격 120개 표본을 사용했다.
 
 ```bash
 pidstat -r -u -p ALL 10 60
@@ -311,12 +310,14 @@ free -h
 journalctl --user -u tb1-navigation.service --since '-15 min'
 ```
 
-- [ ] CPU 90% 경고가 지속되지 않음
-- [ ] 메모리 90% 경고가 지속되지 않음
-- [ ] 평균, 최대, 경고 지속시간을 학습 일지에 기록
+- [x] CPU 90% 경고가 지속되지 않음
+- [x] 메모리 90% 경고가 지속되지 않음
+- [x] 평균, 최대, 경고 지속시간을 학습 일지에 기록
 
 ## 8. 결과 기록 형식
 
 각 시험에 시작 시각, 종료 시각, 실행 명령, command ID, 기대값, 실제값, 관련
-`journalctl` 구간과 판정을 남긴다. 미실행 항목은 `미확인`으로 둔다. 모든 항목과
-로그가 채워지기 전에는 Phase 5를 완료로 바꾸지 않는다.
+`journalctl` 구간과 판정을 남긴다. 미실행 항목은 `미확인`으로 둔다. 2026-07-19에는
+모든 필수 항목을 실행하고 실제값을 학습 일지에 연결했으므로 Phase 5를 완료로 판정했다.
+관찰된 실패와 센서 한계는 삭제하지 않고 다음 현장 시험의 preflight와 tuning 입력으로
+유지한다.

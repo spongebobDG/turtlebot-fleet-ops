@@ -11,7 +11,7 @@
 7. Nav2 속도도 최종 모터 전에 로봇 로컬 watchdog를 통과해야 한다.
 8. 지도 PGM·YAML과 SLAM pose graph는 목적이 다른 산출물이다.
 9. LaserScan은 배열 길이와 각도 메타데이터가 일관돼야 한다.
-10. 분산 브리지에서도 최종 `/cmd_vel` 권한은 로봇 로컬 watchdog 하나로 제한한다.
+10. 분산 브리지에서도 최종 `/cmd_vel` 권한은 로봇 로컬 C++ watchdog guard 하나로 제한한다.
 11. DDS 토픽 상호 운용과 ROS 2 서비스 request/reply 호환성은 별도로 검증한다.
 12. 개별 안전 명령 사이의 odom 자세도 영속 체크포인트로 이어서 검증해야 한다.
 
@@ -26,7 +26,9 @@ NavigateToPose Goal
 -> planner
 -> controller
 -> velocity smoother
--> safety_watchdog
+-> motion arbiter
+-> watchdog policy
+-> C++ watchdog guard
 -> turtlebot3_node
 ```
 
@@ -159,11 +161,12 @@ pose graph를 시작한다.
 ### 30초 설명
 
 > TB1에서 SLAM Toolbox로 2D 지도를 만들고, 저장 지도에서는 Map Server와 AMCL로
-> 위치를 추정한 뒤 Nav2 `NavigateToPose`를 사용하도록 설계했습니다. Nav2 controller와
-> recovery behavior의 모든 속도 출력은 `/safety/cmd_vel_in`으로 remap해 로봇 로컬
-> watchdog가 속도 제한, 0.5초 timeout과 e-stop을 최종 집행합니다. 현재 패키지 설치,
-> TF·센서 사전 점검과 robot workspace 전체 145개 자동 테스트까지 통과했고 실차 지도와
-> Goal은 안전 구역에서 단계적으로 검증합니다.
+> 위치를 추정한 뒤 Nav2 `NavigateToPose`를 사용했습니다. Nav2 controller와 recovery
+> behavior의 모든 속도 출력은 arbiter, Python watchdog policy와 C++ guard를 통과합니다.
+> policy는 e-stop과 0.5초 timeout, guard는 0.25초 timeout과 속도 상한을 독립 집행하고
+> `/cmd_vel`은 guard 하나만 발행합니다. 격리 Humble 189개와 TB1 전체 223개 테스트,
+> 실차 지도·AMCL·저속 목표,
+> 취소·WARN·e-stop·lease·프로세스 장애까지 검증했습니다.
 
 ### 1분 설명
 
@@ -174,7 +177,9 @@ pose graph를 시작한다.
 > controller와 velocity smoother로 속도를 계산합니다. 기본 launch를 그대로 쓰면
 > watchdog를 우회할 수 있어 non-composed launch를 소유하고 최종 출력을 안전 입력으로
 > remap했습니다. 터미널 Goal의 성공·취소·실패·e-stop을 먼저 검증한 뒤 FastAPI Action
-> Client와 WebSocket feedback을 추가할 계획입니다.
+> Client와 WebSocket feedback까지 연결했습니다. 실차에서는 지도 58×96, 0.05 m/cell과
+> pose graph를 저장하고 AMCL 수치 정합, 웹 Goal 성공·취소와 fail-closed 장애 전이를
+> 확인했습니다.
 
 ### “왜 기본 TurtleBot3 launch를 그대로 쓰지 않았나요?”
 
@@ -187,10 +192,11 @@ pose graph를 시작한다.
 
 ### “네트워크가 끊기면 로봇은 어떻게 되나요?”
 
-> Nav2와 watchdog는 TB1에서 로컬 실행하므로 단기 네트워크 단절이 로컬 센서 기반 안전을
-> 제거하지 않습니다. 웹에서 새 Goal이나 취소 feedback은 끊길 수 있지만 watchdog는
-> 입력이 0.5초 이상 갱신되지 않으면 0 속도를 발행합니다. 이후 Goal 상태와 통신 장애를
-> Gateway가 기록하고, 자동 재개는 하지 않는 정책으로 확장합니다.
+> Nav2와 watchdog 계층은 TB1에서 로컬 실행하므로 단기 네트워크 단절이 로컬 안전 경계를
+> 제거하지 않습니다. Gateway lease가 2초 끊기면 agent가 Goal을 `LEASE_EXPIRED`로 닫고,
+> 로컬 authorization과 guard timeout도 독립적으로 속도를 0으로 만듭니다. 실차에서는
+> Zenoh 단절 뒤 2.112초에 0, 2.263초에 `LEASE_EXPIRED`를 측정했고 재연결 뒤 자동
+> 재개되지 않았습니다.
 
 ## 복습 문제와 정답
 
@@ -327,10 +333,11 @@ safety, lease freshness가 fail-closed로 담당한다.
 > frame을 서버에서 거부합니다. timeout이나 늦은 Goal 수락 시에는 Action 취소만 믿지 않고
 > 로컬 watchdog e-stop도 함께 적용합니다. 구현 리뷰에서 종료된 Goal이 늦은 수락으로 다시
 > 실행되는 경합과 이전 result가 새 handle을 지우는 경합을 발견해 Goal ID 기반 상태 전이와
-> 소유권 검사로 막았습니다. 가짜 Nav2 Action Server 통합 테스트를 포함해 전체 175개
-> 테스트를 통과했습니다. 실패 재시도는 이전 target을 새 Goal ID로 복제하고 계보를 기록하며,
-> 로봇 watchdog의 최신 e-stop heartbeat가 해제 상태일 때만 허용합니다. 실차 웹 Goal은 저장
-> 지도와 터미널 Goal 검증 후 수행하도록 분리했습니다.
+> 소유권 검사로 막았습니다. 가짜 Nav2 Action Server와 guard 통합 테스트를 포함해 전체
+> 격리 Humble 189개와 TB1 전체 223개 테스트를 통과했습니다. 실패 재시도는 이전
+> target을 새 Goal ID로 복제하고 계보를
+> 기록하며, 로봇 watchdog의 최신 e-stop heartbeat가 해제 상태일 때만 허용합니다.
+> 실차에서는 WARN 미확인 409, 확인 뒤 202, 중복 409, 성공·취소와 무재개까지 확인했습니다.
 
 ## 보지 않고 다시 말할 체크리스트
 
@@ -355,13 +362,22 @@ safety, lease freshness가 fail-closed로 담당한다.
 - [ ] 실패 Goal 재시도의 새 ID·계보·동시성 정책을 설명할 수 있다.
 - [ ] 웹 명령 기억보다 로봇 e-stop heartbeat가 권위 있는 이유를 설명할 수 있다.
 
-## 아직 실차로 검증하지 않은 것
+## 실차에서 확인한 것과 남은 운영 제한
 
-- 이동 매핑 중 SLAM Toolbox의 TB1 CPU·메모리 부하와 `/map` 품질
-- 실제 공간의 loop closure와 지도 품질
-- AMCL 수렴과 local/global costmap
-- `NavigateToPose` 성공·취소·실패·e-stop 상호작용
-- Zenoh를 통과하는 Action Goal·feedback·cancel
+- 보호 이동으로 58×96 지도, known ratio 0.5336과 pose graph를 저장했다.
+- 직접 scan-map 정합과 AMCL 위치 차이는 4.4 cm였고 정지 12초에도 READY latch를 유지했다.
+- 짧은 목표 두 개는 recovery 0으로 성공했으며 명시적 취소, WARN 확인과 중복 거부를
+  확인했다.
+- e-stop, Zenoh 단절과 agent·Nav2·arbiter·watchdog 장애에서 최종 0과 무재개를 확인했다.
+- 10분 120개 표본에서 CPU 최대 85.20%, 메모리 최대 20.70%로 90% 경고가 지속되지 않았다.
+
+완료 판정 뒤에도 다음 제한을 운영 지식으로 유지한다.
+
+- LiDAR 스캔 평면보다 낮은 장애물은 costmap에 보이지 않을 수 있으므로 현장 육안 점검이
+  필요하다.
+- 큰 방향 전환을 반복한 왕복 목표 하나는 recovery 12회 뒤 stale 상태로 fail-safe
+  취소됐다. 짧은 목표 성공 기준은 충족했지만 이 경로는 controller·costmap tuning 후보다.
+- software e-stop과 guard는 물리 전원 차단 장치를 대신하지 않는다.
 
 ## 필수 Incident 복습
 
@@ -396,3 +412,6 @@ safety, lease freshness가 fail-closed로 담당한다.
 
 > 재시도는 같은 요청의 반복이 아니라 이전 실패와 연결된 새 작업이다. 새 Goal ID와 계보를
 > 남기고, 로봇이 보고한 최신 e-stop 해제 상태가 확인될 때만 실행한다.
+
+> LiDAR가 장애물을 보지 못하면 costmap도 그 장애물을 피할 수 없다. 소프트웨어 안전 경계와
+> 센서의 물리적 관측 한계는 별도로 검증해야 한다.

@@ -333,3 +333,10 @@ handle을 묶고 소유권이 일치할 때만 정리해야 한다.
 - `b37ecaa feat: add web Nav2 goal lifecycle`
 - `56249d8 feat: add guarded Nav2 goal retry`
 - 문서 커밋: 이 일지를 포함하는 다음 커밋
+
+## 후속 결과
+
+2026-07-19 TB1에서 웹 Goal 성공·취소·WARN 확인·중복 409, Zenoh lease 단절과 e-stop
+무재개를 실차로 확인했다. 최종 결과는
+[Phase 5 TB1 로컬 Nav2 실차 수용 시험](2026-07-19-phase-5-tb1-navigation-acceptance.md)에
+이어 기록했다.
