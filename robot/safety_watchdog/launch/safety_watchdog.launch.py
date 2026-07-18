@@ -22,13 +22,22 @@ def generate_launch_description() -> LaunchDescription:
                 description="Use a simulator clock instead of system time",
             ),
             Node(
-                package="safety_watchdog",
-                executable="safety_watchdog_node",
+                package="safety_watchdog_guard",
+                executable="watchdog_guard",
                 name="safety_watchdog",
                 output="screen",
                 parameters=[str(parameters), {"use_sim_time": use_sim_time}],
                 respawn=True,
-                respawn_delay=0.5,
+                respawn_delay=0.0,
+            ),
+            Node(
+                package="safety_watchdog",
+                executable="safety_watchdog_node",
+                name="safety_watchdog_policy",
+                output="screen",
+                parameters=[str(parameters), {"use_sim_time": use_sim_time}],
+                respawn=True,
+                respawn_delay=0.0,
             )
         ]
     )

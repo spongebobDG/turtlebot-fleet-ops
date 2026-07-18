@@ -131,6 +131,7 @@ export ROS_DOMAIN_ID=142
 colcon build \
   --base-paths robot \
   --packages-up-to \
+    safety_watchdog_guard \
     safety_watchdog \
     robot_agent \
     navigation_agent \
@@ -143,6 +144,7 @@ set -u
 colcon test \
   --packages-select \
     fleet_interfaces \
+    safety_watchdog_guard \
     safety_watchdog \
     robot_agent \
     navigation_agent \

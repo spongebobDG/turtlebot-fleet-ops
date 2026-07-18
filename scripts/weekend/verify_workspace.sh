@@ -39,6 +39,7 @@ set -u
 colcon test \
   --packages-select \
     fleet_interfaces \
+    safety_watchdog_guard \
     safety_watchdog \
     robot_agent \
     navigation_agent \

@@ -27,6 +27,7 @@ class SafetyWatchdog(Node):
         self.declare_parameter("input_topic", "/safety/cmd_vel_in")
         self.declare_parameter("output_topic", "/cmd_vel")
         self.declare_parameter("status_topic", "/fleet/safety_status")
+        self.declare_parameter("estop_service", "/safety_watchdog/set_estop")
         self.declare_parameter("robot_id", "tb1")
         self.declare_parameter("timeout_sec", 0.5)
         self.declare_parameter("max_linear_x", 0.05)
@@ -38,6 +39,7 @@ class SafetyWatchdog(Node):
         input_topic = self.get_parameter("input_topic").value
         output_topic = self.get_parameter("output_topic").value
         status_topic = self.get_parameter("status_topic").value
+        estop_service = self.get_parameter("estop_service").value
         self._robot_id = str(self.get_parameter("robot_id").value).strip()
         self._timeout_sec = float(self.get_parameter("timeout_sec").value)
         publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
@@ -60,6 +62,8 @@ class SafetyWatchdog(Node):
             raise ValueError("input_topic and output_topic must be different")
         if not isinstance(status_topic, str) or not status_topic.strip():
             raise ValueError("status_topic must be a non-empty string")
+        if not isinstance(estop_service, str) or not estop_service.strip():
+            raise ValueError("estop_service must be a non-empty string")
         if not self._robot_id:
             raise ValueError("robot_id must be a non-empty string")
         if not math.isfinite(self._timeout_sec) or self._timeout_sec <= 0.0:
@@ -100,7 +104,7 @@ class SafetyWatchdog(Node):
         )
         self._estop_service = self.create_service(
             SetBool,
-            "~/set_estop",
+            estop_service,
             self._on_set_estop,
         )
         self._timer = self.create_timer(
