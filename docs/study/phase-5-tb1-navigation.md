@@ -9,8 +9,8 @@ TB1 agent는 Nav2 목표를 소유하며, arbiter, Python watchdog policy와 C++
 
 최종 자동 검증에서는 Ubuntu 22.04 ROS 2 Humble로 6개 패키지를 빌드하고, 격리 domain
 142에서 fake Nav2 action, lease, e-stop, watchdog 재무장·guard timeout과 Gateway 계약을
-포함한 189개 테스트와 실제 Nav2 stack robotless smoke가 통과했다. TB1 전체 robot
-workspace는 223개 테스트를 통과했다. 2026-07-19 TB1에서는
+포함한 최신 191개 테스트와 실제 Nav2 stack robotless smoke가 통과했다. TB1은 현재 소스
+패키지에 한정한 144개 테스트를 통과했다. 2026-07-19 TB1에서는
 지도·AMCL·목표·취소·WARN·e-stop·lease와 프로세스 장애를 실차로 검증했다. 자동 테스트와
 실차 증거는 서로 대체하지 않고 함께 완료 근거로 사용한다.
 

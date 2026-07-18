@@ -33,6 +33,10 @@
 Summary: 223 tests, 0 errors, 0 failures, 0 skipped
 ```
 
+이 값은 당시 실행 명령이 출력한 역사적 결과다. 같은 날 Phase 6 배포 절차를 package별로
+한정해 감사한 결과, 삭제된 `fleet_navigation`의 과거 build 결과가 이 합계에 포함됐음을
+확인했다. 현재 소스 기준 TB1 회귀 수치는 144개이며 과거 출력은 원시 기록으로만 보존한다.
+
 실차 원시 evidence는 Git에서 제외되는 다음 로컬 디렉터리에 모았다.
 
 ```text
@@ -235,7 +239,10 @@ Publisher 공백도 구조와 테스트로 보강하고 재배포했다.
 1. LiDAR 평면보다 낮은 장애물은 작업 전 육안 점검이 필요하다.
 2. 큰 방향 전환을 반복하는 왕복 경로는 recovery·stale 재현과 tuning이 필요하다.
 
-Phase 6의 작업·고장·감사 기능은 robotless 상태이므로 TB1 전체 MVP는 아직 완료가 아니다.
+Phase 5 완료 시점에는 Phase 6가 robotless 상태여서 TB1 전체 MVP를 완료로 표시하지 않았다.
+같은 날 이어서 실제 task와 복구를 검증한 결과는
+[Phase 6 TB1 작업·복구 수용 시험](2026-07-19-phase-6-tb1-operations-acceptance.md)에 기록했고,
+그 후 TB1 단일 로봇 MVP를 완료로 판정했다.
 
 ## 배운 점
 

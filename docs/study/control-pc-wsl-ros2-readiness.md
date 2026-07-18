@@ -39,7 +39,7 @@ Windows-side `wsl.exe`가 끝난 뒤 Ubuntu가 멈추고 Gateway도 사라지는
 | 계층 | 확인하는 것 | 이 프로젝트의 증거 |
 | --- | --- | --- |
 | 정적 검사 | 구문, 줄바꿈, unit 계약 | PowerShell parser, Node check, ShellCheck, unit validator |
-| 패키지 | 의존성과 API 정책 | rosdep, 격리 Humble 189개 단위·통합 테스트 |
+| 패키지 | 의존성과 API 정책 | rosdep, 격리 Humble 191개 단위·통합 테스트 |
 | ROS graph | launch, lifecycle, Action, 토픽 경계 | robotless Nav2 smoke |
 | bridge | DDS 격리 상태의 원격 action 전달 | Zenoh domain 160↔161 smoke |
 | 운영 | 재시작, health, 로봇 부재 판정 | systemd, keepalive, preflight |
@@ -78,14 +78,14 @@ ROS launch, systemd unit, bridge allowlist처럼 재현해야 하는 설정은 G
 
 > 관제 PC는 WSL2 Ubuntu 22.04에 ROS 2 Humble, CycloneDDS, Zenoh와 Gateway를 설치했습니다.
 > Windows 로그인 시 숨김 WSL keepalive와 systemd 서비스를 함께 시작해 재부팅 뒤에도
-> 대시보드가 유지됩니다. 격리 Humble 189개 테스트와 Nav2·Zenoh smoke로 소프트웨어 경계를
+> 대시보드가 유지됩니다. 격리 Humble 191개 테스트와 Nav2·Zenoh smoke로 소프트웨어 경계를
 > 검증했고, `-RequireRobot` preflight 뒤 TB1의 지도·AMCL·목표·e-stop·lease·프로세스
 > 장애와 10분 자원 acceptance까지 완료했습니다.
 
 ## 1분 설명
 
 > 새 PC 준비를 설치, ROS graph, bridge, 운영 지속성의 네 계층으로 나눴습니다. Humble
-> workspace의 격리 Humble 189개 테스트 뒤 실제 Nav2 stack으로 Goal 성공·취소·e-stop·속도 제한과
+> workspace의 격리 Humble 191개 테스트 뒤 실제 Nav2 stack으로 Goal 성공·취소·e-stop·속도 제한과
 > `/cmd_vel` 단일 publisher를 검사했습니다. 별도 DDS domain 160과 161 사이에서는 Zenoh
 > bridge만으로 Action과 lease가 왕복하는지 확인했습니다. 운영 검증 중 systemd 서비스가
 > active여도 마지막 Windows WSL client가 끝나면 배포판이 멈추는 문제를 발견해 로그인

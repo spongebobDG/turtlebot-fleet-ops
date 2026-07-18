@@ -29,6 +29,7 @@
 - 환경: [현재 PC TB1 관제 준비 완료](2026-07-18-control-pc-readiness.md)
 - Phase 5 실차: [TB1 acceptance 배포와 정지 상태 사전검증](2026-07-18-tb1-acceptance-deployment.md)
 - Phase 5 실차: [TB1 로컬 Nav2 실차 수용 시험 완료](2026-07-19-phase-5-tb1-navigation-acceptance.md)
+- Phase 6 실차: [TB1 작업·복구 실차 수용 시험 완료](2026-07-19-phase-6-tb1-operations-acceptance.md)
 
 ## 공부와 면접용 문서
 
@@ -48,6 +49,7 @@
 - [Phase 3 Robot Agent 설계](../design/phase-3-robot-agent.md)
 - [Phase 4 Fleet Gateway 설계](../design/phase-4-tb1-web-dashboard.md)
 - [Phase 5 TB1 Nav2와 웹 목적지 설계](../design/phase-5-tb1-navigation.md)
+- [Phase 6 TB1 작업·고장·감사 설계](../design/phase-6-tb1-operations.md)
 
 ## 기록 원칙
 

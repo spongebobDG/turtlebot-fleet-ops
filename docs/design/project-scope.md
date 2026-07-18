@@ -2,7 +2,7 @@
 
 결정일: 2026-07-16
 
-상태: Phase 5 실차 수용 시험 완료(2026-07-19), Phase 6 TB1 terminal 검증 진행 전
+상태: TB1 단일 로봇 MVP 실차 수용 시험 완료(2026-07-19), Draft PR 검토 전
 
 ## 결정
 
@@ -41,9 +41,11 @@
 5. 단일 로봇 작업과 장애 로그를 웹에서 추적할 수 있다.
 6. 자동 테스트와 CI가 통과하고 실차 acceptance evidence가 문서화된다.
 
-2026-07-19 현재 2번과 3번의 Phase 5 경로, 관련 e-stop·timeout·프로세스 장애 및
-자동 테스트 증거는 충족했다. 4번과 5번의 Phase 6 작업·장애 기록을 실제 TB1 terminal과
-연결하기 전에는 위 전체 MVP 조건을 완료로 표시하지 않는다.
+2026-07-19에 여섯 조건을 모두 확인했다. Phase 5에서 지도·AMCL·목표·e-stop·lease와
+프로세스 장애를, Phase 6에서 task 성공·취소·retry, Gateway·navigation agent 재시작과
+재부팅 뒤 무재개를 실제 TB1 terminal 및 SQLite 기록과 연결했다. 관제 PC 격리 Humble
+191개와 TB1 현재 소스 범위 144개 테스트도 오류와 실패 없이 통과했다. 따라서 이 문서의
+TB1 단일 로봇 MVP 범위는 완료다. `main` 반영은 Draft PR 검토와 squash merge 절차로 남는다.
 
 ## 선택 이유
 

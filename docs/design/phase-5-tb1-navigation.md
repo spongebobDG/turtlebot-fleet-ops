@@ -3,7 +3,7 @@
 ## 상태
 
 코드와 자동 테스트를 구현하고 Ubuntu 22.04 ROS 2 Humble CI와 현재 관제 PC에서
-6개 패키지 빌드, 격리 domain 142의 189개 테스트와 실제
+6개 패키지 빌드, 당시 격리 domain 142의 189개 테스트와 실제
 Nav2·AMCL·Gateway·watchdog policy·watchdog guard를 함께 실행하는
 [robotless smoke](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29585666278)를
 통과했다. 별도의 robot/control domain에서 Zenoh 1.9.0만 통신 경로로 사용해
@@ -15,8 +15,9 @@ Nav2·AMCL·Gateway·watchdog policy·watchdog guard를 함께 실행하는
 2026-07-19에는 TB1에서 지도와 pose graph 저장, AMCL 정합, 웹 목표 성공·취소·WARN,
 e-stop, 2초 lease 만료, agent·Nav2·arbiter·watchdog 장애와 10분 자원 표본을 실행했다.
 최종 `/cmd_vel` Publisher를 C++ guard 하나로 고정하고 guard 재시작도 중립 입력 전에는
-비영점 명령을 차단하도록 보강한 뒤 격리 Humble 189개와 TB1 전체 223개 테스트를 다시
-통과했다. 이 증거로
+비영점 명령을 차단하도록 보강한 뒤 회귀 테스트와 실차 재시험을 통과했다. 이후 source scope를
+감사한 최신 기준은 관제 PC 격리 Humble 191개와 TB1 현재 소스 패키지 144개다. 과거 TB1
+`223` 합계에는 삭제된 패키지의 build 잔여 결과가 포함됐으며 최신 완료 수치에는 사용하지 않는다. 이 증거로
 Phase 5를 완료로 판정한다. 저상 장애물 LiDAR 사각과 반복 큰 방향 전환에서 관찰한
 recovery·stale 취소는 완료를 숨기지 않는 운영 제한으로 별도 기록한다.
 

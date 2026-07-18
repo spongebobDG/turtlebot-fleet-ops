@@ -164,7 +164,7 @@ pose graph를 시작한다.
 > 위치를 추정한 뒤 Nav2 `NavigateToPose`를 사용했습니다. Nav2 controller와 recovery
 > behavior의 모든 속도 출력은 arbiter, Python watchdog policy와 C++ guard를 통과합니다.
 > policy는 e-stop과 0.5초 timeout, guard는 0.25초 timeout과 속도 상한을 독립 집행하고
-> `/cmd_vel`은 guard 하나만 발행합니다. 격리 Humble 189개와 TB1 전체 223개 테스트,
+> `/cmd_vel`은 guard 하나만 발행합니다. 격리 Humble 191개와 TB1 source-scoped 144개 테스트,
 > 실차 지도·AMCL·저속 목표,
 > 취소·WARN·e-stop·lease·프로세스 장애까지 검증했습니다.
 
@@ -334,7 +334,7 @@ safety, lease freshness가 fail-closed로 담당한다.
 > 로컬 watchdog e-stop도 함께 적용합니다. 구현 리뷰에서 종료된 Goal이 늦은 수락으로 다시
 > 실행되는 경합과 이전 result가 새 handle을 지우는 경합을 발견해 Goal ID 기반 상태 전이와
 > 소유권 검사로 막았습니다. 가짜 Nav2 Action Server와 guard 통합 테스트를 포함해 전체
-> 격리 Humble 189개와 TB1 전체 223개 테스트를 통과했습니다. 실패 재시도는 이전
+> 격리 Humble 191개와 TB1 source-scoped 144개 테스트를 통과했습니다. 실패 재시도는 이전
 > target을 새 Goal ID로 복제하고 계보를
 > 기록하며, 로봇 watchdog의 최신 e-stop heartbeat가 해제 상태일 때만 허용합니다.
 > 실차에서는 WARN 미확인 409, 확인 뒤 202, 중복 409, 성공·취소와 무재개까지 확인했습니다.

@@ -3,8 +3,9 @@
 ## 범위와 상태
 
 현재 범위는 TB1 한 대뿐이다. TB2 선택, 작업 자동 할당과 재할당은 구현하지 않는다.
-로봇 없이 SQLite 저장소, REST, 웹 UI와 custom `NavigateRobot` mock을 구현하고 Humble CI를
-통과했으며 실제 TB1 결과와 연결되는지는 Phase 5 실차 acceptance에서 확인한다.
+SQLite 저장소, REST, 웹 UI와 custom `NavigateRobot` mock을 구현한 뒤 2026-07-19 실제
+TB1에서 성공·취소·retry와 Gateway·navigation agent 재시작의 terminal 연동을 검증했다.
+Phase 6는 TB1 수용 시험 완료 상태다.
 
 ## 책임 경계
 
@@ -99,6 +100,10 @@ watchdog 물리 정지와 Raspberry Pi 부하의 증거가 아니다.
 - mock REST·WebSocket·Action smoke와 Humble 전체 테스트가 통과한다.
 - 실제 TB1 목표의 terminal NavigationStatus가 같은 task 상태로 남는다.
 
-앞의 다섯 항목은
+로봇 없는 항목은
 [Humble CI run 29601662765](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29601662765)에서
-검증했다. 마지막 TB1 연동 항목은 실차 acceptance 전까지 미완료다.
+검증했다. 마지막 TB1 연동 항목도 성공·취소·retry, Gateway 재시작과 navigation agent
+강제 종료를 실제 TB1에서 실행해 충족했다. 재부팅 뒤에는 Wi-Fi가 준비된 다음 ROS·Zenoh가
+시작되도록 network gate를 추가했고, 관제 재시작 없이 heartbeat 복구와 무재개를 확인했다.
+실제 결과는
+[Phase 6 TB1 작업·복구 수용 시험](../learning-log/2026-07-19-phase-6-tb1-operations-acceptance.md)에 있다.

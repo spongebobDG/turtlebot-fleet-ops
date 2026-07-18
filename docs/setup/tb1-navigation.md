@@ -11,7 +11,8 @@ fail-closed 순서를 사용한다.
 183개 테스트와
 robotless Nav2 stack smoke, 서로 다른 두 DDS domain 사이의 Zenoh 1.9.0 action smoke,
 작업·fault smoke가 통과한 결과다. 최종 구조에는 C++ watchdog guard 패키지를 추가해
-6개 패키지 격리 Humble 189개와 TB1 전체 223개 테스트까지 통과했다. robotless 결과는
+6개 패키지 격리 Humble 테스트와 TB1 실차 회귀를 통과했다. 최신 source-scoped 기준은 관제 PC
+191개와 TB1 현재 다섯 robot 패키지 144개다. robotless 결과는
 실차의 센서 정합, 물리
 정지시간, 실제 LAN 단절 또는 자원 사용량을 대신하지 않는다.
 
@@ -219,7 +220,9 @@ systemctl --user start tb1-mapping.service
 
 2026-07-18에는 새 관제 PC의 SSH·Zenoh 연결, 배포, 217개 robot 테스트와 정지 상태를
 사전검증했다. 2026-07-19에는 빈 공간에서 아래 동적 체크리스트를 수행하고 watchdog
-구조 보강 후 TB1 223개 테스트를 다시 통과했다.
+구조 보강 후 당시 전체 build 결과 기준 223개가 통과했다. 후속 감사에서 삭제된
+`fleet_navigation`의 과거 build 결과가 합계에 섞였음을 확인했으므로 현재 완료 수치는
+source-scoped 144개를 사용한다.
 
 | 항목 | 실제 결과 |
 | --- | --- |

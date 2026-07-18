@@ -269,7 +269,8 @@ TB1·SSH·WSL·빈 시험 공간이 준비된 순수 실차 검증은 `3시간 5
 ## 후속 결과
 
 위 미확인 항목은 2026-07-19 TB1에서 모두 실행했다. watchdog 프로세스 장애에서 발견한
-Publisher 공백은 C++ guard로 보강했고 격리 Humble 189개, TB1 전체 223개 테스트와 실차
-재시험을 통과했다.
+Publisher 공백은 C++ guard로 보강했고 자동 테스트와 실차 재시험을 통과했다. 후속 Phase 6
+감사에서 최신 source-scoped 기준을 관제 PC 191개, TB1 144개로 정정했다. 과거 TB1 전체
+합계에는 제거된 패키지의 build 잔여 결과가 섞여 있었다.
 측정값과 Phase 5 완료 판정은
 [TB1 로컬 Nav2 실차 수용 시험](2026-07-19-phase-5-tb1-navigation-acceptance.md)에 있다.

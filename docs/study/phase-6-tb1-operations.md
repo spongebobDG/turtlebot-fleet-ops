@@ -12,6 +12,8 @@
 8. mock 성공은 상태 계약 증거이지 물리 주행 증거가 아니다.
 9. 취소 요청 수락과 로봇 action의 terminal 상태 반영은 같은 시점이 아니다.
 10. 프로세스 재시작 뒤 이전 action 소유권을 복원할 수 없으면 task도 fail-closed로 닫아야 한다.
+11. `systemd active`와 실제 운영 네트워크 준비는 같은 조건이 아니다.
+12. 테스트 합계에는 현재 source package 범위를 함께 기록해야 한다.
 
 ## 개념 설명
 
@@ -64,6 +66,35 @@ SQLite에는 task가 남아도 이전 프로세스의 ROS action goal handle과 
 한다. navigation agent도 재시작 시 Nav2 cancel-all과 IDLE을 확인하므로 양쪽이 같은
 무재개 원칙을 가진다.
 
+### ROS·Zenoh를 왜 Wi-Fi 주소 준비 뒤 시작해야 하는가?
+
+`network-online.target`이 도달했거나 unit이 active라는 사실만으로 실제 운영 인터페이스에
+global IPv4 주소와 기본 경로가 있다는 뜻은 아니다. DDS와 Zenoh가 너무 일찍 시작되면 로봇
+프로세스는 살아 있어도 관제 heartbeat가 돌아오지 않을 수 있다. 이 프로젝트는 로봇 로컬
+network gate가 두 조건을 직접 확인한 뒤 ROS runtime을 시작한다.
+
+### 테스트 실패 때 safety timeout을 늘리지 않은 이유는?
+
+단독 navigation 통합 테스트 87개가 모두 통과하고 Pi의 병렬 package 실행에서만 safety status가
+stale됐다. 제품의 freshness 계약이 틀린 것이 아니라 CPU scheduling 경합이었다. 따라서 0.5초·
+2초 안전 계약은 유지하고 실차 acceptance executor를 순차화했다. 안전 한계를 넓혀 테스트를
+맞추는 것보다 검증 환경의 결정성을 높이는 선택이다.
+
+## 실제 TB1 증거
+
+2026-07-19에 다음을 실제 저장 지도와 TB1 terminal 상태로 확인했다.
+
+- 실행 전 취소, 성공, 실행 중 취소와 retry attempt 성공
+- Gateway 재시작과 navigation agent 강제 종료 중 ACTIVE task의 `FAILED`·무재개
+- SQLite 재개방 뒤 여섯 task attempt, parent lineage, fault·event 이력 유지
+- TB1 재부팅 뒤 관제 재시작 없이 Wi-Fi→ROS·Zenoh→Gateway heartbeat 자동 복구
+- 재부팅 뒤 active task와 command 0, 10초 표본 속도는 정지 잡음 수준
+- 초기 위치 재적용 뒤 AMCL·Nav2 `READY`, 최종 e-stop과 `/cmd_vel=0`
+- TB1 현재 소스 범위 144개, 관제 PC 전체 191개 테스트 통과
+
+세부 측정은
+[Phase 6 TB1 작업·복구 수용 시험 일지](../learning-log/2026-07-19-phase-6-tb1-operations-acceptance.md)에 있다.
+
 ## 틀리기 쉬운 설명
 
 | 틀린 설명 | 올바른 설명 |
@@ -85,6 +116,14 @@ SQLite에는 task가 남아도 이전 프로세스의 ROS action goal handle과 
 > e-stop과 lease 검사를 재사용하며, robotless custom-action mock으로 성공·취소·실패·retry를
 > 검증하되 물리 주행 증거와는 구분했습니다.
 
+실차 검증 뒤에는 다음처럼 설명할 수 있다.
+
+> 실제 TB1에서 task 성공·취소·retry를 NavigationStatus와 SQLite terminal 상태까지 연결했습니다.
+> Gateway와 navigation agent를 ACTIVE 작업 중 재시작했을 때 이전 action 소유권을 추정해
+> 복구하지 않고 task를 실패로 닫아 자동 재개를 막았습니다. 재부팅에서는 Wi-Fi 주소와 기본
+> 경로를 확인하는 로봇 로컬 network gate를 추가해 관제 서비스 재시작 없이 heartbeat가
+> 복구되는 것을 확인했습니다.
+
 ## 복습 문제와 정답
 
 ### 1. 같은 fault가 2Hz로 들어올 때 event는 몇 개가 필요한가?
@@ -104,3 +143,8 @@ SQLite에는 task가 남아도 이전 프로세스의 ROS action goal handle과 
 
 정답: 둘 다 `FAILED`로 닫고 감사 event를 남긴다. 이전 action과 lease는 자동 재개하지 않으며,
 작업자가 원인을 확인한 뒤 새 retry attempt를 만든다.
+
+### 5. unit이 active인데 관제 heartbeat가 없으면 무엇을 확인하는가?
+
+정답: 프로세스 상태만 반복 확인하지 않고 운영 인터페이스의 global IPv4 주소, 기본 경로,
+Zenoh remote bridge route와 새 RobotStatus uptime 순서로 확인한다.
