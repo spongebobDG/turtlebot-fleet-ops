@@ -17,7 +17,6 @@ navigation_agent:
     map_topic: /map
     lease_timeout_sec: 2.0
     nav2_unavailable_timeout_sec: 1.0
-    localization_timeout_sec: 2.0
     robot_status_timeout_sec: 3.0
     safety_status_timeout_sec: 1.5
     authorization_rate_hz: 10.0

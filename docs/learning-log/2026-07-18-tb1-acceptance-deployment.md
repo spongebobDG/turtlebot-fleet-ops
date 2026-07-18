@@ -180,3 +180,22 @@ watchdog publisher와 같은 volatile reliable depth 10 QoS를 사용했다. fak
 통합 테스트도 동일한 공개 메시지로 바꿨다. 격리 Humble 실행에서 navigation agent의
 85개 테스트를 포함한 `183 tests, 0 errors, 0 failures, 0 skipped`를 확인했다. 수정본을
 TB1에 재배포하고 dry-run을 다시 통과하기 전에는 실제 5 cm 명령을 실행하지 않는다.
+
+## 저장 지도 전환과 정지 AMCL readiness
+
+보호 이동은 5 cm 직진 두 번과 30도 회전의 현장 확인 뒤 5 cm 구간 열 번을 추가 수행했다.
+모든 구간은 단독 publisher, 전방 clearance, 자세 연속성과 최종 e-stop을 통과했다. 저장
+지도는 58×96, 0.05 m/cell, known 2,971, known ratio 0.5336, occupied 294였고 pose graph
+serialize result 0과 `MAP_VALIDATION=PASS`를 확인했다.
+
+navigation 프로필에서 마지막 mapping odom 자세가 free cell임을 확인하고 웹 초기 위치
+API를 호출했다. 응답은 202였고 새 `/amcl_pose` 수신으로 `localization_ready=true`가 한 번
+확인됐다. 그러나 로봇이 정지한 채 2초가 지나자 agent가 pose age만 보고 다시
+`LOCALIZING`으로 바뀌었다. AMCL은 이동량이 `update_min_d`·`update_min_a`보다 작으면 같은
+pose를 계속 발행하지 않으므로, 정지 상태에서 pose stream freshness를 요구하면 사용자가
+목표를 선택할 시간조차 없다.
+
+초기 위치 요청 이후 첫 유효 AMCL pose 수신을 readiness로 latch하도록 바꾸고, 새 초기
+위치나 agent 재시작 때만 다시 확인하도록 수정했다. robot status, safety status, Nav2와
+lease freshness는 계속 별도로 검사한다. 이 수정본을 재배포하고 초기 위치를 다시 적용하기
+전에는 실제 Nav2 Goal을 보내지 않는다.

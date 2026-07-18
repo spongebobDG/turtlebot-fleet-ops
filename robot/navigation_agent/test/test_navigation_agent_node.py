@@ -192,7 +192,6 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
             Parameter("map_topic", value="/test/map"),
             Parameter("lease_timeout_sec", value=0.3),
             Parameter("nav2_unavailable_timeout_sec", value=0.1),
-            Parameter("localization_timeout_sec", value=1.0),
             Parameter("robot_status_timeout_sec", value=1.0),
             Parameter("safety_status_timeout_sec", value=1.0),
             Parameter("authorization_rate_hz", value=50.0),
@@ -300,6 +299,11 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         _wait_until(
             lambda: agent._ready_for_goal(time.monotonic(), False)
         )
+        with agent._lock:
+            now = time.monotonic()
+            agent._initial_pose_sent_at = now - 120.0
+            agent._amcl_received_at = now - 60.0
+        assert agent._localization_ready(time.monotonic())
         assert agent._startup_motion_idle_sent
         assert agent._startup_cancel_sent
 

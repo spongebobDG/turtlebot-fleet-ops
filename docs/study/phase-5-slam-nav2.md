@@ -311,6 +311,13 @@ result callback이 정리할 때 현재 handle의 Goal ID가 자기 ID와 일치
 거부한다. 보호 이동도 같은 `SafetyStatus`를 확인해야 watchdog의 공개 안전 상태와 타입·QoS
 계약이 하나로 유지된다.
 
+AMCL은 초기 위치를 받은 뒤 새 `/amcl_pose`로 위치추정 성공을 확인하지만, 로봇이 정지하면
+`update_min_d`와 `update_min_a` 아래에서 같은 pose를 계속 발행하지 않을 수 있다. 따라서
+`READY`는 초기 위치 요청 이후 첫 유효 AMCL pose를 받았다는 사실을 latch한다. 단순 pose
+메시지 age만으로 2초 뒤 `LOCALIZING`으로 되돌리면 작업자가 웹에서 목표를 고르는 동안 모든
+목표가 거부된다. 실행 중 위치 유효성과 정지는 Nav2 transform·costmap과 별도의 robot,
+safety, lease freshness가 fail-closed로 담당한다.
+
 ## 웹 Nav2 면접 모범 답변
 
 > FastAPI 요청을 ROS 2 `NavigateToPose` Action Client에 연결했습니다. HTTP는 Goal의

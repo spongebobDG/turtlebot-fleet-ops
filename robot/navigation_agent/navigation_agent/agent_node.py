@@ -239,7 +239,6 @@ class NavigationAgent(Node):
             "map_topic": "/map",
             "lease_timeout_sec": 2.0,
             "nav2_unavailable_timeout_sec": 1.0,
-            "localization_timeout_sec": 2.0,
             "robot_status_timeout_sec": 3.0,
             "safety_status_timeout_sec": 1.5,
             "authorization_rate_hz": 10.0,
@@ -273,9 +272,6 @@ class NavigationAgent(Node):
         )
         self._nav2_unavailable_timeout_sec = float(
             self.get_parameter("nav2_unavailable_timeout_sec").value
-        )
-        self._localization_timeout_sec = float(
-            self.get_parameter("localization_timeout_sec").value
         )
         self._robot_status_timeout_sec = float(
             self.get_parameter("robot_status_timeout_sec").value
@@ -312,7 +308,6 @@ class NavigationAgent(Node):
                 "nav2_unavailable_timeout_sec",
                 self._nav2_unavailable_timeout_sec,
             ),
-            ("localization_timeout_sec", self._localization_timeout_sec),
             ("robot_status_timeout_sec", self._robot_status_timeout_sec),
             ("safety_status_timeout_sec", self._safety_status_timeout_sec),
             ("authorization_rate_hz", self._authorization_rate_hz),
@@ -961,16 +956,15 @@ class NavigationAgent(Node):
             and self._safety_status.motion_armed
         )
 
-    def _localization_ready(self, now: float) -> bool:
+    def _localization_ready(self, _now: float) -> bool:
+        # AMCL publishes a new pose after an accepted initial pose, then may
+        # remain quiet while the robot is stationary because of its motion
+        # update thresholds. Latch that post-request confirmation instead of
+        # making an otherwise localized idle robot become unready by age.
         return (
             self._initial_pose_sent_at is not None
             and self._amcl_received_at is not None
             and self._amcl_received_at >= self._initial_pose_sent_at
-            and value_is_fresh(
-                self._amcl_received_at,
-                now,
-                self._localization_timeout_sec,
-            )
         )
 
     def _lease_age(self, now: float) -> float:
