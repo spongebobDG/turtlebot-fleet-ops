@@ -87,6 +87,29 @@ def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive(
     assert "ExecStartPre=/usr/bin/test -r %h/.local/share/" in navigation
 
 
+def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
+    units = REPOSITORY_ROOT / "infra" / "systemd" / "user"
+    navigation_unit = (units / "tb1-navigation.service").read_text()
+    navigation_launch = (
+        PACKAGE_ROOT / "launch" / "tb1_navigation.launch.py"
+    ).read_text()
+    watchdog_launch = (
+        REPOSITORY_ROOT
+        / "robot"
+        / "safety_watchdog"
+        / "launch"
+        / "safety_watchdog.launch.py"
+    ).read_text()
+
+    assert "OnProcessExit" in navigation_launch
+    assert 'reason="navigation agent exited"' in navigation_launch
+    assert "respawn=False" in navigation_launch
+    assert "Restart=always" in navigation_unit
+    assert "try-restart tb1-zenoh-bridge.service" in navigation_unit
+    assert "respawn=True" in watchdog_launch
+    assert "respawn_delay=0.5" in watchdog_launch
+
+
 def test_map_save_preserves_unknown_cells_and_validates_artifacts() -> None:
     save_script = (
         REPOSITORY_ROOT / "infra" / "navigation" / "save-tb1-map.sh"

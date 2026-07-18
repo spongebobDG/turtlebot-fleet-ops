@@ -27,6 +27,8 @@ def generate_launch_description() -> LaunchDescription:
                 name="safety_watchdog",
                 output="screen",
                 parameters=[str(parameters), {"use_sim_time": use_sim_time}],
+                respawn=True,
+                respawn_delay=0.5,
             )
         ]
     )

@@ -6,8 +6,12 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    EmitEvent,
     IncludeLaunchDescription,
+    RegisterEventHandler,
 )
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
@@ -43,6 +47,17 @@ def generate_launch_description() -> LaunchDescription:
         EnvironmentVariable("HOME"),
         "/.local/share/turtlebot-fleet-ops/maps/tb1/map.yaml",
     ]
+    navigation_agent = Node(
+        package="navigation_agent",
+        executable="navigation_agent_node",
+        name="navigation_agent",
+        output="screen",
+        parameters=[
+            str(agent_config),
+            {"use_sim_time": use_sim_time},
+        ],
+        respawn=False,
+    )
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -103,17 +118,18 @@ def generate_launch_description() -> LaunchDescription:
                 respawn=True,
                 respawn_delay=3.0,
             ),
-            Node(
-                package="navigation_agent",
-                executable="navigation_agent_node",
-                name="navigation_agent",
-                output="screen",
-                parameters=[
-                    str(agent_config),
-                    {"use_sim_time": use_sim_time},
-                ],
-                respawn=True,
-                respawn_delay=3.0,
+            navigation_agent,
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=navigation_agent,
+                    on_exit=[
+                        EmitEvent(
+                            event=Shutdown(
+                                reason="navigation agent exited",
+                            )
+                        )
+                    ],
+                )
             ),
         ]
     )
