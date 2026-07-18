@@ -150,12 +150,18 @@ Windows `Test-NetConnection` 대신 2초 제한의 `TcpClient` 연결 검사를 
 
 ## 2026-07-18 유선 재연결 시도
 
-TB1과 관제 PC를 Wi‑Fi가 아닌 Ethernet으로 직결해 확인했다. PC 이더넷은 준비된
-TB1 LAN `/24` 서브넷으로 올라왔지만 TB1 기준 주소는 ping·ARP와 SSH `22`·Zenoh
-`7447` 포트 모두 응답하지 않았다. 원격 배포나 motion 명령은
-실행하지 않았고, 케이블을 제거해도 되는 안전한 미연결 상태로 종료했다.
+새 PC와 TB1을 같은 공유기에 Ethernet으로 연결했다. 최초 점검은 로컬 준비 파일에 남은
+이전 TB1 주소만 검사해 ping·ARP와 SSH `22`·Zenoh `7447` 포트가 모두 오프라인으로
+보였다. Windows 로컬 이름 검색으로 새 DHCP 주소를 발견한 뒤에는 ping 손실 0%, SSH와
+Zenoh 포트 모두 연결됐다. 원인은 케이블이나 ROS가 아니라 공유기가 TB1에 새 DHCP 주소를
+부여했는데 관제 PC가 이전 주소를 계속 사용한 것이었다.
 
-다음 연결 때는 TB1 전원·부팅과 유선 인터페이스 주소를 먼저 확인하고
-`test_tb1_connection.ps1 -RequireRobot`를 다시 실행한다. SSH 키 등록이 필요하면
-`setup_tb1_ssh.ps1 -GenerateOnly`로 전용 키를 만든 뒤 TB1 `dcu` 비밀번호를 한 번만
-입력해 등록한다.
+WSL `control.env`와 로컬 준비 표식을 새 주소로 갱신하고 control Zenoh bridge와 Gateway를
+재시작했다. `CONTROL_PC_PREFLIGHT_OK`, Gateway `known_robots=1`, `online_robots=1`을
+확인했다. 정확한 주소는 Git에 넣지 않고 로컬 파일에만 유지한다. 이후 주소가 다시 바뀌지
+않도록 공유기에서 TB1 DHCP 예약을 설정하는 것이 권장된다.
+
+남은 접속 준비는 이 PC의 전용 SSH 공개 키를 TB1에 한 번 등록하는 일이다. 현재 Zenoh
+heartbeat는 정상이나 TB1은 `ODOM_NOT_RECEIVED`, `SCAN_NOT_RECEIVED`,
+`BATTERY_NOT_RECEIVED`이고 navigation/safety 상태도 아직 없다. 원격 배포나 motion
+명령은 실행하지 않았으며, SSH 등록 후 TB1 서비스와 센서 상태부터 fail-closed로 점검한다.

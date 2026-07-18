@@ -50,6 +50,7 @@ $target = "$RobotUser@$RobotAddress"
 $sshArgs = @(
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=8",
+    "-o", "LogLevel=QUIET",
     "-o", "ServerAliveInterval=5",
     "-o", "ServerAliveCountMax=2",
     "-o", "StrictHostKeyChecking=accept-new",

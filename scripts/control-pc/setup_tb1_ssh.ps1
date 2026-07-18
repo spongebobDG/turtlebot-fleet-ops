@@ -64,6 +64,7 @@ $target = "$RobotUser@$RobotAddress"
 $batchArgs = @(
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=8",
+    "-o", "LogLevel=QUIET",
     "-o", "StrictHostKeyChecking=accept-new",
     "-o", "IdentitiesOnly=yes",
     "-i", $IdentityFile
@@ -79,6 +80,7 @@ Write-Host "TB1 will request the dcu account password once to register the key."
 $installArgs = @(
     "-o", "BatchMode=no",
     "-o", "ConnectTimeout=15",
+    "-o", "LogLevel=QUIET",
     "-o", "StrictHostKeyChecking=accept-new",
     "-o", "PubkeyAuthentication=no",
     "-o", "PreferredAuthentications=keyboard-interactive,password"

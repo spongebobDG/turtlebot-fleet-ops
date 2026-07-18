@@ -134,6 +134,7 @@ if ($sshReady) {
         $sshResult = & "$env:SystemRoot\System32\OpenSSH\ssh.exe" `
             -o BatchMode=yes `
             -o ConnectTimeout=8 `
+            -o LogLevel=QUIET `
             -o StrictHostKeyChecking=accept-new `
             -o IdentitiesOnly=yes `
             -i $IdentityFile `
