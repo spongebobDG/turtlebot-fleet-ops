@@ -117,6 +117,29 @@ powershell -ExecutionPolicy Bypass -File scripts\control-pc\test_tb1_connection.
   -RequireRobot
 ```
 
+Ethernet으로 최초 접속한 뒤 이동 시험 공간을 확보하려면 케이블을 먼저 뽑지 않는다.
+TB1의 `wlan0`이 `DOWN`이거나 IPv4 주소가 없으면 SSH·Zenoh·Gateway가 함께 끊긴다. 다음
+스크립트는 비밀번호를 화면과 명령 기록에 표시하지 않는 보안 입력으로 받고, 별도 권한
+`0600` netplan 파일을 설치한다. Wi-Fi SSH를 확인한 뒤 관제 PC의 로컬 주소 표식과 WSL
+Zenoh endpoint를 새 주소로 바꾼다. 기존 CycloneDDS 프로세스가 시작 때 선택한 유선
+인터페이스를 유지할 수 있으므로 motion 프로필이 모두 inactive인 것도 확인한 뒤 bringup,
+watchdog, agent와 robot-side Zenoh를 fail-closed 순서로 재시작한다. Gateway가 TB1의 새
+heartbeat와 safety 상태를 다시 관찰할 때만 성공한다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\control-pc\setup_tb1_wifi.ps1 `
+  -Ssid <TB1_WIFI_SSID>
+```
+
+비밀번호는 매개변수나 채팅에 쓰지 않고 표시되지 않는 prompt에서만 입력한다. 성공 표식
+`TB1_WIFI_SETUP_OK`를 본 다음 Ethernet을 뽑고 10초 기다린 뒤 아래 검사를 다시 통과해야
+실차 절차를 계속한다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\control-pc\test_tb1_connection.ps1 `
+  -RequireRobot
+```
+
 ## 3. 로봇 없는 웹 관제 실행
 
 ```bash

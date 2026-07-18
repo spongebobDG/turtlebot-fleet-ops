@@ -133,3 +133,28 @@ release -> WAITING_NEUTRAL, e-stop=false, motion-armed=false
 접속·배포·기본 센서 사전점검은 끝났으므로 남은 순수 실차 시간은 약 `2시간 35분~3시간
 50분`으로 추정한다. 재시험 여유 40분을 포함하면 최대 `4시간 30분`의 시험 창을 잡는다.
 모든 동적 체크리스트와 로그가 채워지기 전에는 Phase 5를 완료로 표시하지 않는다.
+
+## Ethernet에서 Wi-Fi로 전환
+
+시험 공간에서 Ethernet 케이블을 제거하기 위해 TB1을 2.4 GHz Wi-Fi로 전환했다. 이동
+로봇은 최대 전송률보다 거리와 연결 유지가 중요하므로 5 GHz보다 2.4 GHz를 선택했다.
+SSID와 정확한 무선 주소는 로컬 설정에만 보관하고, 비밀번호는 PowerShell의 숨김 입력으로
+받아 pipe로 전달했다. Git, 명령 인수와 터미널 출력에는 비밀번호를 남기지 않았다.
+
+최초 실행에서 netplan 설치와 무선 연결은 성공했지만 종료 trap이 실패했다. root 권한으로
+기존 설정을 복사하면서 임시 백업 파일 소유자도 root로 바뀌었는데 일반 사용자 `rm`으로
+지우려고 한 것이 원인이었다. trap의 백업 삭제를 `sudo -n rm`으로 바꾸고, 실패 실행이
+남긴 정확한 임시 파일을 확인한 뒤 삭제했다. native SSH stderr가 PowerShell의 전역
+`ErrorActionPreference=Stop`을 즉시 발생시키지 않도록 원격 종료 코드와 출력을 먼저
+수집한 다음 명시적으로 실패시키는 방식도 적용했다.
+
+케이블 제거 뒤 유선 carrier는 0, 무선 carrier는 1이고 기본 경로는 `wlan0`이었다. SSH와
+Zenoh 포트는 통과했지만 robot heartbeat와 safety가 잠시 stale이 됐다. CycloneDDS
+participant가 시작 시 선택한 유선 인터페이스를 링크 변경 뒤에도 유지한 것이 원인이었다.
+mapping과 navigation 프로필이 inactive임을 확인한 다음 bringup, watchdog, robot agent,
+robot-side Zenoh를 fail-closed 순서로 재시작했다.
+
+재바인딩 뒤 Gateway는 `online=1`, heartbeat와 battery·odom·scan·safety 모두 fresh,
+Wi-Fi quality 약 90%, `WAITING_NEUTRAL`, e-stop false, motion-armed false를 보고했다. 이
+재시작 절차를 Wi-Fi 설정 스크립트에 포함해 다음 전환에서는 stale 상태를 자동으로
+복구한다. 실제 motion 명령은 보내지 않았고 mapping과 navigation은 계속 inactive다.
