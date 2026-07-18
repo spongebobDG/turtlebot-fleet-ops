@@ -106,8 +106,10 @@ def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
     assert "respawn=False" in navigation_launch
     assert "Restart=always" in navigation_unit
     assert "try-restart tb1-zenoh-bridge.service" in navigation_unit
-    assert "respawn=True" in watchdog_launch
-    assert "respawn_delay=0.5" in watchdog_launch
+    assert watchdog_launch.count("respawn=True") == 2
+    assert watchdog_launch.count("respawn_delay=0.0") == 2
+    assert 'package="safety_watchdog_guard"' in watchdog_launch
+    assert 'name="safety_watchdog_policy"' in watchdog_launch
 
 
 def test_map_save_preserves_unknown_cells_and_validates_artifacts() -> None:
@@ -137,7 +139,8 @@ def test_only_watchdog_owns_the_real_velocity_topic() -> None:
         PACKAGE_ROOT / "launch" / "tb1_nav2_navigation.launch.py"
     ).read_text()
 
-    assert "output_topic: /cmd_vel" in watchdog_config
+    assert "output_topic: /safety/watchdog_cmd_vel" in watchdog_config
+    assert watchdog_config.count("output_topic: /cmd_vel") == 1
     assert "output_topic: /safety/cmd_vel_in" in navigation_config
     assert '"tb1_nav2_navigation.launch.py"' in navigation_launch
     assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
