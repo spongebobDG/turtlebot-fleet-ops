@@ -8,6 +8,8 @@ from fleet_interfaces.msg import SafetyStatus
 from geometry_msgs.msg import Twist
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Empty
 from std_srvs.srv import SetBool
 
 from safety_watchdog.policy import (
@@ -28,6 +30,9 @@ class SafetyWatchdog(Node):
         self.declare_parameter("output_topic", "/cmd_vel")
         self.declare_parameter("status_topic", "/fleet/safety_status")
         self.declare_parameter("estop_service", "/safety_watchdog/set_estop")
+        self.declare_parameter(
+            "guard_restart_topic", "/safety/watchdog_guard_restarted"
+        )
         self.declare_parameter("robot_id", "tb1")
         self.declare_parameter("timeout_sec", 0.5)
         self.declare_parameter("max_linear_x", 0.05)
@@ -40,6 +45,7 @@ class SafetyWatchdog(Node):
         output_topic = self.get_parameter("output_topic").value
         status_topic = self.get_parameter("status_topic").value
         estop_service = self.get_parameter("estop_service").value
+        guard_restart_topic = self.get_parameter("guard_restart_topic").value
         self._robot_id = str(self.get_parameter("robot_id").value).strip()
         self._timeout_sec = float(self.get_parameter("timeout_sec").value)
         publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
@@ -64,6 +70,11 @@ class SafetyWatchdog(Node):
             raise ValueError("status_topic must be a non-empty string")
         if not isinstance(estop_service, str) or not estop_service.strip():
             raise ValueError("estop_service must be a non-empty string")
+        if (
+            not isinstance(guard_restart_topic, str)
+            or not guard_restart_topic.strip()
+        ):
+            raise ValueError("guard_restart_topic must be a non-empty string")
         if not self._robot_id:
             raise ValueError("robot_id must be a non-empty string")
         if not math.isfinite(self._timeout_sec) or self._timeout_sec <= 0.0:
@@ -110,6 +121,16 @@ class SafetyWatchdog(Node):
         self._timer = self.create_timer(
             1.0 / publish_rate_hz,
             self._on_timer,
+        )
+        self._guard_restart_subscription = self.create_subscription(
+            Empty,
+            guard_restart_topic,
+            self._on_guard_restart,
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
         )
         self._status_timer = self.create_timer(
             1.0 / status_publish_rate_hz,
@@ -200,6 +221,18 @@ class SafetyWatchdog(Node):
                 "Emergency stop released; waiting for a neutral command"
             )
         return response
+
+    def _on_guard_restart(self, _message: Empty) -> None:
+        self._last_command = (0.0, 0.0)
+        self._last_received_at = None
+        if not self._estop_active:
+            self._awaiting_neutral = True
+            self._current_mode = "WAITING_NEUTRAL"
+        self.publish_stop()
+        self._publish_status()
+        self.get_logger().warning(
+            "Safety output guard restarted; motion disarmed"
+        )
 
     def _publish_status(self) -> None:
         message = SafetyStatus()

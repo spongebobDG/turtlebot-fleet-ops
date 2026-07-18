@@ -141,6 +141,9 @@ def test_only_watchdog_owns_the_real_velocity_topic() -> None:
 
     assert "output_topic: /safety/watchdog_cmd_vel" in watchdog_config
     assert watchdog_config.count("output_topic: /cmd_vel") == 1
+    assert watchdog_config.count(
+        "/safety/watchdog_guard_restarted"
+    ) == 2
     assert "output_topic: /safety/cmd_vel_in" in navigation_config
     assert '"tb1_nav2_navigation.launch.py"' in navigation_launch
     assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch

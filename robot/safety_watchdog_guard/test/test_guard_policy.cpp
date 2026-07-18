@@ -22,3 +22,9 @@ TEST(GuardPolicy, ExpiresAtTheConfiguredBoundary)
   EXPECT_FALSE(safety_watchdog_guard::command_is_fresh(true, 0.251, 0.25));
   EXPECT_FALSE(safety_watchdog_guard::command_is_fresh(false, 0.0, 0.25));
 }
+
+TEST(GuardPolicy, RequiresNeutralWithinEpsilon)
+{
+  EXPECT_TRUE(safety_watchdog_guard::command_is_neutral(0.0009, -0.0009, 0.001));
+  EXPECT_FALSE(safety_watchdog_guard::command_is_neutral(0.0011, 0.0, 0.001));
+}

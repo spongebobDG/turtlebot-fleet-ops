@@ -8,6 +8,7 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "safety_watchdog_guard/guard_policy.hpp"
+#include "std_msgs/msg/empty.hpp"
 
 using namespace std::chrono_literals;
 
@@ -21,23 +22,31 @@ public:
     const auto input_topic = declare_parameter<std::string>(
       "input_topic", "/safety/watchdog_cmd_vel");
     const auto output_topic = declare_parameter<std::string>("output_topic", "/cmd_vel");
+    const auto restart_topic = declare_parameter<std::string>(
+      "restart_topic", "/safety/watchdog_guard_restarted");
     timeout_sec_ = declare_parameter<double>("timeout_sec", 0.25);
     max_linear_x_ = declare_parameter<double>("max_linear_x", 0.05);
     max_angular_z_ = declare_parameter<double>("max_angular_z", 0.3);
+    neutral_epsilon_ = declare_parameter<double>("neutral_epsilon", 0.001);
     const auto publish_rate_hz = declare_parameter<double>("publish_rate_hz", 20.0);
 
-    if (input_topic.empty() || output_topic.empty() || input_topic == output_topic) {
+    if (input_topic.empty() || output_topic.empty() || restart_topic.empty() ||
+      input_topic == output_topic)
+    {
       throw std::invalid_argument("guard input and output topics must be non-empty and different");
     }
     if (!std::isfinite(timeout_sec_) || timeout_sec_ <= 0.0 ||
       !std::isfinite(max_linear_x_) || max_linear_x_ <= 0.0 ||
       !std::isfinite(max_angular_z_) || max_angular_z_ <= 0.0 ||
+      !std::isfinite(neutral_epsilon_) || neutral_epsilon_ < 0.0 ||
       !std::isfinite(publish_rate_hz) || publish_rate_hz <= 0.0)
     {
       throw std::invalid_argument("guard limits, timeout, and publish rate must be positive and finite");
     }
 
     publisher_ = create_publisher<geometry_msgs::msg::Twist>(output_topic, 10);
+    restart_publisher_ = create_publisher<std_msgs::msg::Empty>(
+      restart_topic, rclcpp::QoS(1).reliable().transient_local());
     subscription_ = create_subscription<geometry_msgs::msg::Twist>(
       input_topic,
       10,
@@ -47,6 +56,7 @@ public:
     timer_ = create_wall_timer(period, std::bind(&WatchdogGuard::on_timer, this));
 
     publish_stop();
+    restart_publisher_->publish(std_msgs::msg::Empty());
     RCLCPP_INFO(
       get_logger(),
       "Safety output guard ready: input=%s output=%s timeout=%.3fs",
@@ -63,6 +73,18 @@ public:
 private:
   void on_command(const geometry_msgs::msg::Twist::SharedPtr message)
   {
+    if (awaiting_neutral_) {
+      if (safety_watchdog_guard::command_is_neutral(
+          message->linear.x, message->angular.z, neutral_epsilon_))
+      {
+        awaiting_neutral_ = false;
+        command_ = geometry_msgs::msg::Twist();
+        last_received_ = std::chrono::steady_clock::now();
+        have_command_ = true;
+        RCLCPP_INFO(get_logger(), "Neutral policy output received; guard armed");
+      }
+      return;
+    }
     if (!safety_watchdog_guard::command_is_valid(message->linear.x, message->angular.z)) {
       have_command_ = false;
       return;
@@ -102,11 +124,14 @@ private:
   double timeout_sec_{0.25};
   double max_linear_x_{0.05};
   double max_angular_z_{0.3};
+  double neutral_epsilon_{0.001};
   bool have_command_{false};
   bool was_fresh_{false};
+  bool awaiting_neutral_{true};
   std::chrono::steady_clock::time_point last_received_;
   geometry_msgs::msg::Twist command_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr restart_publisher_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr subscription_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

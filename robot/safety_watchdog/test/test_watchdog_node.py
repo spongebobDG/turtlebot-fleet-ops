@@ -10,6 +10,8 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Empty
 from std_srvs.srv import SetBool
 
 from safety_watchdog.node import SafetyWatchdog
@@ -40,6 +42,10 @@ def test_watchdog_ros_flow() -> None:
             Parameter("max_angular_z", value=0.3),
             Parameter("neutral_epsilon", value=0.001),
             Parameter("status_topic", value="/test/fleet/safety_status"),
+            Parameter(
+                "guard_restart_topic",
+                value="/test/safety/watchdog_guard_restarted",
+            ),
             Parameter("status_publish_rate_hz", value=20.0),
         ]
     )
@@ -68,6 +74,15 @@ def test_watchdog_ros_flow() -> None:
     estop_client = probe.create_client(
         SetBool,
         "/safety_watchdog/set_estop",
+    )
+    guard_restart_publisher = probe.create_publisher(
+        Empty,
+        "/test/safety/watchdog_guard_restarted",
+        QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        ),
     )
 
     executor.add_node(watchdog)
@@ -165,7 +180,22 @@ def test_watchdog_ros_flow() -> None:
             executor,
             lambda: any(message.linear.x == 0.05 for message in outputs),
         )
+
+        status_count = len(statuses)
+        guard_restart_publisher.publish(Empty())
+        _spin_until(
+            executor,
+            lambda: len(statuses) > status_count
+            and not statuses[-1].motion_armed,
+        )
+        _spin_until(
+            executor,
+            lambda: outputs[-1].linear.x == 0.0
+            and outputs[-1].angular.z == 0.0,
+        )
+        assert statuses[-1].mode == SafetyStatus.MODE_WAITING_NEUTRAL
     finally:
+        probe.destroy_publisher(guard_restart_publisher)
         probe.destroy_subscription(status_subscription)
         probe.destroy_subscription(subscription)
         executor.remove_node(probe)
