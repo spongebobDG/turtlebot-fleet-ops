@@ -208,12 +208,25 @@ systemctl --user start tb1-mapping.service
 
 ## 7. 실차 완료 체크리스트
 
+### 정지 상태 사전검증 결과
+
+2026-07-18에 새 관제 PC의 SSH·Zenoh 연결, TB1 배포, 217개 robot 테스트와 센서 수신을
+확인했다. mapping과 navigation 프로필은 모두 inactive인 `IDLE`에서 `/cmd_vel` publisher가
+watchdog 하나뿐이고 5초간 출력이 0임을 측정했다. 정지 상태 e-stop 해제 뒤에는
+`WAITING_NEUTRAL`, motion-armed false를 유지했고 자동 재출발이 없었다. 저장 지도는 아직
+없으며 LiDAR 최소 거리가 약 0.203 m여서 실제 motion은 빈 공간으로 옮길 때까지 보류했다.
+
+이 결과는 연결·배포 사전검증만 완료한 것이다. 아래 주행 중 e-stop, lease, 장애 주입과
+10분 자원 측정 체크박스는 실제 동적 시험 전까지 미완료로 둔다. 상세 기록은
+[TB1 acceptance 배포와 정지 상태 사전검증](../learning-log/2026-07-18-tb1-acceptance-deployment.md)에
+있다.
+
 ### 예상 소요시간
 
-TB1 SSH 접속과 빈 시험 공간이 준비됐다는 기준으로 `3시간 5분~4시간 35분`을 예상한다.
-2026-07-18 현재 PC는 관제 환경 설치와 전체 무로봇 검증을 끝냈으므로 기존의 환경 준비
-`45~90분`을 더하지 않는다. 최대 추정치에 재시험 여유 40분을 더한 한 번의 시험 창은
-`5시간 15분`을 권장한다. Docker는 Phase 5 실차 경로의 필수 조건이 아니다.
+TB1 SSH 접속·배포·정지 상태 preflight가 끝난 현재, 빈 시험 공간이 준비됐다는 기준으로
+남은 작업은 `2시간 35분~3시간 50분`을 예상한다. 최대 추정치에 재시험 여유 40분을 더한
+한 번의 시험 창은 최대 `4시간 30분`을 권장한다. Docker는 Phase 5 실차 경로의 필수
+조건이 아니다.
 
 [Nav2의 실물 TurtleBot3 기본 튜토리얼](https://docs.nav2.org/tutorials/docs/navigation2_on_real_turtlebot3.html)은
 기본 절차를 약 1시간으로 안내한다. 아래 산정은 여기에 지도·pose graph 작성, 웹 WARN,
@@ -222,7 +235,7 @@ e-stop·lease·네 프로세스 장애 주입, 10분 자원 측정과 증거 문
 
 | 작업 | 예상 |
 | --- | ---: |
-| TB1 접속·배포·bringup·안전 preflight | 30~45분 |
+| TB1 접속·배포·bringup·안전 preflight | 완료 |
 | 안전 teleop 매핑과 pose graph 저장 | 30~45분 |
 | AMCL 초기 위치와 지도·LiDAR 정합 | 15~25분 |
 | 저속 도달·취소·WARN·속도/publisher 검사 | 25~35분 |
@@ -231,7 +244,7 @@ e-stop·lease·네 프로세스 장애 주입, 10분 자원 측정과 증거 문
 | 10분 자원 주행과 로그 회수 | 15~20분 |
 | 측정값·스크린샷·학습 일지 정리 | 20~30분 |
 
-`5시간 15분` 예약에는 최대 추정치 위 40분 buffer가 포함된다. 위 범위는 실제 측정 전
+`4시간 30분` 예약에는 최대 추정치 위 40분 buffer가 포함된다. 위 범위는 실제 측정 전
 추정치이며, 완료 판정에는 아래 체크리스트의 로그가 필요하다.
 
 ### 지도와 위치추정

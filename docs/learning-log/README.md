@@ -27,6 +27,7 @@
 - Phase 6: [TB1 로봇 없는 작업·고장·감사 기능](2026-07-18-tb1-robotless-operations.md)
 - 환경: [현재 관제 PC 기준선 재조사](2026-07-18-current-pc-baseline.md)
 - 환경: [현재 PC TB1 관제 준비 완료](2026-07-18-control-pc-readiness.md)
+- Phase 5 실차: [TB1 acceptance 배포와 정지 상태 사전검증](2026-07-18-tb1-acceptance-deployment.md)
 
 ## 공부와 면접용 문서
 

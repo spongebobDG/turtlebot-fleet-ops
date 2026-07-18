@@ -140,6 +140,7 @@ Phase 1에서 `/scan` Publisher는 존재하지만 메시지가 나오지 않는
 - [로봇 없는 개발 인수인계 일지](docs/learning-log/2026-07-16-weekend-robotless-handoff.md)
 - [TB1 로봇 없는 운영 기능 일지](docs/learning-log/2026-07-18-tb1-robotless-operations.md)
 - [현재 PC TB1 관제 준비 완료 일지](docs/learning-log/2026-07-18-control-pc-readiness.md)
+- [TB1 acceptance 배포와 정지 상태 사전검증 일지](docs/learning-log/2026-07-18-tb1-acceptance-deployment.md)
 
 ## 개발 원칙
 
@@ -168,8 +169,8 @@ main 최신화
 
 ## 다음 작업
 
-1. TB1을 연결하고 `test_tb1_connection.ps1 -RequireRobot`을 통과시킨 뒤 지도·pose graph,
-   AMCL, 저속 목표, 취소와 WARN 흐름을 검증한다. 환경 재구성 시간은 더하지 않으며 순수
-   실차 예상은 `3시간 5분~4시간 35분`, 40분 여유를 포함한 예약 권장은 `5시간 15분`이다.
+1. TB1 접속·배포·정지 상태 사전검증은 완료했다. 빈 공간에서 지도·pose graph, AMCL,
+   저속 목표, 취소와 WARN 흐름을 검증한다. 남은 순수 실차 예상은 `2시간 35분~3시간
+   50분`, 40분 여유를 포함한 예약 권장은 최대 `4시간 30분`이다.
 2. e-stop·Zenoh 단절·프로세스 장애와 10분 자원 측정 증거를 채운 뒤에만 Phase 5와
    TB1 MVP를 완료로 바꾼다.

@@ -72,7 +72,9 @@ function Invoke-RemoteScript {
         [string[]]$Arguments = @()
     )
 
-    $remoteCommand = "bash -s --"
+    # Windows PowerShell may add CRLF while piping text to a native process.
+    # Normalize on the robot before Bash parses the streamed script.
+    $remoteCommand = "tr -d '\r' | bash -s --"
     if ($Arguments.Count -gt 0) {
         $remoteCommand += " " + ($Arguments -join " ")
     }
@@ -128,7 +130,7 @@ function Save-Evidence {
     }
 
     $remoteOutput = Get-Content -LiteralPath $remoteEvidence -Raw |
-        & $sshExe @sshArgs $target "bash -s --" 2>&1
+        & $sshExe @sshArgs $target "tr -d '\r' | bash -s --" 2>&1
     $remoteExit = $LASTEXITCODE
     $remoteOutput |
         Tee-Object -FilePath (Join-Path $evidenceDir "tb1-baseline.txt")
