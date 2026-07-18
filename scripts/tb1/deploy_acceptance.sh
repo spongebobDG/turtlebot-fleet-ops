@@ -20,7 +20,7 @@ TB1_ACCEPTANCE_DEPLOY_DRY_RUN
 3. Stop navigation/mapping, then all TB1 runtime services.
 4. Install pinned ROS/Nav2/SLAM, sysstat, and Zenoh dependencies.
 5. Build and test robot packages in isolated ROS domain 142.
-6. Install all six TB1 user units.
+6. Install all seven TB1 user units.
 7. Start bringup/watchdog/agent/Zenoh only; leave mapping/Nav2 inactive.
 8. Run the connected acceptance preflight.
 EOF
@@ -148,8 +148,18 @@ colcon test \
     safety_watchdog \
     robot_agent \
     navigation_agent \
+  --executor sequential \
   --event-handlers console_direct+
-colcon test-result --verbose
+for package in \
+  fleet_interfaces \
+  safety_watchdog_guard \
+  safety_watchdog \
+  robot_agent \
+  navigation_agent; do
+  colcon test-result \
+    --test-result-base "build/${package}" \
+    --verbose
+done
 export ROS_DOMAIN_ID=42
 
 mkdir -p "${HOME}/.config/systemd/user"

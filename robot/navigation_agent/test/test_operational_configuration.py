@@ -113,6 +113,16 @@ def test_tb1_ros_services_wait_for_an_operating_network() -> None:
         assert "Wants=" in unit and "tb1-network-ready.service" in unit
 
 
+def test_tb1_acceptance_tests_are_serialized_and_scoped() -> None:
+    deploy = (
+        REPOSITORY_ROOT / "scripts" / "tb1" / "deploy_acceptance.sh"
+    ).read_text()
+
+    assert "--executor sequential" in deploy
+    assert '--test-result-base "build/${package}"' in deploy
+    assert "Install all seven TB1 user units" in deploy
+
+
 def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
     units = REPOSITORY_ROOT / "infra" / "systemd" / "user"
     navigation_unit = (units / "tb1-navigation.service").read_text()
