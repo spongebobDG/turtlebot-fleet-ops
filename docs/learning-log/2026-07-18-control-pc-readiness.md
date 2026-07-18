@@ -165,3 +165,10 @@ WSL `control.env`와 로컬 준비 표식을 새 주소로 갱신하고 control 
 heartbeat는 정상이나 TB1은 `ODOM_NOT_RECEIVED`, `SCAN_NOT_RECEIVED`,
 `BATTERY_NOT_RECEIVED`이고 navigation/safety 상태도 아직 없다. 원격 배포나 motion
 명령은 실행하지 않았으며, SSH 등록 후 TB1 서비스와 센서 상태부터 fail-closed로 점검한다.
+
+실제 TB1 로그인 계정은 `dg`였다. 초기 자동화의 `dcu` 기본값은 비밀번호가 맞아도 인증을
+거부했고, `dg`와 LAN 주소 조합으로 직접 로그인이 성공했다. Windows의 `tb1.local`은 같은
+시점에 외부 DNS 주소로 잘못 해석돼 timeout이 발생했으므로 acceptance 자동화는 로컬 준비
+파일의 LAN 주소와 `dg`를 사용한다. Windows OpenSSH가 여러 줄 원격 키 등록 명령을 깨뜨린
+문제도 공개 키를 base64 payload로 전달하는 단일 명령으로 바꿔 해결했고,
+`TB1_SSH_SETUP_OK`와 비대화식 `TB1_SSH_AUTH_OK`를 확인했다.

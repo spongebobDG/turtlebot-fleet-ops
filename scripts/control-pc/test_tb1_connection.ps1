@@ -3,7 +3,7 @@
 [CmdletBinding()]
 param(
     [string]$RobotAddress = "",
-    [string]$RobotUser = "dcu",
+    [string]$RobotUser = "dg",
     [string]$IdentityFile = (Join-Path $HOME ".ssh\id_ed25519_tb1"),
     [string]$Distro = "Ubuntu-22.04",
     [switch]$RequireRobot

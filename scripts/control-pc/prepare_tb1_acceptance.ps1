@@ -5,7 +5,7 @@ param(
     [ValidateSet("Audit", "Deploy", "Collect")]
     [string]$Action = "Collect",
     [string]$RobotAddress = "",
-    [string]$RobotUser = "dcu",
+    [string]$RobotUser = "dg",
     [string]$IdentityFile = (Join-Path $HOME ".ssh\id_ed25519_tb1"),
     [string]$Branch = "",
     [switch]$RequireMap

@@ -3,7 +3,7 @@
 [CmdletBinding()]
 param(
     [string]$RobotAddress = "",
-    [string]$RobotUser = "dcu",
+    [string]$RobotUser = "dg",
     [string]$IdentityFile = (Join-Path $HOME ".ssh\id_ed25519_tb1"),
     [switch]$GenerateOnly
 )
@@ -76,30 +76,31 @@ if ($LASTEXITCODE -eq 0) {
     exit 0
 }
 
-Write-Host "TB1 will request the dcu account password once to register the key."
+Write-Host "TB1 will request the $RobotUser account password once to register the key."
 $installArgs = @(
     "-o", "BatchMode=no",
     "-o", "ConnectTimeout=15",
     "-o", "LogLevel=QUIET",
+    "-o", "NumberOfPasswordPrompts=1",
     "-o", "StrictHostKeyChecking=accept-new",
     "-o", "PubkeyAuthentication=no",
     "-o", "PreferredAuthentications=keyboard-interactive,password"
 )
-$remoteInstall = @'
-set -eu
-umask 077
-mkdir -p "$HOME/.ssh"
-touch "$HOME/.ssh/authorized_keys"
-while IFS= read -r key; do
-  if ! grep -qxF -- "$key" "$HOME/.ssh/authorized_keys"; then
-    printf '%s\n' "$key" >>"$HOME/.ssh/authorized_keys"
-  fi
-done
-chmod 700 "$HOME/.ssh"
-chmod 600 "$HOME/.ssh/authorized_keys"
-'@
-Get-Content -LiteralPath $publicKeyFile -Raw |
-    & $sshExe @installArgs $target $remoteInstall
+$publicKey = (Get-Content -LiteralPath $publicKeyFile -Raw).Trim()
+if ($publicKey -notmatch '^ssh-ed25519 [A-Za-z0-9+/=]+(?: [^\r\n]+)?$') {
+    throw "The dedicated TB1 public key has an unexpected format."
+}
+$publicKeyPayload = [Convert]::ToBase64String(
+    [Text.Encoding]::UTF8.GetBytes("$publicKey`n")
+)
+$remoteInstall = "set -eu; umask 077; mkdir -p .ssh; " +
+    "touch .ssh/authorized_keys; " +
+    "printf %s $publicKeyPayload | base64 -d >.ssh/id_ed25519_tb1.pub.pending; " +
+    "grep -qxF -f .ssh/id_ed25519_tb1.pub.pending .ssh/authorized_keys || " +
+    "cat .ssh/id_ed25519_tb1.pub.pending >>.ssh/authorized_keys; " +
+    "rm -f .ssh/id_ed25519_tb1.pub.pending; " +
+    "chmod 700 .ssh; chmod 600 .ssh/authorized_keys"
+& $sshExe @installArgs $target $remoteInstall
 if ($LASTEXITCODE -ne 0) {
     throw "TB1 rejected SSH key registration."
 }
