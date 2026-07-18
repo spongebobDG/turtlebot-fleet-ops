@@ -66,6 +66,37 @@ function Invoke-ConnectionCheck {
         -RequireRobot
 }
 
+function Invoke-Utf8RemoteScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$RemoteCommand
+    )
+
+    # Windows PowerShell 5.1 can prepend a BOM when text is piped to a native
+    # process. Bash then treats the shebang as a command instead of a comment.
+    $scriptText = (Get-Content -LiteralPath $Path -Raw).TrimStart([char]0xFEFF)
+    $previousOutputEncoding = $OutputEncoding
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+        $ErrorActionPreference = "Continue"
+        $bomFilter = "python3 -c 'import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data[3:] if data.startswith(bytes((239,187,191))) else data)'"
+        $normalizedRemoteCommand = "$bomFilter | $RemoteCommand"
+        $output = $scriptText |
+            & $sshExe @sshArgs $target $normalizedRemoteCommand 2>&1
+        $remoteExit = $LASTEXITCODE
+    }
+    finally {
+        $OutputEncoding = $previousOutputEncoding
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    return [pscustomobject]@{
+        Output = $output
+        ExitCode = $remoteExit
+    }
+}
+
 function Invoke-RemoteScript {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -78,9 +109,9 @@ function Invoke-RemoteScript {
     if ($Arguments.Count -gt 0) {
         $remoteCommand += " " + ($Arguments -join " ")
     }
-    Get-Content -LiteralPath $Path -Raw |
-        & $sshExe @sshArgs $target $remoteCommand
-    if ($LASTEXITCODE -ne 0) {
+    $result = Invoke-Utf8RemoteScript -Path $Path -RemoteCommand $remoteCommand
+    $result.Output | Write-Output
+    if ($result.ExitCode -ne 0) {
         throw "Remote script failed: $Path"
     }
 }
@@ -129,13 +160,13 @@ function Save-Evidence {
             -Encoding UTF8
     }
 
-    $remoteOutput = Get-Content -LiteralPath $remoteEvidence -Raw |
-        & $sshExe @sshArgs $target "tr -d '\r' | bash -s --" 2>&1
-    $remoteExit = $LASTEXITCODE
-    $remoteOutput |
+    $remoteResult = Invoke-Utf8RemoteScript `
+        -Path $remoteEvidence `
+        -RemoteCommand "tr -d '\r' | bash -s --"
+    $remoteResult.Output |
         Tee-Object -FilePath (Join-Path $evidenceDir "tb1-baseline.txt")
-    if ($remoteExit -ne 0) {
-        throw "TB1 evidence capture failed with exit code $remoteExit."
+    if ($remoteResult.ExitCode -ne 0) {
+        throw "TB1 evidence capture failed with exit code $($remoteResult.ExitCode)."
     }
 
     Get-ChildItem -LiteralPath $evidenceDir -File |
