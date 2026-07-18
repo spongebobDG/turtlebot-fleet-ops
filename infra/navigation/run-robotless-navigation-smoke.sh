@@ -5,6 +5,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 smoke_dir="$(mktemp -d)"
 telemetry_file="${smoke_dir}/telemetry.json"
+smoke_port="${ROBOTLESS_NAVIGATION_WEB_PORT:-18082}"
+smoke_base_url="http://127.0.0.1:${smoke_port}"
 declare -a smoke_pids=()
 
 cleanup() {
@@ -38,6 +40,7 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-142}"
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export TURTLEBOT3_MODEL=burger
 export ROBOTLESS_TELEMETRY_FILE="${telemetry_file}"
+export ROBOTLESS_BASE_URL="${smoke_base_url}"
 
 map_image="${smoke_dir}/map.pgm"
 map_yaml="${smoke_dir}/map.yaml"
@@ -70,16 +73,17 @@ setsid ros2 launch navigation_agent tb1_navigation.launch.py map:="${map_yaml}" 
   >"${smoke_dir}/navigation.log" 2>&1 &
 smoke_pids+=("$!")
 setsid ros2 launch fleet_gateway fleet_gateway.launch.py \
+  web_port:="${smoke_port}" \
   >"${smoke_dir}/gateway.log" 2>&1 &
 smoke_pids+=("$!")
 
 for _ in {1..120}; do
-  if curl --silent --fail http://127.0.0.1:8000/api/health >/dev/null; then
+  if curl --silent --fail "${smoke_base_url}/api/health" >/dev/null; then
     break
   fi
   sleep 0.5
 done
-curl --silent --fail http://127.0.0.1:8000/api/health >/dev/null
+curl --silent --fail "${smoke_base_url}/api/health" >/dev/null
 
 python3 "${repo_root}/infra/navigation/robotless_smoke_client.py"
 

@@ -15,6 +15,10 @@ grep -Fq "ExecStartPre=/usr/bin/test -r %h/.local/share/" \
   "${units_dir}/tb1-navigation.service"
 grep -Fq "After=fleet-control-zenoh.service" \
   "${units_dir}/fleet-gateway.service"
+if grep -Eq '^After=default\.target$' "${units_dir}"/*.service; then
+  echo "ERROR: a default.target wanted unit must not order itself after default.target." >&2
+  exit 1
+fi
 
 for unit in \
   tb1-safety-watchdog.service \

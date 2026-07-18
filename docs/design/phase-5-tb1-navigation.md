@@ -2,13 +2,15 @@
 
 ## 상태
 
-코드와 자동 테스트를 구현하고 Ubuntu 22.04 ROS 2 Humble CI에서 5개 패키지 빌드,
-격리 domain 142의 89개 테스트와 실제 Nav2·AMCL·Gateway·watchdog을 함께 실행하는
+코드와 자동 테스트를 구현하고 Ubuntu 22.04 ROS 2 Humble CI와 현재 관제 PC에서
+5개 패키지 빌드, 격리 domain 142의 183개 테스트와 실제
+Nav2·AMCL·Gateway·watchdog을 함께 실행하는
 [robotless smoke](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29585666278)를
 통과했다. 별도의 robot/control domain에서 Zenoh 1.9.0만 통신 경로로 사용해
 `NavigateRobot` 목표·feedback·result·cancel과 lease/status를 왕복하는
 [action smoke](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/runs/29587499227)도
-통과했다. TB1에서 지도 작성, AMCL 정합, 목표 도달과 장애 주입을 아직 실행하지
+통과했다. 현재 PC에는 WSL2·Humble·Zenoh·Gateway와 Windows 로그인 자동 시작도
+구성했다. TB1에서 지도 작성, AMCL 정합, 목표 도달과 장애 주입을 아직 실행하지
 않았으므로 Phase 5를 완료로 표시하지 않는다.
 
 ## 책임 경계

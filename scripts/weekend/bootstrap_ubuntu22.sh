@@ -13,9 +13,15 @@ sudo apt-get update
 sudo apt-get install --no-install-recommends -y \
   ca-certificates \
   curl \
+  dbus-user-session \
   git \
+  iputils-ping \
+  jq \
   libunwind-15-dev \
   locales \
+  netcat-openbsd \
+  openssh-client \
+  shellcheck \
   software-properties-common
 sudo add-apt-repository -y universe
 
@@ -35,9 +41,14 @@ if [[ ! -f /opt/ros/humble/setup.bash ]]; then
   sudo dpkg -i "${ros_apt_deb}"
   sudo apt-get update
   sudo apt-get install --no-install-recommends -y \
-    ros-humble-ros-base \
+    ros-humble-desktop \
+    ros-humble-rmw-cyclonedds-cpp \
     ros-dev-tools
 fi
+
+# The runtime is pinned to CycloneDDS even when ROS was already installed.
+sudo apt-get install --no-install-recommends -y \
+  ros-humble-rmw-cyclonedds-cpp
 
 set +u
 source /opt/ros/humble/setup.bash

@@ -19,6 +19,7 @@ bad_files="$(
   grep -Il $'\r' \
     infra/zenoh/*.sh \
     infra/systemd/user/*.service \
+    scripts/control-pc/*.sh \
     scripts/weekend/*.sh \
     || true
 )"
@@ -47,15 +48,22 @@ colcon test-result --verbose
 
 shellcheck --exclude=SC1090,SC1091 \
   infra/navigation/*.sh infra/systemd/*.sh infra/zenoh/*.sh \
-  scripts/weekend/*.sh
+  scripts/control-pc/*.sh scripts/weekend/*.sh
 bash infra/systemd/validate-units.sh
 python3 -m py_compile \
   infra/navigation/robotless_operations_smoke_client.py \
+  infra/navigation/robotless_smoke_client.py \
   infra/navigation/robotless_web_preview.py
 bash infra/navigation/run-robotless-operations-smoke.sh
+bash infra/navigation/run-robotless-navigation-smoke.sh
+bash infra/navigation/run-robotless-zenoh-action-smoke.sh
 
-if command -v node >/dev/null 2>&1; then
+if command -v node >/dev/null 2>&1 \
+  && node -e 'const value = null; process.exit((value ?? true) ? 0 : 1)' \
+    >/dev/null 2>&1; then
   node --check control/fleet_gateway/web/app.js
+elif command -v node >/dev/null 2>&1; then
+  echo "INFO: installed Node.js is too old for app.js; use the Windows Node.js check."
 else
   echo "INFO: Node.js missing; optional app.js syntax check skipped."
 fi

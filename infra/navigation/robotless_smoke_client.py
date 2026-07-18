@@ -2,6 +2,7 @@
 """Drive the real Gateway/Nav2 stack through its HTTP API without hardware."""
 
 import json
+import os
 import sys
 import time
 from typing import Any, Callable, Dict, Optional
@@ -9,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("ROBOTLESS_BASE_URL", "http://127.0.0.1:8000")
 
 
 def _request(

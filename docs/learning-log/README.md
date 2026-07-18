@@ -26,6 +26,7 @@
 - 인수인계: [로봇 없는 개발 환경과 후속 작업](2026-07-16-weekend-robotless-handoff.md)
 - Phase 6: [TB1 로봇 없는 작업·고장·감사 기능](2026-07-18-tb1-robotless-operations.md)
 - 환경: [현재 관제 PC 기준선 재조사](2026-07-18-current-pc-baseline.md)
+- 환경: [현재 PC TB1 관제 준비 완료](2026-07-18-control-pc-readiness.md)
 
 ## 공부와 면접용 문서
 
@@ -36,6 +37,7 @@
 - [Phase 4 웹 Fleet Gateway 필수 개념과 모범 답변](../study/phase-4-web-fleet-gateway.md)
 - [Phase 5 로컬 Nav2와 lease 안전 필수 개념](../study/phase-5-tb1-navigation.md)
 - [Phase 5 SLAM·지도 산출물·Nav2 실차 개념](../study/phase-5-slam-nav2.md)
+- [관제 PC WSL2·ROS 2 지속 실행과 검증 계층](../study/control-pc-wsl-ros2-readiness.md)
 - [LDS-02 `/scan` 데이터 복구 사례](../case-studies/lds02-scan-data-recovery.md)
 - [비상정지 중립 재무장 설계 사례](../case-studies/safety-watchdog-neutral-rearm.md)
 - [Robot Agent stale 감지·복구 사례](../case-studies/robot-agent-stale-recovery.md)
