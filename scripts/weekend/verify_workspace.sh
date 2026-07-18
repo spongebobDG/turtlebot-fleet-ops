@@ -32,6 +32,7 @@ fi
 colcon build \
   --base-paths robot control \
   --symlink-install \
+  --executor sequential \
   --event-handlers console_direct+
 set +u
 source install/setup.bash
