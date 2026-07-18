@@ -1,7 +1,7 @@
 [Unit]
 Description=TB1 local AMCL, Nav2, fleet lease agent, and motion arbiter
-After=tb1-bringup.service tb1-safety-watchdog.service tb1-robot-agent.service
-Wants=tb1-bringup.service tb1-safety-watchdog.service tb1-robot-agent.service
+After=tb1-network-ready.service tb1-bringup.service tb1-safety-watchdog.service tb1-robot-agent.service
+Wants=tb1-network-ready.service tb1-bringup.service tb1-safety-watchdog.service tb1-robot-agent.service
 Conflicts=tb1-mapping.service
 
 [Service]

@@ -87,6 +87,32 @@ def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive(
     assert "ExecStartPre=/usr/bin/test -r %h/.local/share/" in navigation
 
 
+def test_tb1_ros_services_wait_for_an_operating_network() -> None:
+    units = REPOSITORY_ROOT / "infra" / "systemd" / "user"
+    runtime_units = (
+        "tb1-bringup.service",
+        "tb1-safety-watchdog.service",
+        "tb1-robot-agent.service",
+        "tb1-zenoh-bridge.service",
+        "tb1-mapping.service",
+        "tb1-navigation.service",
+    )
+    network_unit = (units / "tb1-network-ready.service").read_text()
+    wait_script = (
+        REPOSITORY_ROOT / "scripts" / "tb1" / "wait_network_ready.sh"
+    ).read_text()
+
+    assert "Type=oneshot" in network_unit
+    assert "TimeoutStartSec=0" in network_unit
+    assert "wait_network_ready.sh" in network_unit
+    assert "ip -4 route show default" in wait_script
+    assert "scope global" in wait_script
+    for unit_name in runtime_units:
+        unit = (units / unit_name).read_text()
+        assert "After=" in unit and "tb1-network-ready.service" in unit
+        assert "Wants=" in unit and "tb1-network-ready.service" in unit
+
+
 def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
     units = REPOSITORY_ROOT / "infra" / "systemd" / "user"
     navigation_unit = (units / "tb1-navigation.service").read_text()

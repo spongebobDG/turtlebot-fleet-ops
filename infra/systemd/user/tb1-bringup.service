@@ -1,5 +1,7 @@
 [Unit]
 Description=TB1 TurtleBot3 hardware bringup
+After=tb1-network-ready.service
+Wants=tb1-network-ready.service
 
 [Service]
 Type=simple

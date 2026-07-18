@@ -1,7 +1,7 @@
 [Unit]
 Description=TB1 manual SLAM mapping through the safety command path
-After=tb1-bringup.service tb1-safety-watchdog.service
-Wants=tb1-bringup.service tb1-safety-watchdog.service
+After=tb1-network-ready.service tb1-bringup.service tb1-safety-watchdog.service
+Wants=tb1-network-ready.service tb1-bringup.service tb1-safety-watchdog.service
 Conflicts=tb1-navigation.service
 
 [Service]

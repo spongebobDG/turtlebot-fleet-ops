@@ -38,6 +38,7 @@ run git -C "${repo_root}" remote -v
 
 section "systemd units"
 for unit in \
+  tb1-network-ready.service \
   tb1-bringup.service \
   tb1-safety-watchdog.service \
   tb1-robot-agent.service \
@@ -50,6 +51,7 @@ done
 
 section "recent journals"
 for unit in \
+  tb1-network-ready.service \
   tb1-bringup.service \
   tb1-safety-watchdog.service \
   tb1-robot-agent.service \

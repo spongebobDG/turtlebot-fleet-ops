@@ -160,6 +160,7 @@ systemctl --user daemon-reload
 systemctl --user disable --now tb1-navigation.service tb1-mapping.service \
   2>/dev/null || true
 systemctl --user enable --now \
+  tb1-network-ready.service \
   tb1-bringup.service \
   tb1-safety-watchdog.service \
   tb1-robot-agent.service \
@@ -167,6 +168,7 @@ systemctl --user enable --now \
 
 for attempt in $(seq 1 60); do
   if systemctl --user is-active --quiet \
+    tb1-network-ready.service \
     tb1-bringup.service \
     tb1-safety-watchdog.service \
     tb1-robot-agent.service \
@@ -175,6 +177,7 @@ for attempt in $(seq 1 60); do
   fi
   if [[ "${attempt}" == "60" ]]; then
     systemctl --user --no-pager --full status \
+      tb1-network-ready.service \
       tb1-bringup.service \
       tb1-safety-watchdog.service \
       tb1-robot-agent.service \

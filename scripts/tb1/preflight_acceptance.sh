@@ -119,6 +119,7 @@ else
 fi
 
 required_units=(
+  tb1-network-ready.service
   tb1-bringup.service
   tb1-safety-watchdog.service
   tb1-robot-agent.service
