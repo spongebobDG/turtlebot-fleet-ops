@@ -307,7 +307,9 @@ result callback이 정리할 때 현재 handle의 Goal ID가 자기 ID와 일치
 
 정답: e-stop은 다른 터미널이나 로봇 로컬에서도 바뀔 수 있고 네트워크 재시작 뒤 Gateway의
 기억과 실제 watchdog 상태가 다를 수 있기 때문이다. 로봇이 transient-local로 발행하는 최신
-`/safety/estop_active` 상태가 없거나 stale이거나 active이면 Goal을 fail-closed로 거부한다.
+`/fleet/safety_status`가 없거나 stale이거나 `estop_active=true`이면 Goal을 fail-closed로
+거부한다. 보호 이동도 같은 `SafetyStatus`를 확인해야 watchdog의 공개 안전 상태와 타입·QoS
+계약이 하나로 유지된다.
 
 ## 웹 Nav2 면접 모범 답변
 

@@ -52,9 +52,8 @@ ros2 service call \
   '{data: true}'
 
 ros2 topic echo \
-  /safety/estop_active \
-  --once \
-  --qos-durability transient_local
+  /fleet/safety_status \
+  --once
 
 ros2 topic info /safety/cmd_vel_in --verbose
 ros2 topic echo /cmd_vel --once
@@ -63,7 +62,7 @@ ros2 topic echo /cmd_vel --once
 통과 기준:
 
 - e-stop 응답이 `success=True`
-- `/safety/estop_active`가 `data: true`
+- `/fleet/safety_status`가 `estop_active: true`
 - `/safety/cmd_vel_in` Publisher가 0개
 - `/cmd_vel`의 `linear.x`와 `angular.z`가 모두 0
 - 텔레옵과 `ros2 topic pub` 프로세스가 없음
@@ -159,9 +158,8 @@ ros2 run navigation_agent supervised_motion --ros-args \
 
 ```bash
 ros2 topic echo \
-  /safety/estop_active \
-  --once \
-  --qos-durability transient_local
+  /fleet/safety_status \
+  --once
 ros2 topic info /safety/cmd_vel_in
 ros2 topic echo /cmd_vel --once
 ros2 topic echo /odom --once

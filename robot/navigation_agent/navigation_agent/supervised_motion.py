@@ -6,14 +6,13 @@ import sys
 import time
 from typing import Optional
 
+from fleet_interfaces.msg import SafetyStatus
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
 from navigation_agent.motion_guard import is_neutral
@@ -106,7 +105,7 @@ class SupervisedMotion(Node):
         self.declare_parameter("scan_topic", "/scan_normalized")
         self.declare_parameter(
             "estop_status_topic",
-            "/safety/estop_active",
+            "/fleet/safety_status",
         )
         self.declare_parameter(
             "estop_service",
@@ -254,16 +253,11 @@ class SupervisedMotion(Node):
             self._on_scan,
             qos_profile_sensor_data,
         )
-        status_qos = QoSProfile(
-            depth=1,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            reliability=ReliabilityPolicy.RELIABLE,
-        )
         self._estop_status_subscription = self.create_subscription(
-            Bool,
+            SafetyStatus,
             self._estop_status_topic,
             self._on_estop_status,
-            status_qos,
+            10,
         )
         self._estop_client = self.create_client(
             SetBool,
@@ -290,8 +284,8 @@ class SupervisedMotion(Node):
         self._scan = message
         self._scan_received_at = time.monotonic()
 
-    def _on_estop_status(self, message: Bool) -> None:
-        self._estop_status = bool(message.data)
+    def _on_estop_status(self, message: SafetyStatus) -> None:
+        self._estop_status = bool(message.estop_active)
         self._estop_status_received_at = time.monotonic()
 
     def _spin_for(self, duration_sec: float) -> None:

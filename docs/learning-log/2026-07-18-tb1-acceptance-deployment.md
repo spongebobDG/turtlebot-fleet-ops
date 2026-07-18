@@ -158,3 +158,25 @@ robot-side Zenoh를 fail-closed 순서로 재시작했다.
 Wi-Fi quality 약 90%, `WAITING_NEUTRAL`, e-stop false, motion-armed false를 보고했다. 이
 재시작 절차를 Wi-Fi 설정 스크립트에 포함해 다음 전환에서는 stale 상태를 자동으로
 복구한다. 실제 motion 명령은 보내지 않았고 mapping과 navigation은 계속 inactive다.
+
+## 첫 보호 이동 dry-run에서 발견한 안전 상태 계약 불일치
+
+현장 빈 공간 확인 뒤 Zenoh와 잔류 teleop을 중지하고 e-stop 서비스를 호출했다. 서비스는
+`success=True`, `Emergency stop activated`를 반환했지만 바퀴를 움직이지 않는
+`supervised_motion` dry-run은 다음처럼 fail-closed됐다.
+
+```text
+SUPERVISED_MOTION_FAILED: e-stop status did not confirm active=True
+```
+
+watchdog은 Phase 5 공개 인터페이스인 `/fleet/safety_status`에 `SafetyStatus`를 2 Hz로
+발행한다. 보호 이동 노드는 이전 Phase 2 실험의 `/safety/estop_active` Bool과
+transient-local QoS를 계속 기다리고 있었다. 서비스로 상태를 바꿀 수는 있지만 서로 다른
+토픽·메시지·QoS 때문에 결과를 확인할 수 없었던 것이다. 안전 노드가 서비스 성공만 믿지
+않고 이동을 거부한 동작은 올바른 fail-closed 결과였다.
+
+보호 이동의 기본 status 토픽과 타입을 `/fleet/safety_status`의 `SafetyStatus`로 바꾸고,
+watchdog publisher와 같은 volatile reliable depth 10 QoS를 사용했다. fake watchdog
+통합 테스트도 동일한 공개 메시지로 바꿨다. 격리 Humble 실행에서 navigation agent의
+85개 테스트를 포함한 `183 tests, 0 errors, 0 failures, 0 skipped`를 확인했다. 수정본을
+TB1에 재배포하고 dry-run을 다시 통과하기 전에는 실제 5 cm 명령을 실행하지 않는다.

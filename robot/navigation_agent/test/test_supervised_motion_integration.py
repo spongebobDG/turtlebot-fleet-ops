@@ -4,6 +4,7 @@ import math
 import threading
 import time
 
+from fleet_interfaces.msg import SafetyStatus
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 import pytest
@@ -11,10 +12,8 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
 from navigation_agent.pose_checkpoint import load_pose_checkpoint
@@ -37,15 +36,10 @@ class FakeWatchdog(Node):
             "/test/navigation_agent/cmd_vel",
             10,
         )
-        status_qos = QoSProfile(
-            depth=1,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            reliability=ReliabilityPolicy.RELIABLE,
-        )
         self._status_publisher = self.create_publisher(
-            Bool,
-            "/test/navigation_agent/estop_active",
-            status_qos,
+            SafetyStatus,
+            "/test/fleet/safety_status",
+            10,
         )
         self._safety_publisher = self.create_publisher(
             Twist,
@@ -89,8 +83,15 @@ class FakeWatchdog(Node):
         return response
 
     def _publish_status(self) -> None:
-        status = Bool()
-        status.data = self.estop_active
+        status = SafetyStatus()
+        status.robot_id = "tb1"
+        status.mode = (
+            SafetyStatus.MODE_ESTOP
+            if self.estop_active
+            else SafetyStatus.MODE_WAITING_NEUTRAL
+        )
+        status.estop_active = self.estop_active
+        status.motion_armed = False
         self._status_publisher.publish(status)
 
     def _publish(self) -> None:
@@ -175,7 +176,7 @@ def _motion_parameters() -> list:
         Parameter("scan_topic", value="/test/navigation_agent/scan"),
         Parameter(
             "estop_status_topic",
-            value="/test/navigation_agent/estop_active",
+            value="/test/fleet/safety_status",
         ),
         Parameter("mode", value="translate"),
         Parameter("target_distance_m", value=0.02),
