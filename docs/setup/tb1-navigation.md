@@ -179,6 +179,9 @@ ros2 topic echo /fleet/navigation_status
    0.05m를 더한 값이다. 현재 pose도 known free cell이어야 한다.
 8. `목적지 전송` 후 거리, 경과시간, 예상시간, recovery와 lease age를 관찰한다.
 
+로봇 상태 카드의 위치와 방향은 localization 이후 `navigation.current`의 `map` 좌표를 표시한다.
+아직 map pose가 없을 때만 `odom` 좌표로 fallback하며 카드 라벨에 사용 frame을 함께 표시한다.
+
 WARN 로봇은 첫 요청이 409로 거부되고 fault 목록 확인 dialog가 나온다. 작업자가
 확인한 경우에만 두 번째 요청이 `confirm_warnings=true`로 전송된다. 새 목표는 기존
 목표를 자동 교체하지 않는다.

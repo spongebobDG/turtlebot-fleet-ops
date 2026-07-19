@@ -23,11 +23,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Test web map coordinate transforms
+      - name: Test web dashboard helpers
         run: |
           node --test \
             control/fleet_gateway/test/test_map_math.js \
-            control/fleet_gateway/test/test_map_viewport.js
+            control/fleet_gateway/test/test_map_viewport.js \
+            control/fleet_gateway/test/test_robot_display.js
 
       - name: Set up ROS 2 Humble
         uses: ros-tooling/setup-ros@v0.7

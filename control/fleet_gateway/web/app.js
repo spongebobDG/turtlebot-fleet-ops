@@ -40,6 +40,7 @@ const mlopsScore = document.querySelector("#mlops-score");
 const mlopsReasons = document.querySelector("#mlops-reasons");
 const mapMath = window.FleetMapMath;
 const viewportMath = window.FleetMapViewport;
+const robotDisplay = window.FleetRobotDisplay;
 
 let reconnectTimer;
 let robots = [];
@@ -91,6 +92,7 @@ const robotCard = (robot) => {
     ? escapeHtml(robot.fault_codes.join(" · "))
     : "활성 고장 없음";
   const navigation = robot.navigation || {};
+  const displayPose = robotDisplay.selectDisplayPose(robot);
   const activeGoal = Boolean(navigation.active_command_id);
   return `
     <article class="robot-card">
@@ -104,8 +106,8 @@ const robotCard = (robot) => {
       <div class="metrics">
         <div class="metric"><span>배터리</span><strong>${number(robot.battery?.percent, 1, "%")}</strong></div>
         <div class="metric"><span>전압</span><strong>${number(robot.battery?.voltage, 2, "V")}</strong></div>
-        <div class="metric"><span>위치 X / Y</span><strong>${number(robot.odom?.x, 2)} / ${number(robot.odom?.y, 2)}m</strong></div>
-        <div class="metric"><span>방향 Yaw</span><strong>${number(robot.odom?.yaw, 2, "rad")}</strong></div>
+        <div class="metric"><span>위치 X / Y (${escapeHtml(displayPose.frame_id)})</span><strong>${number(displayPose.x, 2)} / ${number(displayPose.y, 2)}m</strong></div>
+        <div class="metric"><span>방향 Yaw (${escapeHtml(displayPose.frame_id)})</span><strong>${number(displayPose.yaw, 2, "rad")}</strong></div>
         <div class="metric"><span>Nav2</span><strong>${escapeHtml(navigation.state || "UNAVAILABLE")}</strong></div>
         <div class="metric"><span>Safety</span><strong>${escapeHtml(robot.safety?.mode || "UNKNOWN")}</strong></div>
         <div class="metric"><span>최근 장애물</span><strong>${number(robot.scan?.min_range, 2, "m")}</strong></div>
