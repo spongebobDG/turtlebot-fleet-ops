@@ -3,3 +3,5 @@ scan_normalizer:
     input_topic: /scan
     output_topic: /scan_normalized
     bin_count: 360
+    # The TB1 LDS-02 driver reports angle zero opposite base_link +X.
+    angle_offset_rad: 3.141592653589793

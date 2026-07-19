@@ -55,6 +55,23 @@ def test_normalizer_keeps_nearest_obstacle_in_shared_bin() -> None:
     assert intensities[0] == pytest.approx(7.0)
 
 
+def test_normalizer_applies_sensor_forward_axis_offset() -> None:
+    ranges, intensities = normalize_samples(
+        [1.25],
+        [8.0],
+        0.0,
+        math.pi / 180.0,
+        0.05,
+        12.0,
+        360,
+        math.pi,
+    )
+
+    assert ranges[180] == pytest.approx(1.25)
+    assert intensities[180] == pytest.approx(8.0)
+    assert math.isinf(ranges[0])
+
+
 def test_normalizer_discards_invalid_ranges() -> None:
     ranges, _ = normalize_samples(
         [0.0, math.nan, math.inf, 13.0],
@@ -86,4 +103,21 @@ def test_normalizer_rejects_invalid_geometry(
             0.05,
             12.0,
             bin_count,
+        )
+
+
+@pytest.mark.parametrize("angle_offset_rad", [math.nan, math.inf, -math.inf])
+def test_normalizer_rejects_nonfinite_angle_offset(
+    angle_offset_rad: float,
+) -> None:
+    with pytest.raises(ValueError, match="angle_offset_rad must be finite"):
+        normalize_samples(
+            [1.0],
+            [],
+            0.0,
+            0.1,
+            0.05,
+            12.0,
+            360,
+            angle_offset_rad,
         )

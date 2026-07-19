@@ -26,4 +26,5 @@ fleet_gateway:
     scan_sensor_y_m:
       - 0.0
     scan_sensor_yaw_rad:
-      - 0.0
+      # Keep the web raw-scan overlay in the same base_link +X convention.
+      - 3.141592653589793
