@@ -506,6 +506,7 @@ def create_app(
             "app.js",
             "map_math.js",
             "map_viewport.js",
+            "robot_display.js",
             "styles.css",
         }
 

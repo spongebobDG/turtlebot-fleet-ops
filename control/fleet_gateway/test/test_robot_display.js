@@ -44,4 +44,16 @@ test("dashboard position fails closed for invalid pose values", () => {
     y: null,
     yaw: null,
   });
+
+  assert.deepEqual(selectDisplayPose({
+    navigation: {
+      current: { frame_id: "map", x: null, y: 0, yaw: 0 },
+    },
+    odom: { x: undefined, y: 0, yaw: 0 },
+  }), {
+    frame_id: "—",
+    x: null,
+    y: null,
+    yaw: null,
+  });
 });

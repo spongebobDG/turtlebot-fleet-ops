@@ -5,10 +5,13 @@
 }(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
-  const finitePose = (pose) => pose
-    && Number.isFinite(Number(pose.x))
-    && Number.isFinite(Number(pose.y))
-    && Number.isFinite(Number(pose.yaw));
+  const finitePose = (pose) => {
+    if (!pose) return false;
+    const values = [pose.x, pose.y, pose.yaw];
+    return values.every((value) => value !== null
+      && value !== undefined
+      && Number.isFinite(Number(value)));
+  };
 
   const selectDisplayPose = (robot) => {
     const mapPose = robot?.navigation?.current;

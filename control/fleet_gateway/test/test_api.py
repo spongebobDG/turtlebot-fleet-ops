@@ -312,12 +312,16 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
     (source_dir / "map_viewport.js").write_text(
         "globalThis.FleetMapViewport = {};"
     )
+    (source_dir / "robot_display.js").write_text(
+        "globalThis.FleetRobotDisplay = {};"
+    )
     for name in (
         "index.html",
         "styles.css",
         "app.js",
         "map_math.js",
         "map_viewport.js",
+        "robot_display.js",
     ):
         try:
             (static_dir / name).symlink_to(source_dir / name)
@@ -331,6 +335,7 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/map_math.js").status_code == 200
     assert client.get("/static/map_viewport.js").status_code == 200
+    assert client.get("/static/robot_display.js").status_code == 200
     assert client.get("/static/secret.txt").status_code == 404
 
 
@@ -341,12 +346,14 @@ def test_dashboard_serves_map_math_from_regular_install(tmp_path):
         "app.js": "console.log('fleet');",
         "map_math.js": "globalThis.FleetMapMath = {};",
         "map_viewport.js": "globalThis.FleetMapViewport = {};",
+        "robot_display.js": "globalThis.FleetRobotDisplay = {};",
     }.items():
         (tmp_path / name).write_text(content)
     client = TestClient(create_app(make_registry(), static_dir=tmp_path))
 
     assert client.get("/static/map_math.js").status_code == 200
     assert client.get("/static/map_viewport.js").status_code == 200
+    assert client.get("/static/robot_display.js").status_code == 200
     assert client.get("/static/not-allowed.js").status_code == 404
 
 
