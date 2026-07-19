@@ -247,6 +247,28 @@ command ID와 실패 주입별 결과는
 운영 제한으로 기록한다. 첫 목표는 짧고 완전히 비어 있는 자유 셀만 사용하고, 저상 장애물은
 작업자가 별도 육안 점검한다.
 
+### 목표가 움직이지만 가까워지지 않을 때
+
+Nav2의 기본 progress checker는 odom 이동을 진척으로 볼 수 있다. 로봇이 미끄러지거나 AMCL
+정합이 나빠 map pose가 목표에 수렴하지 않아도 odom만 변하면 목표가 오래 `ACTIVE`로 남을 수
+있다. 저장소 설정은 다음 로컬 상한으로 이 경우를 닫는다.
+
+| 감시 | 기본값 | 종료 상태 |
+| --- | ---: | --- |
+| map 기준 거리 0.05m 또는 yaw 0.1rad 개선 없음 | 20초 | `FAILED` |
+| 새 Nav2 feedback 없음 | 3초 | `FAILED` |
+| 목표 총 실행시간 | 180초 | `FAILED` |
+
+자동 종료를 기다리기 전이라도 로봇이 예상과 다르게 움직이면 웹의 활성 목표 취소를 먼저 누른다.
+취소 뒤 `active_command_id`가 비고 odom 속도가 0인지 확인한다. 다시 보내기 전에 라이다 최단
+거리, scan-map 정합과 웹 현재 pose를 확인하며, 원인을 확인하지 않은 채 WARN 확인으로 반복하지
+않는다. 관련 로그는 다음처럼 찾는다.
+
+```bash
+journalctl --user -u tb1-navigation.service --since '-10 min' --no-pager \
+  | grep -E 'Failed to make progress|feedback timeout|maximum duration|Goal was canceled'
+```
+
 ### 지도와 위치추정
 
 - [x] 안전 teleop으로 지도와 pose graph 저장

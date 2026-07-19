@@ -122,6 +122,14 @@ Gateway는 2초 확인 timeout 뒤 lease를 철회하고 cancel을 요청한다.
 Nav2 action 서버가 1초 동안 사라지면 agent는 authorization과 motion mode를 철회하고
 custom 목표를 `FAILED`로 끝내므로, 사라진 downstream result를 무기한 기다리지 않는다.
 
+Nav2 `SimpleProgressChecker`는 odom 이동량을 기준으로 한다. 바퀴 미끄러짐이나 위치추정
+불일치로 odom만 움직이고 map pose가 목표에 가까워지지 않는 경우에는 실패를 감지하지 못할 수
+있다. navigation agent는 이 경계를 보완해 Nav2 feedback의 `distance_remaining`과 map-frame
+현재 yaw가 목표 오차를 실제로 줄이는지 독립적으로 감시한다. 거리 0.05m 또는 yaw 0.1rad 이상의
+개선이 20초 동안 없거나, feedback이 3초 동안 끊기거나, 한 목표가 180초를 넘으면 downstream
+Nav2 goal을 취소하고 custom action을 `FAILED`로 닫은 뒤 arbiter를 `IDLE`로 돌린다. recovery
+횟수가 증가하면 새 20초 진척 창을 한 번 부여하지만 180초 절대 상한은 늘어나지 않는다.
+
 ## 지도와 좌표 계약
 
 지도 REST 응답은 `width`, `height`, `resolution`, `origin {x,y,yaw}`와 ROS
@@ -177,7 +185,9 @@ Nav2의 전체 plugin 구성은 설치된 TurtleBot3 Humble Burger 기준 파일
 
 자동 테스트는 Python world↔cell과 브라우저 world↔canvas 좌표 회전, 셀 정책,
 API 409/422, WARN 확인, fake Nav2 성공·거부·feedback·취소·실패, Gateway lease 주기,
-lease 만료, authorization 만료, e-stop, guard 입력 timeout과 재시작 취소를 다룬다.
+lease 만료, authorization 만료, e-stop, guard 입력 timeout과 재시작 취소를 다룬다. 고정된
+feedback을 계속 내보내는 fake Nav2로 map-frame 진척 timeout, downstream cancel, `FAILED`,
+motion `IDLE` 복귀도 검사한다.
 robotless smoke는 실제 Humble Nav2·AMCL·agent·arbiter·두 watchdog 계층·Gateway를
 합성 map/TF/scan/odom과 함께
 띄워 HTTP 성공·취소·e-stop, 속도 상한과 `/cmd_vel` publisher 단일성을 검사한다.

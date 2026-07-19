@@ -35,6 +35,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.task import Future
 from std_msgs.msg import Bool
 
+from navigation_agent.goal_progress import NavigationProgressMonitor
 from navigation_agent.model import (
     GridMap,
     MODE_IDLE,
@@ -78,6 +79,10 @@ class NavigationAgent(Node):
         self._nav_goal_handle = None
         self._nav_result_waiter: Optional[Future] = None
         self._nav2_unavailable_since: Optional[float] = None
+        self._goal_progress_monitor: Optional[
+            NavigationProgressMonitor
+        ] = None
+        self._goal_supervision_failure = ""
         self._nav2_lifecycle_active = False
         self._nav2_lifecycle_query_in_flight = False
         self._lease_expired = False
@@ -239,6 +244,11 @@ class NavigationAgent(Node):
             "map_topic": "/map",
             "lease_timeout_sec": 2.0,
             "nav2_unavailable_timeout_sec": 1.0,
+            "goal_progress_timeout_sec": 20.0,
+            "goal_feedback_timeout_sec": 3.0,
+            "goal_max_duration_sec": 180.0,
+            "goal_distance_progress_m": 0.05,
+            "goal_yaw_progress_rad": 0.1,
             "robot_status_timeout_sec": 3.0,
             "safety_status_timeout_sec": 1.5,
             "authorization_rate_hz": 10.0,
@@ -272,6 +282,21 @@ class NavigationAgent(Node):
         )
         self._nav2_unavailable_timeout_sec = float(
             self.get_parameter("nav2_unavailable_timeout_sec").value
+        )
+        self._goal_progress_timeout_sec = float(
+            self.get_parameter("goal_progress_timeout_sec").value
+        )
+        self._goal_feedback_timeout_sec = float(
+            self.get_parameter("goal_feedback_timeout_sec").value
+        )
+        self._goal_max_duration_sec = float(
+            self.get_parameter("goal_max_duration_sec").value
+        )
+        self._goal_distance_progress_m = float(
+            self.get_parameter("goal_distance_progress_m").value
+        )
+        self._goal_yaw_progress_rad = float(
+            self.get_parameter("goal_yaw_progress_rad").value
         )
         self._robot_status_timeout_sec = float(
             self.get_parameter("robot_status_timeout_sec").value
@@ -308,6 +333,17 @@ class NavigationAgent(Node):
                 "nav2_unavailable_timeout_sec",
                 self._nav2_unavailable_timeout_sec,
             ),
+            (
+                "goal_progress_timeout_sec",
+                self._goal_progress_timeout_sec,
+            ),
+            (
+                "goal_feedback_timeout_sec",
+                self._goal_feedback_timeout_sec,
+            ),
+            ("goal_max_duration_sec", self._goal_max_duration_sec),
+            ("goal_distance_progress_m", self._goal_distance_progress_m),
+            ("goal_yaw_progress_rad", self._goal_yaw_progress_rad),
             ("robot_status_timeout_sec", self._robot_status_timeout_sec),
             ("safety_status_timeout_sec", self._safety_status_timeout_sec),
             ("authorization_rate_hz", self._authorization_rate_hz),
@@ -315,6 +351,11 @@ class NavigationAgent(Node):
         ):
             if not math.isfinite(value) or value <= 0.0:
                 raise ValueError(f"{name} must be positive and finite")
+        if self._goal_max_duration_sec <= self._goal_progress_timeout_sec:
+            raise ValueError(
+                "goal_max_duration_sec must exceed "
+                "goal_progress_timeout_sec"
+            )
         if not 0 <= self._map_free_value_max <= 100:
             raise ValueError("map_free_value_max must be within 0..100")
 
@@ -452,6 +493,8 @@ class NavigationAgent(Node):
             self._lease_expired = False
             self._cancel_requested = False
             self._cancel_reason = ""
+            self._goal_supervision_failure = ""
+            self._goal_progress_monitor = None
             self._reserved_command_id = goal.command_id
             return GoalResponse.ACCEPT
 
@@ -525,6 +568,14 @@ class NavigationAgent(Node):
             return self._abort_goal(goal_handle, "Nav2 rejected the goal")
         with self._lock:
             self._nav_goal_handle = nav_goal_handle
+            self._goal_progress_monitor = NavigationProgressMonitor(
+                started_at=time.monotonic(),
+                progress_timeout_sec=self._goal_progress_timeout_sec,
+                feedback_timeout_sec=self._goal_feedback_timeout_sec,
+                max_duration_sec=self._goal_max_duration_sec,
+                distance_progress_m=self._goal_distance_progress_m,
+                yaw_progress_rad=self._goal_yaw_progress_rad,
+            )
             cancel_immediately = self._cancel_requested or self._lease_expired
         if cancel_immediately:
             nav_goal_handle.cancel_goal_async()
@@ -556,6 +607,7 @@ class NavigationAgent(Node):
             lease_expired = self._lease_expired
             cancel_requested = self._cancel_requested
             cancel_reason = self._cancel_reason
+            supervision_failure = self._goal_supervision_failure
 
         result = NavigateRobot.Result()
         result.nav2_error_code = nav_error_code
@@ -564,6 +616,11 @@ class NavigationAgent(Node):
             result.message = "Fleet navigation lease expired"
             goal_handle.abort()
             final_state = NavigationStatus.STATE_LEASE_EXPIRED
+        elif supervision_failure:
+            result.outcome = NavigateRobot.Result.OUTCOME_ABORTED
+            result.message = supervision_failure
+            goal_handle.abort()
+            final_state = NavigationStatus.STATE_FAILED
         elif cancel_requested or nav_status == GoalStatus.STATUS_CANCELED:
             result.outcome = NavigateRobot.Result.OUTCOME_CANCELED
             result.message = cancel_reason or "Navigation canceled"
@@ -609,11 +666,14 @@ class NavigationAgent(Node):
             self._nav_goal_handle = None
             self._nav_result_waiter = None
             self._nav2_unavailable_since = None
+            self._goal_progress_monitor = None
+            self._goal_supervision_failure = ""
         self._publish_authorization(force=False)
         self._set_motion_mode_nowait(MODE_IDLE)
 
     def _on_nav_feedback(self, goal_handle, wrapped_feedback) -> None:
         nav_feedback = wrapped_feedback.feedback
+        now = time.monotonic()
         feedback = NavigateRobot.Feedback()
         feedback.current_pose = nav_feedback.current_pose
         feedback.distance_remaining = float(nav_feedback.distance_remaining)
@@ -623,12 +683,29 @@ class NavigationAgent(Node):
         )
         feedback.number_of_recoveries = int(nav_feedback.number_of_recoveries)
         with self._lock:
-            feedback.lease_age_sec = self._lease_age(time.monotonic())
+            feedback.lease_age_sec = self._lease_age(now)
             self._current_pose = nav_feedback.current_pose
             self._distance_remaining = feedback.distance_remaining
             self._navigation_time = feedback.navigation_time
             self._estimated_time_remaining = feedback.estimated_time_remaining
             self._number_of_recoveries = feedback.number_of_recoveries
+            monitor = self._goal_progress_monitor
+            if monitor is not None:
+                current_orientation = nav_feedback.current_pose.pose.orientation
+                target_orientation = self._target_pose.pose.orientation
+                monitor.update(
+                    now=now,
+                    distance_remaining=feedback.distance_remaining,
+                    current_yaw=quaternion_to_yaw(
+                        current_orientation.z,
+                        current_orientation.w,
+                    ),
+                    target_yaw=quaternion_to_yaw(
+                        target_orientation.z,
+                        target_orientation.w,
+                    ),
+                    recoveries=feedback.number_of_recoveries,
+                )
         goal_handle.publish_feedback(feedback)
 
     def _check_lease(self) -> None:
@@ -660,6 +737,15 @@ class NavigationAgent(Node):
                         waiter.set_exception(RuntimeError(reason))
                 return
             self._nav2_unavailable_since = None
+            monitor = self._goal_progress_monitor
+            if monitor is not None and not self._goal_supervision_failure:
+                failure_reason = monitor.failure_reason(now)
+                if failure_reason:
+                    self._goal_supervision_failure = failure_reason
+                    self._state = NavigationStatus.STATE_FAILED
+                    self._request_stop(failure_reason)
+                    self.get_logger().error(failure_reason)
+                    return
             if value_is_fresh(
                 self._last_lease_received_at,
                 now,
