@@ -1085,9 +1085,25 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        node.shutdown()
-        executor.remove_node(node)
-        node.destroy_node()
-        executor.shutdown()
+        _cleanup_navigation_agent(node, executor)
+
+
+def _cleanup_navigation_agent(node, executor) -> None:
+    """Best-effort cleanup after launch has delivered SIGINT to all children."""
+    for cleanup in (
+        node.shutdown,
+        lambda: executor.remove_node(node),
+        node.destroy_node,
+        executor.shutdown,
+    ):
+        try:
+            cleanup()
+        except (KeyboardInterrupt, RuntimeError):
+            # rclpy may interrupt or invalidate the context between any two
+            # cleanup calls when ros2 launch stops all processes together.
+            continue
+    try:
         if rclpy.ok():
             rclpy.shutdown()
+    except (KeyboardInterrupt, RuntimeError):
+        pass
