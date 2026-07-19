@@ -94,6 +94,12 @@ ros2 param get /controller_server controller_frequency
 ros2 param get /controller_server FollowPath.vx_samples
 ros2 param get /controller_server FollowPath.vtheta_samples
 ros2 param get /controller_server FollowPath.sim_time
+ros2 param get /controller_server FollowPath.plugin
+ros2 param get /controller_server FollowPath.primary_controller
+ros2 param get /controller_server FollowPath.angular_dist_threshold
+ros2 param get /controller_server FollowPath.angular_disengage_threshold
+ros2 param get /controller_server FollowPath.forward_sampling_distance
+ros2 param get /controller_server FollowPath.rotate_to_heading_angular_vel
 ros2 param get /controller_server progress_checker.plugin
 ros2 param get /controller_server progress_checker.required_movement_angle
 ros2 param get /behavior_server max_rotational_vel
@@ -103,13 +109,13 @@ ros2 param get /bt_navigator default_server_timeout
 ros2 topic info /cmd_vel --verbose
 ```
 
-TB1 기준 DWB 최소값은 `min_speed_theta=0.05`, `min_speed_xy=0.02`이고 상한은 계속
-`0.3 rad/s`, `0.05 m/s`이다. `/cmd_vel`이 non-zero인데 odometry가 변하지 않으면 motor deadband를
+TB1 기준 DWB 최소값은 `min_speed_theta=0.05`, `min_speed_xy=0.02`이고 Nav2 상한은
+`0.27 rad/s`, `0.05 m/s`이다. `/cmd_vel`이 non-zero인데 odometry가 변하지 않으면 motor deadband를
 의심한다. 먼저 실제 적용 파라미터와 raw controller/smoother/arbiter/watchdog 출력을 비교하며,
 최대 속도를 올리거나 watchdog을 우회해서 해결하지 않는다. 시험이 끝나면 목표를 취소하고
 e-stop을 다시 활성화한다.
 
-TB1 적용값은 behavior 회전 `0.05~0.3 rad/s`, 회전 가속도 `0.6 rad/s²`, BT server
+TB1 적용값은 behavior 회전 `0.05~0.27 rad/s`, 회전 가속도 `0.6 rad/s²`, BT server
 acknowledgement `2000 ms`이다. raw `/cmd_vel_nav`가 `1.0 rad/s`이면 TurtleBot3 Humble의 예전
 `recoveries_server` 설정이 현재 `behavior_server`에 적용되지 않은 상태이므로 배포 commit과 실제
 parameter dump를 함께 확인한다. planner acknowledgement 지연과 fleet lease 만료를 혼동해
@@ -124,6 +130,21 @@ controller 주기를 낮추더라도 20 Hz smoother와 watchdog Publisher 단일
 비교한다. TB1 controller는 `nav2_controller::PoseProgressChecker`와 각도 진행 임계값 `0.1 rad`를
 사용해야 한다. 최종 목표 yaw 오차가 잠시 커져도 path heading을 맞추기 위한 실제 map yaw 이동은
 진행으로 인정하되 전체 목표 상한 180초는 유지한다.
+
+경로 heading이 현재 yaw와 거의 반대라 회전 부호가 반복해서 바뀌면 다음 값도 확인한다.
+
+```text
+FollowPath.plugin = nav2_rotation_shim_controller::RotationShimController
+FollowPath.primary_controller = dwb_core::DWBLocalPlanner
+FollowPath.angular_dist_threshold = 0.6
+FollowPath.angular_disengage_threshold = 0.35
+FollowPath.forward_sampling_distance = 0.15
+FollowPath.rotate_to_heading_angular_vel = 0.2
+```
+
+실차 성공 기준은 action `SUCCEEDED`, recovery 0회, 최종 pose 허용오차뿐 아니라 raw controller,
+smoother, arbiter, watchdog, `/cmd_vel`의 최대 명령이 모두 0.27rad/s 이하인 것이다. 엔코더 기반
+odometry 순간값은 별도 관측치로 남기고, 시험 후 quiet 속도가 다시 0으로 수렴하는지 확인한다.
 
 ## 4. Deadman 수동 조종
 
