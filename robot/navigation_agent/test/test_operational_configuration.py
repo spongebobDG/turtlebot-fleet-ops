@@ -85,6 +85,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"FollowPath.rotate_to_goal_heading": True' in nav2_launch
     assert '"FollowPath.critics": [' in nav2_launch
     assert '"RotateToGoal"' not in nav2_launch
+    assert '"GoalAlign"' not in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch

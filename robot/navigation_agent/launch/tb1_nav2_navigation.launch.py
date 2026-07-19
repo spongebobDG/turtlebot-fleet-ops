@@ -102,14 +102,14 @@ def generate_launch_description() -> LaunchDescription:
                         "FollowPath.max_angular_accel": 0.6,
                         "FollowPath.simulate_ahead_time": 1.0,
                         # RotationShimController owns final-yaw control below.
-                        # Keeping DWB's RotateToGoal critic as well made DWB
-                        # slow down just outside the 0.10 m XY tolerance, so
-                        # the shim never received control on opposite-heading
-                        # patrol waypoints.
+                        # Keeping DWB's RotateToGoal or GoalAlign critics made
+                        # DWB slow down or turn toward the final orientation
+                        # before entering the 0.10 m XY tolerance, so the shim
+                        # never received control on opposite-heading patrol
+                        # waypoints.
                         "FollowPath.critics": [
                             "Oscillation",
                             "BaseObstacle",
-                            "GoalAlign",
                             "PathAlign",
                             "PathDist",
                             "GoalDist",
