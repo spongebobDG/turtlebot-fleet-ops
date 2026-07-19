@@ -53,5 +53,11 @@ movement_time_allowance: 20.0
 update_min_d: 0.05
 update_min_a: 0.05
 robot_radius: 0.14
+# Keep the obstacle-cost halo aligned with the accepted physical clearance:
+# 0.14 m Burger radius plus 0.05 m free-space margin.  TurtleBot3's 1.0 m
+# default filled the entire live-test room with inflated cost and prevented
+# DWB from sustaining short patrol paths even with obstacles over 0.5 m away.
+inflation_radius: 0.19
+cost_scaling_factor: 3.0
 xy_goal_tolerance: 0.10
 yaw_goal_tolerance: 0.15

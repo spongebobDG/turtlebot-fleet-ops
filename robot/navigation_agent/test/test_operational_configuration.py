@@ -58,6 +58,8 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "update_min_d: 0.05" in nav2_rewrites
     assert "update_min_a: 0.05" in nav2_rewrites
     assert "robot_radius: 0.14" in nav2_rewrites
+    assert "inflation_radius: 0.19" in nav2_rewrites
+    assert "cost_scaling_factor: 3.0" in nav2_rewrites
     assert "xy_goal_tolerance: 0.10" in nav2_rewrites
     assert "yaw_goal_tolerance: 0.15" in nav2_rewrites
     assert '"smoothing_frequency": 20.0' in nav2_launch
