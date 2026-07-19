@@ -18,3 +18,13 @@ min_rotational_vel: 0.05
 trans_stopped_velocity: 0.01
 required_movement_radius: 0.1
 movement_time_allowance: 20.0
+# The saved TB1 map has 0.05 m cells and the robot is intentionally limited to
+# 0.05 m/s.  The TurtleBot3 defaults only update AMCL after 0.25 m and accept a
+# goal within 0.25 m, which can skip localization updates and treat short web
+# goals as successful without moving.  Update at one map cell and require a
+# two-cell position tolerance instead.  A three-degree AMCL angular threshold
+# also keeps map->odom current while the base performs slow goal rotations.
+update_min_d: 0.05
+update_min_a: 0.05
+xy_goal_tolerance: 0.10
+yaw_goal_tolerance: 0.15

@@ -38,6 +38,10 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "scan_topic: /scan_normalized" in nav2_rewrites
     assert "odom_topic: /odom" in nav2_rewrites
     assert "bt_loop_duration: 100" in nav2_rewrites
+    assert "update_min_d: 0.05" in nav2_rewrites
+    assert "update_min_a: 0.05" in nav2_rewrites
+    assert "xy_goal_tolerance: 0.10" in nav2_rewrites
+    assert "yaw_goal_tolerance: 0.15" in nav2_rewrites
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
