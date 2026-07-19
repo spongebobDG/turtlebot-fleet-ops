@@ -167,6 +167,14 @@ Gateway 75개와 navigation agent 102개, 합계 177개 source-scoped Humble 테
 inside 100%로 표시한 뒤 초기 위치 적용까지 확인했다. 적용 후 AMCL pose는 약
 `(0.07,-0.47,-0.02rad)`였고 e-stop·무재무장·선속도 0은 유지됐다.
 
+최종 커밋 `07e77e5`를 TB1에 fast-forward하고 navigation agent 102개 테스트를 로봇에서 다시
+통과시켰다. 재시작으로 이전 localization을 폐기한 뒤 자동 정렬한 pose는
+`(0.115,-0.510,-0.044rad)`, match 90.625%, 지도 내부 98.75%였고 새 `/amcl_pose`를 받았다.
+최종 NavigationStatus는 `IDLE`, `nav2_ready=true`, `localization_ready=true`,
+`safety_ready=false`, 메시지는 `Localization ready; waiting for motion safety rearm`이었다.
+e-stop true, motion armed false, active command 없음, 선속도 0을 유지했다. ROS graph에서
+`/cmd_vel` Publisher는 `safety_watchdog` 1개, `/safety/cmd_vel_in` Publisher는 arbiter 1개였다.
+
 raw 저장소에는 이 시점 누적 10,334건이 있으나 사고·배포·초기 위치 대기 로그가 섞여 있다.
 dataset builder에 `since_timestamp`와 `until_timestamp`, CLI·스크립트의 `--since-epoch`와
 `--until-epoch`을 추가하고 범위 밖 제외 건수를 lineage에 기록했다. 이 기능으로 과거 10,334건을
