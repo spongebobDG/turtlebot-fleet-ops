@@ -146,6 +146,19 @@ def make_scan_registry():
     return registry
 
 
+def make_dense_scan_registry():
+    registry = ScanRegistry()
+    registry.update(
+        "tb1",
+        {
+            "frame_id": "base_scan",
+            "points": [[0.5, index * 0.01] for index in range(40)],
+            "valid_points": 40,
+        },
+    )
+    return registry
+
+
 def test_health_and_robot_routes():
     client = TestClient(create_app(make_registry()))
 
@@ -173,6 +186,66 @@ def test_scan_route_is_separate_from_robot_snapshot():
     assert "points" not in client.get("/api/robots/tb1").json().get(
         "scan", {}
     )
+
+
+def test_lidar_auto_alignment_route_returns_verified_candidate(monkeypatch):
+    result = {
+        "pose": {"x": 0.25, "y": 0.25, "yaw": 0.1},
+        "score": 0.8,
+        "matched_ratio": 0.85,
+        "inside_ratio": 1.0,
+        "point_count": 40,
+        "acceptable": True,
+        "seed": {},
+    }
+    monkeypatch.setattr("fleet_gateway.api.align_pose", lambda *args: result)
+    client = TestClient(
+        create_app(
+            make_registry(),
+            map_registry=make_map_registry(),
+            scan_registry=make_dense_scan_registry(),
+        )
+    )
+
+    response = client.post(
+        "/api/robots/tb1/localization/align-pose",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["pose"]["yaw"] == 0.1
+
+
+def test_initial_pose_rejects_weak_lidar_map_alignment(monkeypatch):
+    weak = {
+        "score": 0.0,
+        "matched_ratio": 0.05,
+        "inside_ratio": 0.5,
+        "point_count": 40,
+        "acceptable": False,
+    }
+    monkeypatch.setattr(
+        "fleet_gateway.api.score_pose_alignment",
+        lambda *args: weak,
+    )
+    controller = FakeNavigationController()
+    client = TestClient(
+        create_app(
+            make_registry(),
+            navigation_controller=controller,
+            map_registry=make_map_registry(),
+            scan_registry=make_dense_scan_registry(),
+        )
+    )
+
+    response = client.put(
+        "/api/robots/tb1/localization/initial-pose",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+
+    assert response.status_code == 422
+    assert "run LiDAR auto alignment" in response.json()["detail"]
+    assert controller.calls == []
 
 
 def test_estop_route_calls_controller():

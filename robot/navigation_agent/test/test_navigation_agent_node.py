@@ -312,6 +312,21 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         _wait_until(
             lambda: agent._ready_for_goal(time.monotonic(), False)
         )
+        safety_wait = SafetyStatus()
+        safety_wait.robot_id = "tb1"
+        safety_wait.estop_active = True
+        safety_wait.motion_armed = False
+        safety_publisher.publish(safety_wait)
+        _wait_until(lambda: not agent._safety_ready(time.monotonic()))
+        agent._publish_status()
+        assert agent._state == NavigationStatus.STATE_IDLE
+        assert agent._message == (
+            "Localization ready; waiting for motion safety rearm"
+        )
+        publish_readiness()
+        _wait_until(
+            lambda: agent._ready_for_goal(time.monotonic(), False)
+        )
         with agent._lock:
             now = time.monotonic()
             agent._initial_pose_sent_at = now - 120.0

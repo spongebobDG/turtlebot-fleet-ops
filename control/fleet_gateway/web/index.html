@@ -108,6 +108,10 @@
               <label>Y (m)<input id="pose-y" type="number" step="0.01" placeholder="지도에서 선택"></label>
               <label>Yaw<input id="pose-yaw" type="number" step="0.01" placeholder="드래그로 지정"></label>
             </div>
+            <div class="alignment-tools" id="alignment-tools" hidden>
+              <button class="secondary" id="align-initial-pose" type="button" disabled>LiDAR 자동 정렬</button>
+              <p id="alignment-meta">대략 위치를 선택해 자동 정렬하세요.</p>
+            </div>
             <div class="navigation-metrics">
               <div><span>남은 거리</span><strong id="distance-remaining">—</strong></div>
               <div><span>진행 시간</span><strong id="navigation-time">—</strong></div>

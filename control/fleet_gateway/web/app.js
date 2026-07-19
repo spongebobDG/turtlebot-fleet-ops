@@ -20,6 +20,9 @@ const cancelNavigation = document.querySelector("#cancel-navigation");
 const poseX = document.querySelector("#pose-x");
 const poseY = document.querySelector("#pose-y");
 const poseYaw = document.querySelector("#pose-yaw");
+const alignmentTools = document.querySelector("#alignment-tools");
+const alignInitialPose = document.querySelector("#align-initial-pose");
+const alignmentMeta = document.querySelector("#alignment-meta");
 const navigationState = document.querySelector("#navigation-state");
 const navigationMessage = document.querySelector("#navigation-message");
 const distanceRemaining = document.querySelector("#distance-remaining");
@@ -45,6 +48,7 @@ let currentScan = null;
 let currentMapRobot = "";
 let mapMode = "goal";
 let selectedPose = null;
+let poseAlignment = null;
 let dragStart = null;
 let panDrag = null;
 let mapBitmap = null;
@@ -185,8 +189,12 @@ const renderNavigation = () => {
     && !robot?.safety?.estop_active
     && robot?.safety?.motion_armed;
   applyMapCommand.textContent = mapMode === "initial" ? "초기 위치 적용" : "목적지 전송";
+  alignmentTools.hidden = mapMode !== "initial";
+  alignInitialPose.disabled = mapMode !== "initial"
+    || !validCandidate
+    || !currentScan?.fresh;
   applyMapCommand.disabled = !validCandidate
-    || (mapMode === "initial" ? !commonReady : !goalReady);
+    || (mapMode === "initial" ? !commonReady || !poseAlignment?.acceptable : !goalReady);
   cancelNavigation.disabled = !activeGoal;
   createTaskButton.disabled = mapMode !== "goal" || !commonReady || !validCandidate;
   drawMap();
@@ -194,13 +202,19 @@ const renderNavigation = () => {
 
 const resetPoseSelection = () => {
   selectedPose = null;
+  poseAlignment = null;
   dragStart = null;
   poseX.value = "";
   poseY.value = "";
   poseYaw.value = "";
+  alignmentMeta.textContent = "대략 위치를 선택해 자동 정렬하세요.";
+  alignmentMeta.classList.remove("accepted");
 };
 
 const syncPoseSelectionFromFields = () => {
+  poseAlignment = null;
+  alignmentMeta.textContent = "LiDAR 자동 정렬이 필요합니다.";
+  alignmentMeta.classList.remove("accepted");
   const raw = [poseX.value, poseY.value, poseYaw.value];
   if (raw.some((value) => value.trim() === "")) {
     selectedPose = null;
@@ -498,6 +512,9 @@ mapCanvas.addEventListener("pointerdown", (event) => {
     return;
   }
   dragStart = cell.center;
+  poseAlignment = null;
+  alignmentMeta.textContent = "LiDAR 자동 정렬이 필요합니다.";
+  alignmentMeta.classList.remove("accepted");
   selectedPose = { ...dragStart, yaw: Number(poseYaw.value) || 0 };
   poseX.value = selectedPose.x.toFixed(3);
   poseY.value = selectedPose.y.toFixed(3);
@@ -601,6 +618,41 @@ document.querySelectorAll("button[data-map-mode]").forEach((button) => {
 
 [poseX, poseY, poseYaw].forEach((input) => {
   input.addEventListener("input", syncPoseSelectionFromFields);
+});
+
+alignInitialPose.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  const seed = selectedPose ? { ...selectedPose } : null;
+  if (!robot || !seed || !currentScan?.fresh) return;
+  alignInitialPose.disabled = true;
+  alignmentMeta.textContent = "LiDAR와 지도 전체를 비교하는 중입니다.";
+  alignmentMeta.classList.remove("accepted");
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robot.robot_id)}/localization/align-pose`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(seed),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "LiDAR 자동 정렬 실패");
+    selectedPose = { ...body.pose };
+    poseAlignment = body;
+    poseX.value = selectedPose.x.toFixed(3);
+    poseY.value = selectedPose.y.toFixed(3);
+    poseYaw.value = selectedPose.yaw.toFixed(3);
+    alignmentMeta.textContent = `정렬 일치 ${(body.matched_ratio * 100).toFixed(0)}% · 지도 내부 ${(body.inside_ratio * 100).toFixed(0)}%`;
+    alignmentMeta.classList.add("accepted");
+    showToast("LiDAR-지도 보정 후보를 확보했습니다. 붉은 점을 확인한 뒤 적용하세요.");
+  } catch (error) {
+    poseAlignment = null;
+    alignmentMeta.textContent = error.message;
+    showToast(error.message, true);
+  } finally {
+    renderNavigation();
+  }
 });
 
 applyMapCommand.addEventListener("click", async () => {

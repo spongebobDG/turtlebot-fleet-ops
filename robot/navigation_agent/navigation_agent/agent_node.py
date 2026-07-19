@@ -851,9 +851,18 @@ class NavigationAgent(Node):
                 if nav2_ready and localization_ready and safety_ready and robot_ready:
                     self._state = NavigationStatus.STATE_READY
                     self._message = "Navigation ready"
-                elif nav2_ready and self._initial_pose_sent_at is not None:
+                elif (
+                    nav2_ready
+                    and self._initial_pose_sent_at is not None
+                    and not localization_ready
+                ):
                     self._state = NavigationStatus.STATE_LOCALIZING
                     self._message = "Waiting for a fresh AMCL pose"
+                elif nav2_ready and localization_ready and robot_ready:
+                    self._state = NavigationStatus.STATE_IDLE
+                    self._message = (
+                        "Localization ready; waiting for motion safety rearm"
+                    )
                 elif nav2_ready and safety_ready and robot_ready:
                     self._state = NavigationStatus.STATE_IDLE
                     self._message = "Set the initial pose to enable navigation"

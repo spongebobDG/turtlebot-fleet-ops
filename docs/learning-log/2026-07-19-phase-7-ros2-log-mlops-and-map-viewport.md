@@ -126,6 +126,56 @@ Nav2 error 0으로 `SUCCEEDED`가 됐다. 종료 시 active command가 비고 ar
 따라서 수량만 보고 candidate를 승격하지 않고 `MODEL_NOT_READY`를 유지했다. Production 승격에는
 초기 위치 대기 구간을 분리한 뒤 여러 정상 목표가 포함된 15~30분 대표 dataset이 여전히 필요하다.
 
+## 잘못된 초기 yaw와 벽 접촉 사건
+
+추가 경로 시험 전에 한 직선 목표 `cc81f495c0d04b6284589bd5612501a3`은 9.4초, recovery 0회로
+성공했다. 이어 한 바퀴 경로의 첫 목표 `23856f7203644bee8393a06daf8e9fe7`을 보냈을 때 map pose는
+실제와 다르게 지도 밖으로 이동했고 Nav2는 planning·spin·wait·backup recovery를 반복했다.
+48.4초, recovery 19회 뒤 실패했으며 작업자가 실제 벽 접촉을 보고했다. 19:49:51 KST에 즉시
+e-stop을 적용해 active goal과 lease를 폐기했고 선속도 0을 확인했다. 이후의 진단·배포·초기
+위치 보정은 모두 e-stop과 `motion_armed=false`에서 수행했다.
+
+정지 상태 scan 100개를 조사한 결과 99개는 330° 이상이었고 각도 span 중앙값 358.35°,
+발행 간격 중앙값 0.100초, 최대 gap 0.390초였다. 따라서 한 번의 partial scan은 있었지만 지속적인
+LiDAR 유실이 주원인은 아니었다. 당시 최소 거리는 약 0.163m였고, 기존 `robot_radius=0.10m`와
+실험적 0.15m clearance는 실제 corner 여유에 부족했다.
+
+가장 큰 원인은 초기 pose 방향이었다. 재적용된 후보 `(0.059,-0.365,-3.059rad)`에 실시간
+LiDAR endpoint를 투영하자 지도 밖으로 뻗었고 벽 match는 약 3~8%, 지도 내부는 51~53%였다.
+OccupancyGrid 전체 자유 셀·yaw를 탐색한 후보는 `(약 0.12,-0.51,-0.03rad)`였고 match 92~93%,
+지도 내부 99~100%였다. 약 180° 뒤집힌 yaw 때문에 실제 이동과 웹 map-frame 이동이 반대로
+보였던 것이다.
+
+## 충돌 회귀 뒤 안전·정합 보강
+
+- Gateway가 `/scan`을 sensor QoS로 받아 base-local endpoint를 별도 REST로 제공한다.
+- 초기 위치 후보를 움직이는 동안 붉은 LiDAR 점도 함께 움직여 벽 정합을 적용 전에 볼 수 있다.
+- `LiDAR 자동 정렬`은 occupied-cell 거리장의 전역 coarse search와 두 단계 refinement로 pose를
+  제안한다. 실차 응답시간은 약 5.2초였다.
+- 최소 40 endpoint, match 35%, 지도 내부 70%, score 0.20을 만족해야 적용할 수 있다. 잘못된
+  yaw의 직접 `PUT initial-pose`는 `422`와 match 8%·inside 51% 설명으로 거부됐다.
+- navigation agent는 목표 전·실행 중에 신선한 scan, 최소 거리 0.20m와 현재 AMCL pose의 known
+  free cell을 확인한다. 위반 시 목표와 authorization을 취소한다.
+- Nav2 `robot_radius`를 0.10m에서 0.14m로 바꿨다. 저속 상한 0.05m/s·0.3rad/s와 watchdog의
+  유일한 실제 `/cmd_vel` 소유 구조는 바꾸지 않았다.
+- e-stop 상태에서 localization이 이미 확인됐는데 `LOCALIZING`으로 표시되던 조건도 분리했다.
+  이후에는 `IDLE / Localization ready; waiting for motion safety rearm`으로 안전 대기 이유를
+  정확히 보여준다.
+
+Gateway 75개와 navigation agent 102개, 합계 177개 source-scoped Humble 테스트가 모두 통과했다.
+웹 실제 화면에서도 잘못된 `-3.00rad` 후보를 자동 정렬해 `(0.135,-0.510,-0.026rad)`, match 93%,
+inside 100%로 표시한 뒤 초기 위치 적용까지 확인했다. 적용 후 AMCL pose는 약
+`(0.07,-0.47,-0.02rad)`였고 e-stop·무재무장·선속도 0은 유지됐다.
+
+raw 저장소에는 이 시점 누적 10,334건이 있으나 사고·배포·초기 위치 대기 로그가 섞여 있다.
+dataset builder에 `since_timestamp`와 `until_timestamp`, CLI·스크립트의 `--since-epoch`와
+`--until-epoch`을 추가하고 범위 밖 제외 건수를 lineage에 기록했다. 이 기능으로 과거 10,334건을
+지우지 않으면서 검증된 정상 주행 구간만 새 baseline으로 만들 수 있다. 현재는 안전한 대표 주행
+구간이 아직 없으므로 Production 모델을 승격하지 않았고 `MODEL_NOT_READY`가 올바른 상태다.
+
+이 사건 뒤 e-stop을 해제한 동적 회귀는 물리 주변과 LiDAR overlay를 사람이 확인한 뒤 수행해야
+한다. 따라서 Phase 7은 여전히 완료로 표시하지 않는다.
+
 ## 배운 점
 
 1. OccupancyGrid cell 수와 화면 canvas pixel 수는 같은 개념이 아니다.
@@ -136,3 +186,7 @@ Nav2 error 0으로 `SUCCEEDED`가 됐다. 종료 시 active command가 비고 ar
 4. 설명 가능한 작은 baseline이 데이터가 부족한 단일 로봇에서는 복잡한 모델보다 검증하기 쉽다.
 5. ML 관측과 deterministic motion safety의 권한을 분리해야 false positive가 위험 동작을 만들지
    않는다.
+6. free cell 검증만으로 초기 pose의 방향 오류를 잡을 수 없으며, 실제 scan endpoint와 지도 벽의
+   정합을 적용 전에 확인해야 한다.
+7. 사고 구간을 삭제하는 대신 시간 범위와 제외 건수를 dataset lineage에 남겨야 MLOps 재현성과
+   운영 감사를 함께 지킬 수 있다.

@@ -359,6 +359,11 @@ input {
   line-height: 1.25;
 }
 .pose-fields { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.alignment-tools { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); align-items: center; gap: 6px; }
+.alignment-tools[hidden] { display: none; }
+.alignment-tools button { padding: 7px 6px; font-size: 0.61rem; }
+.alignment-tools p { color: var(--muted); font-size: 0.57rem; line-height: 1.25; }
+.alignment-tools p.accepted { color: var(--mint); }
 .navigation-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .navigation-metrics div { min-width: 0; padding: 7px; background: rgba(255, 255, 255, 0.022); border: 1px solid var(--border); border-radius: 8px; }
 .navigation-metrics span { display: block; color: var(--muted); font-size: 0.58rem; }
