@@ -46,6 +46,7 @@ def test_arbiter_shutdown_skips_publish_after_context_is_invalid() -> None:
 
     class StubArbiter:
         class Context:
+
             @staticmethod
             def ok():
                 return False

@@ -9,6 +9,7 @@ def test_shutdown_skips_publish_after_ros_context_is_invalid(monkeypatch):
 
     class StubAgent:
         class Context:
+
             @staticmethod
             def ok():
                 return False
@@ -31,6 +32,7 @@ def test_process_cleanup_tolerates_launch_interrupts(monkeypatch):
     calls = []
 
     class StubAgent:
+
         def shutdown(self):
             calls.append("shutdown")
             raise KeyboardInterrupt
@@ -40,6 +42,7 @@ def test_process_cleanup_tolerates_launch_interrupts(monkeypatch):
             raise KeyboardInterrupt
 
     class StubExecutor:
+
         def remove_node(self, _node):
             calls.append("remove")
             raise RuntimeError("context closed")
