@@ -383,6 +383,14 @@ Nav2의 `navigation.current(map)`를 사용했지만 상단 로봇 카드는 `od
 “위치”로 표시하고 있었다. 같은 순간 map pose는 약 `(-0.13, -0.42)`였다. 카드가 map pose를
 우선하고 localization 전에는 odom으로 fallback하며 frame 라벨을 표시하도록 수정했다.
 
+재배치 후 자동 정렬 후보 `(-0.120, -0.460, -0.175rad)`는 match 90.6%, 지도 내부 99.4%,
+score 0.902였고 초기 pose 적용 뒤 AMCL map pose는 약 `(-0.142, -0.390, -0.140rad)`로
+수렴했다. Gateway 재배포 뒤 웹 카드도 `위치 X / Y (map) -0.14 / -0.39m`로 표시해 같은
+snapshot의 odom 값과 명확히 구분됐다. 새 JavaScript helper가 API 정적 파일 allowlist에서
+빠져 처음에는 404가 발생했으므로 allowlist와 symlink·regular install asset 테스트를 함께
+보강했다. Gateway 77개와 웹 13개 테스트를 통과했고, 검증 내내 e-stop·motion unarmed·활성
+목표 없음 상태를 유지했다.
+
 ## 배운 점
 
 1. ROS graph에서 Publisher가 사라지는 것과 0을 계속 발행하는 것은 다르다.
@@ -394,6 +402,8 @@ Nav2의 `navigation.current(map)`를 사용했지만 상단 로봇 카드는 `od
 6. 장애물 회피 성능은 알고리즘뿐 아니라 센서 장착 높이와 관측 평면에 제한된다.
 7. 자원 시험에서 평균과 최대뿐 아니라 threshold 이상 표본 수와 실패 상태도 함께 남겨야
    결과를 과장하지 않는다.
+8. 화면에 좌표를 표시할 때 숫자뿐 아니라 `map` 또는 `odom` frame을 함께 표시해야 물리 위치와
+   localization 결과를 혼동하지 않는다.
 
 ## 복습 문제와 정답
 
