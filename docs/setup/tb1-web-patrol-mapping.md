@@ -94,6 +94,8 @@ ros2 param get /controller_server controller_frequency
 ros2 param get /controller_server FollowPath.vx_samples
 ros2 param get /controller_server FollowPath.vtheta_samples
 ros2 param get /controller_server FollowPath.sim_time
+ros2 param get /controller_server progress_checker.plugin
+ros2 param get /controller_server progress_checker.required_movement_angle
 ros2 param get /behavior_server max_rotational_vel
 ros2 param get /behavior_server min_rotational_vel
 ros2 param get /behavior_server rotational_acc_lim
@@ -117,6 +119,11 @@ TB1 저속 DWB 적용값은 controller `5 Hz`, 표본 `10 × 20`, 예측 `1.0 s`
 `Control loop missed its desired rate`가 반복되면 e-stop 후 load average와 process별 CPU를
 수집한다. 4코어에서 load average가 4를 지속해서 넘는 상태로 장시간 주행 검증을 계속하지 않는다.
 controller 주기를 낮추더라도 20 Hz smoother와 watchdog Publisher 단일 소유를 함께 확인한다.
+
+목표가 제자리 회전 중 20초마다 recovery로 바뀌면 global path 첫 구간 heading과 현재 map yaw를
+비교한다. TB1 controller는 `nav2_controller::PoseProgressChecker`와 각도 진행 임계값 `0.1 rad`를
+사용해야 한다. 최종 목표 yaw 오차가 잠시 커져도 path heading을 맞추기 위한 실제 map yaw 이동은
+진행으로 인정하되 전체 목표 상한 180초는 유지한다.
 
 ## 4. Deadman 수동 조종
 

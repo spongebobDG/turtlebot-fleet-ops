@@ -21,6 +21,7 @@ class NavigationProgressMonitor:
     last_progress_at: Optional[float] = None
     best_distance: Optional[float] = None
     best_yaw_error: Optional[float] = None
+    progress_yaw: Optional[float] = None
     recoveries: int = 0
 
     def __post_init__(self) -> None:
@@ -68,6 +69,7 @@ class NavigationProgressMonitor:
         if first_feedback or recovery_started:
             self.best_distance = distance
             self.best_yaw_error = yaw_error
+            self.progress_yaw = current_yaw
             self.last_progress_at = now
             self.recoveries = recoveries
             return recovery_started
@@ -76,14 +78,24 @@ class NavigationProgressMonitor:
             self.best_distance is not None
             and distance <= self.best_distance - self.distance_progress_m
         )
-        yaw_progress = bool(
+        yaw_error_progress = bool(
             self.best_yaw_error is not None
             and yaw_error <= self.best_yaw_error - self.yaw_progress_rad
         )
+        yaw_motion_progress = bool(
+            self.progress_yaw is not None
+            and abs(wrap_angle(current_yaw - self.progress_yaw))
+            >= self.yaw_progress_rad
+        )
+        yaw_progress = yaw_error_progress or yaw_motion_progress
         if distance_progress:
             self.best_distance = distance
         if yaw_progress:
-            self.best_yaw_error = yaw_error
+            if self.best_yaw_error is None:
+                self.best_yaw_error = yaw_error
+            else:
+                self.best_yaw_error = min(self.best_yaw_error, yaw_error)
+            self.progress_yaw = current_yaw
         if distance_progress or yaw_progress:
             self.last_progress_at = now
             return True

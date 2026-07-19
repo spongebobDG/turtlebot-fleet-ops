@@ -67,7 +67,23 @@ def generate_launch_description() -> LaunchDescription:
                 package="nav2_controller",
                 executable="controller_server",
                 remappings=common_remaps + [("cmd_vel", "cmd_vel_nav")],
-                **common,
+                output=common["output"],
+                respawn=common["respawn"],
+                respawn_delay=common["respawn_delay"],
+                arguments=common["arguments"],
+                parameters=[
+                    configured_params,
+                    {
+                        # Slow in-place alignment is valid progress even
+                        # before the robot can translate along the path.
+                        "progress_checker.plugin": (
+                            "nav2_controller::PoseProgressChecker"
+                        ),
+                        "progress_checker.required_movement_radius": 0.1,
+                        "progress_checker.required_movement_angle": 0.1,
+                        "progress_checker.movement_time_allowance": 20.0,
+                    },
+                ],
             ),
             Node(
                 package="nav2_smoother",

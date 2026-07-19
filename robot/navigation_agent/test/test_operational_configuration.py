@@ -67,6 +67,8 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"max_rotational_vel": 0.3' in nav2_launch
     assert '"min_rotational_vel": 0.05' in nav2_launch
     assert '"rotational_acc_lim": 0.6' in nav2_launch
+    assert '"nav2_controller::PoseProgressChecker"' in nav2_launch
+    assert '"progress_checker.required_movement_angle": 0.1' in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
