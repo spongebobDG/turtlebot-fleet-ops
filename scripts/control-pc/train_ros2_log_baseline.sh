@@ -4,6 +4,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 mlops_root="${FLEET_LOG_MLOPS_ROOT:-${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs}"
 window_sec=60
+since_epoch=""
+until_epoch=""
 promote=false
 
 while (($# > 0)); do
@@ -14,6 +16,14 @@ while (($# > 0)); do
       ;;
     --window-sec)
       window_sec="$2"
+      shift 2
+      ;;
+    --since-epoch)
+      since_epoch="$2"
+      shift 2
+      ;;
+    --until-epoch)
+      until_epoch="$2"
       shift 2
       ;;
     *)
@@ -41,10 +51,18 @@ input_arguments=()
 for raw_file in "${raw_files[@]}"; do
   input_arguments+=(--input "${raw_file}")
 done
+range_arguments=()
+if [[ -n "${since_epoch}" ]]; then
+  range_arguments+=(--since-epoch "${since_epoch}")
+fi
+if [[ -n "${until_epoch}" ]]; then
+  range_arguments+=(--until-epoch "${until_epoch}")
+fi
 
 dataset_path="$(
   ros2 run fleet_gateway ros2_log_mlops --root "${mlops_root}" build-dataset \
-    "${input_arguments[@]}" --window-sec "${window_sec}"
+    "${input_arguments[@]}" --window-sec "${window_sec}" \
+    "${range_arguments[@]}"
 )"
 candidate_path="$(
   ros2 run fleet_gateway ros2_log_mlops --root "${mlops_root}" train \
@@ -63,6 +81,7 @@ print(
     f"model={model['model_id']} "
     f"windows={quality['sample_count']} "
     f"records={quality['record_count']} "
+    f"excluded={model['quality'].get('excluded_outside_range_count', 0)} "
     f"gate_passed={str(quality['gate_passed']).lower()}"
 )
 print(f"QUALITY_REASON={quality['reason']}")
