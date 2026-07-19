@@ -18,11 +18,18 @@ from nav_msgs.msg import OccupancyGrid
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
+from sensor_msgs.msg import LaserScan
 from std_srvs.srv import SetBool
 
 from fleet_gateway.map_registry import MapRegistry, map_message_to_dict
 from fleet_gateway.registry import StatusRegistry
+from fleet_gateway.scan_registry import ScanRegistry, scan_message_to_dict
 
 
 def _stamp_to_dict(stamp: Any) -> Dict[str, int]:
@@ -186,6 +193,7 @@ class FleetGatewayNode(Node):
         timeout = float(self.get_parameter("online_timeout_sec").value)
         self.registry = StatusRegistry(online_timeout_sec=timeout)
         self.map_registry = MapRegistry(free_value_max=0)
+        self.scan_registry = ScanRegistry(freshness_timeout_sec=1.0)
         topic = str(self.get_parameter("status_topic").value)
         self._status_subscription = self.create_subscription(
             RobotStatus,
@@ -221,12 +229,22 @@ class FleetGatewayNode(Node):
             self.get_parameter("initial_pose_services").value
         )
         map_topics = list(self.get_parameter("map_topics").value)
+        scan_topics = list(self.get_parameter("scan_topics").value)
+        scan_sensor_x = list(self.get_parameter("scan_sensor_x_m").value)
+        scan_sensor_y = list(self.get_parameter("scan_sensor_y_m").value)
+        scan_sensor_yaw = list(
+            self.get_parameter("scan_sensor_yaw_rad").value
+        )
         self._validate_aligned_lists(
             robot_ids,
             estop_names,
             action_names,
             initial_pose_names,
             map_topics,
+            scan_topics,
+            scan_sensor_x,
+            scan_sensor_y,
+            scan_sensor_yaw,
         )
         self._estop_clients = {
             robot_id: self.create_client(
@@ -270,6 +288,29 @@ class FleetGatewayNode(Node):
                 callback_group=self._callback_group,
             )
             for robot_id, map_topic in zip(robot_ids, map_topics)
+        ]
+        self._scan_subscriptions = [
+            self.create_subscription(
+                LaserScan,
+                scan_topic,
+                lambda message, identifier=robot_id, x=sensor_x,
+                y=sensor_y, yaw=sensor_yaw: self._scan_callback(
+                    identifier,
+                    message,
+                    float(x),
+                    float(y),
+                    float(yaw),
+                ),
+                qos_profile_sensor_data,
+                callback_group=self._callback_group,
+            )
+            for robot_id, scan_topic, sensor_x, sensor_y, sensor_yaw in zip(
+                robot_ids,
+                scan_topics,
+                scan_sensor_x,
+                scan_sensor_y,
+                scan_sensor_yaw,
+            )
         ]
 
         self._navigation_lock = threading.RLock()
@@ -335,6 +376,10 @@ class FleetGatewayNode(Node):
             ["/tb1/navigation/set_initial_pose"],
         )
         self.declare_parameter("map_topics", ["/map"])
+        self.declare_parameter("scan_topics", ["/scan"])
+        self.declare_parameter("scan_sensor_x_m", [-0.032])
+        self.declare_parameter("scan_sensor_y_m", [0.0])
+        self.declare_parameter("scan_sensor_yaw_rad", [0.0])
 
     @staticmethod
     def _validate_aligned_lists(*values: List[Any]) -> None:
@@ -383,6 +428,27 @@ class FleetGatewayNode(Node):
             self.map_registry.update(robot_id, map_message_to_dict(message))
         except ValueError as error:
             self.get_logger().error(f"Rejected {robot_id} map: {error}")
+
+    def _scan_callback(
+        self,
+        robot_id: str,
+        message: LaserScan,
+        sensor_x: float,
+        sensor_y: float,
+        sensor_yaw: float,
+    ) -> None:
+        try:
+            self.scan_registry.update(
+                robot_id,
+                scan_message_to_dict(
+                    message,
+                    sensor_x,
+                    sensor_y,
+                    sensor_yaw,
+                ),
+            )
+        except ValueError as error:
+            self.get_logger().error(f"Rejected {robot_id} scan: {error}")
 
     def set_estop(self, robot_id: str, engaged: bool) -> Dict[str, Any]:
         """Call a robot watchdog service from the HTTP worker thread."""

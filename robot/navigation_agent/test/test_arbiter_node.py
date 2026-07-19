@@ -40,6 +40,27 @@ def _set_mode(
     assert future.result().success
 
 
+def test_arbiter_shutdown_skips_publish_after_context_is_invalid() -> None:
+    """Launch-wide SIGINT must not publish through a closed context."""
+    calls = []
+
+    class StubArbiter:
+        class Context:
+
+            @staticmethod
+            def ok():
+                return False
+
+        context = Context()
+
+        def _publish(self, linear_x, angular_z):
+            calls.append((linear_x, angular_z))
+
+    MotionArbiter.shutdown(StubArbiter())
+
+    assert calls == []
+
+
 def test_arbiter_ros_flow_and_authorization_expiry() -> None:
     rclpy.init()
     arbiter = MotionArbiter(

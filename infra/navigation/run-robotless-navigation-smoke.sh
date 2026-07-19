@@ -48,8 +48,14 @@ map_yaml="${smoke_dir}/map.yaml"
   echo "P2"
   echo "80 80"
   echo "255"
-  for ((pixel = 0; pixel < 6400; pixel++)); do
-    printf "254 "
+  for ((row = 0; row < 80; row++)); do
+    for ((column = 0; column < 80; column++)); do
+      if (( row == 0 || row == 79 || column == 0 || column == 79 )); then
+        printf "0 "
+      else
+        printf "254 "
+      fi
+    done
   done
   printf "\n"
 } >"${map_image}"

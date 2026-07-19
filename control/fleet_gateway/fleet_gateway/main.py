@@ -57,6 +57,7 @@ def main(args: Optional[List[str]] = None) -> None:
         estop_controller=node,
         navigation_controller=node,
         map_registry=node.map_registry,
+        scan_registry=node.scan_registry,
         operations_store=operations_store,
         task_manager=task_manager,
         log_mlops_status_path=log_mlops_status_path,

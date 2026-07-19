@@ -1,8 +1,14 @@
 """Test deterministic helpers used by the robot-free TB1 simulator."""
 
+import math
+
 import pytest
 
-from fleet_gateway.mock_robot import interpolate_pose, navigation_duration
+from fleet_gateway.mock_robot import (
+    interpolate_pose,
+    navigation_duration,
+    square_room_scan_ranges,
+)
 
 
 def test_navigation_duration_reserves_long_goal_for_cancel() -> None:
@@ -19,3 +25,20 @@ def test_interpolate_pose_clamps_progress() -> None:
     assert interpolate_pose(start, target, 0.5) == pytest.approx(
         (0.5, -0.5, 1.0)
     )
+
+
+def test_square_room_scan_matches_map_boundary() -> None:
+    ranges = square_room_scan_ranges((0.0, 0.0, 0.0))
+
+    assert len(ranges) == 360
+    assert min(ranges) == pytest.approx(1.975, abs=0.001)
+    assert max(ranges) < 2.8
+    assert ranges[0] == pytest.approx(1.975)
+    assert ranges[-1] == pytest.approx(1.975)
+
+
+def test_square_room_scan_tracks_pose_and_yaw() -> None:
+    ranges = square_room_scan_ranges((0.5, 0.0, math.pi))
+
+    assert min(ranges) == pytest.approx(1.475, abs=0.001)
+    assert all(0.12 <= distance <= 3.5 for distance in ranges)

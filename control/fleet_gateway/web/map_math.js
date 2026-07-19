@@ -80,5 +80,20 @@
     );
   };
 
-  return { canvasToWorld, isFreePose, worldToCanvas, worldToCell };
+  const yawFromCanvasDrag = (map, startX, startY, endX, endY) => {
+    const start = canvasToWorld(map, startX, startY);
+    const end = canvasToWorld(map, endX, endY);
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
+    if (Math.hypot(deltaX, deltaY) <= 1e-9) return null;
+    return Math.atan2(deltaY, deltaX);
+  };
+
+  return {
+    canvasToWorld,
+    isFreePose,
+    worldToCanvas,
+    worldToCell,
+    yawFromCanvasDrag,
+  };
 }));

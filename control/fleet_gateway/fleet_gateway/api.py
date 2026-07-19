@@ -12,7 +12,13 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from fleet_gateway.registry import StatusRegistry
+from fleet_gateway.scan_registry import ScanRegistry
 from fleet_gateway.map_registry import MapRegistry
+from fleet_gateway.pose_alignment import (
+    align_pose,
+    alignment_is_acceptable,
+    score_pose_alignment,
+)
 from fleet_gateway.log_mlops import status_from_path
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.task_manager import NavigationTaskManager
@@ -80,6 +86,7 @@ def create_app(
     estop_controller: Optional[EStopController] = None,
     navigation_controller: Optional[NavigationController] = None,
     map_registry: Optional[MapRegistry] = None,
+    scan_registry: Optional[ScanRegistry] = None,
     operations_store: Optional[OperationsStore] = None,
     task_manager: Optional[NavigationTaskManager] = None,
     log_mlops_status_path: Optional[Path] = None,
@@ -183,6 +190,64 @@ def create_app(
             raise HTTPException(status_code=503, detail="Map is unavailable")
         return snapshot
 
+    @app.get("/api/robots/{robot_id}/scan")
+    def get_robot_scan(robot_id: str) -> Dict[str, Any]:
+        _robot_or_404(registry, robot_id)
+        if scan_registry is None:
+            raise HTTPException(
+                status_code=503,
+                detail="LiDAR registry unavailable",
+            )
+        snapshot = scan_registry.get(robot_id)
+        if snapshot is None:
+            raise HTTPException(status_code=503, detail="LiDAR scan unavailable")
+        return snapshot
+
+    @app.post(
+        "/api/robots/{robot_id}/localization/align-pose",
+    )
+    async def align_initial_pose(
+        robot_id: str,
+        request: PoseRequest,
+    ) -> Dict[str, Any]:
+        _robot_or_404(registry, robot_id)
+        _validate_pose_request(request)
+        _require_free_map_pose(map_registry, robot_id, request.x, request.y)
+        occupancy_map, scan = _alignment_inputs(
+            map_registry,
+            scan_registry,
+            robot_id,
+        )
+        try:
+            result = await run_in_threadpool(
+                align_pose,
+                occupancy_map,
+                scan,
+                request.x,
+                request.y,
+                request.yaw,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        if not result["acceptable"]:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "LiDAR-map auto alignment is not reliable enough "
+                    f"(match {result['matched_ratio']:.0%}, "
+                    f"inside {result['inside_ratio']:.0%})"
+                ),
+            )
+        if operations_store is not None:
+            operations_store.record_event(
+                robot_id,
+                "LOCALIZATION",
+                "INITIAL_POSE_AUTO_ALIGNED",
+                "LiDAR-map alignment produced a verified pose candidate",
+                details=result,
+            )
+        return result
+
     @app.put(
         "/api/robots/{robot_id}/localization/initial-pose",
         status_code=202,
@@ -196,6 +261,33 @@ def create_app(
         _require_free_map_pose(map_registry, robot_id, request.x, request.y)
         _require_online_and_no_error(robot)
         _require_no_active_goal(robot)
+        if scan_registry is not None:
+            occupancy_map, scan = _alignment_inputs(
+                map_registry,
+                scan_registry,
+                robot_id,
+            )
+            try:
+                alignment = await run_in_threadpool(
+                    score_pose_alignment,
+                    occupancy_map,
+                    scan,
+                    request.x,
+                    request.y,
+                    request.yaw,
+                )
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+            if not alignment_is_acceptable(alignment):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Initial pose does not align with the current LiDAR "
+                        f"(match {alignment['matched_ratio']:.0%}, "
+                        f"inside {alignment['inside_ratio']:.0%}); "
+                        "run LiDAR auto alignment first"
+                    ),
+                )
         if navigation_controller is None:
             raise HTTPException(
                 status_code=503,
@@ -231,6 +323,7 @@ def create_app(
         _validate_pose_request(request)
         _require_free_map_pose(map_registry, robot_id, request.x, request.y)
         _require_goal_ready(robot, request.confirm_warnings)
+        _require_free_current_pose(map_registry, robot_id, robot)
         if navigation_controller is None:
             raise HTTPException(
                 status_code=503,
@@ -321,6 +414,7 @@ def create_app(
             target["y"],
         )
         _require_goal_ready(robot, task["confirm_warnings"])
+        _require_free_current_pose(map_registry, task["robot_id"], robot)
         manager = _task_manager_or_503(task_manager)
         try:
             result = await run_in_threadpool(manager.run, task_id)
@@ -412,6 +506,7 @@ def create_app(
             "app.js",
             "map_math.js",
             "map_viewport.js",
+            "robot_display.js",
             "styles.css",
         }
 
@@ -511,6 +606,52 @@ def _require_free_map_pose(
         return
     status_code = 503 if detail == "Map is unavailable" else 422
     raise HTTPException(status_code=status_code, detail=detail)
+
+
+def _require_free_current_pose(
+    registry: Optional[MapRegistry],
+    robot_id: str,
+    robot: Dict[str, Any],
+) -> None:
+    navigation = robot.get("navigation") or {}
+    current = navigation.get("current") or {}
+    if current.get("frame_id") != "map":
+        raise HTTPException(
+            status_code=409,
+            detail="Current localization is not available in map frame",
+        )
+    if registry is None:
+        raise HTTPException(status_code=503, detail="Map registry unavailable")
+    valid, detail = registry.validate_pose(
+        robot_id,
+        float(current.get("x", math.nan)),
+        float(current.get("y", math.nan)),
+    )
+    if not valid:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Current localization is unsafe: {detail}",
+        )
+
+
+def _alignment_inputs(
+    map_registry: Optional[MapRegistry],
+    scan_registry: Optional[ScanRegistry],
+    robot_id: str,
+) -> tuple:
+    if map_registry is None:
+        raise HTTPException(status_code=503, detail="Map registry unavailable")
+    if scan_registry is None:
+        raise HTTPException(status_code=503, detail="LiDAR registry unavailable")
+    occupancy_map = map_registry.get(robot_id)
+    scan = scan_registry.get(robot_id)
+    if occupancy_map is None:
+        raise HTTPException(status_code=503, detail="Map is unavailable")
+    if scan is None:
+        raise HTTPException(status_code=503, detail="LiDAR scan unavailable")
+    if not scan.get("fresh", False):
+        raise HTTPException(status_code=409, detail="LiDAR scan is stale")
+    return occupancy_map, scan
 
 
 def _require_controller_success(result: Dict[str, Any]) -> Dict[str, Any]:

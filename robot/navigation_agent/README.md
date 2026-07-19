@@ -63,7 +63,10 @@ ros2 run turtlebot3_teleop teleop_keyboard \
 
 저장소의 `config/tb1_nav2_rewrites.yaml`이 TurtleBot3 Humble Burger 기준 설정 위에
 적용된다. Nav2의 DWB와 recovery 회전 상한은 각각 `0.05 m/s`, `0.3 rad/s`로 다시 쓰며,
-watchdog도 같은 상한을 독립적으로 강제한다.
+watchdog도 같은 상한을 독립적으로 강제한다. 5 cm/cell 저장 지도와 저속 운전에 맞춰
+AMCL은 5 cm 또는 0.05 rad 이동마다 갱신하고, 웹 목표 허용 오차는 위치 10 cm와 방향
+0.15 rad로 고정한다. 따라서 TurtleBot3 기본 위치 허용 오차 25 cm 때문에 짧은 목표가
+실제 이동 없이 성공하는 것을 막는다.
 
 운영 및 실차 검증은
 [TB1 매핑·Nav2 운영 절차](../../docs/setup/tb1-navigation.md)를 따른다.

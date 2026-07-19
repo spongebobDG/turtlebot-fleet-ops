@@ -249,6 +249,7 @@ class NavigationAgent(Node):
             "goal_max_duration_sec": 180.0,
             "goal_distance_progress_m": 0.05,
             "goal_yaw_progress_rad": 0.1,
+            "navigation_min_clearance_m": 0.19,
             "robot_status_timeout_sec": 3.0,
             "safety_status_timeout_sec": 1.5,
             "authorization_rate_hz": 10.0,
@@ -298,6 +299,9 @@ class NavigationAgent(Node):
         self._goal_yaw_progress_rad = float(
             self.get_parameter("goal_yaw_progress_rad").value
         )
+        self._navigation_min_clearance_m = float(
+            self.get_parameter("navigation_min_clearance_m").value
+        )
         self._robot_status_timeout_sec = float(
             self.get_parameter("robot_status_timeout_sec").value
         )
@@ -344,6 +348,10 @@ class NavigationAgent(Node):
             ("goal_max_duration_sec", self._goal_max_duration_sec),
             ("goal_distance_progress_m", self._goal_distance_progress_m),
             ("goal_yaw_progress_rad", self._goal_yaw_progress_rad),
+            (
+                "navigation_min_clearance_m",
+                self._navigation_min_clearance_m,
+            ),
             ("robot_status_timeout_sec", self._robot_status_timeout_sec),
             ("safety_status_timeout_sec", self._safety_status_timeout_sec),
             ("authorization_rate_hz", self._authorization_rate_hz),
@@ -416,6 +424,8 @@ class NavigationAgent(Node):
                 and self._active_command_id
             ):
                 self._request_stop("Robot status entered ERROR")
+            elif self._active_command_id and not self._scan_clearance_ready():
+                self._request_stop(self._scan_clearance_failure())
 
     def _on_safety_status(self, message: SafetyStatus) -> None:
         if message.robot_id != self._robot_id:
@@ -719,6 +729,14 @@ class NavigationAgent(Node):
             if not self._robot_ready(now):
                 self._request_stop("Robot status became unavailable or stale")
                 return
+            if not self._scan_clearance_ready():
+                self._request_stop(self._scan_clearance_failure())
+                return
+            if not self._pose_is_valid_and_free(self._current_pose.pose):
+                self._request_stop(
+                    "Current localization left the known free map"
+                )
+                return
             if not self._localization_ready(now):
                 self._request_stop("Localization became unavailable or stale")
                 return
@@ -833,9 +851,18 @@ class NavigationAgent(Node):
                 if nav2_ready and localization_ready and safety_ready and robot_ready:
                     self._state = NavigationStatus.STATE_READY
                     self._message = "Navigation ready"
-                elif nav2_ready and self._initial_pose_sent_at is not None:
+                elif (
+                    nav2_ready
+                    and self._initial_pose_sent_at is not None
+                    and not localization_ready
+                ):
                     self._state = NavigationStatus.STATE_LOCALIZING
                     self._message = "Waiting for a fresh AMCL pose"
+                elif nav2_ready and localization_ready and robot_ready:
+                    self._state = NavigationStatus.STATE_IDLE
+                    self._message = (
+                        "Localization ready; waiting for motion safety rearm"
+                    )
                 elif nav2_ready and safety_ready and robot_ready:
                     self._state = NavigationStatus.STATE_IDLE
                     self._message = "Set the initial pose to enable navigation"
@@ -1004,6 +1031,10 @@ class NavigationAgent(Node):
             return False
         if self._robot_status is None:
             return False
+        if not self._scan_clearance_ready():
+            return False
+        if not self._pose_is_valid_and_free(self._current_pose.pose):
+            return False
         if self._robot_status.level == RobotStatus.LEVEL_ERROR:
             return False
         if (
@@ -1012,6 +1043,30 @@ class NavigationAgent(Node):
         ):
             return False
         return True
+
+    def _scan_clearance_ready(self) -> bool:
+        status = self._robot_status
+        return bool(
+            status is not None
+            and status.scan_received
+            and status.scan_fresh
+            and status.scan_valid
+            and math.isfinite(float(status.scan_min_range))
+            and float(status.scan_min_range)
+            >= self._navigation_min_clearance_m
+        )
+
+    def _scan_clearance_failure(self) -> str:
+        status = self._robot_status
+        if status is None or not (
+            status.scan_received and status.scan_fresh and status.scan_valid
+        ):
+            return "LiDAR scan is unavailable, stale, or invalid"
+        return (
+            "LiDAR clearance fell below navigation limit "
+            f"({float(status.scan_min_range):.3f}m < "
+            f"{self._navigation_min_clearance_m:.3f}m)"
+        )
 
     def _nav2_is_ready(self) -> bool:
         return (
@@ -1060,8 +1115,19 @@ class NavigationAgent(Node):
 
     def shutdown(self) -> None:
         """Fail closed before executor shutdown."""
-        self._publish_authorization(force=False)
-        self._set_motion_mode_nowait(MODE_IDLE)
+        # rclpy's SIGTERM handler may invalidate the default context before
+        # executor.spin() returns.  The independent watchdog guard has already
+        # closed motion when authorization stops, so do not publish through
+        # invalid ROS entities merely to repeat the fail-closed transition.
+        if not self.context.ok():
+            return
+        try:
+            self._publish_authorization(force=False)
+            self._set_motion_mode_nowait(MODE_IDLE)
+        except RuntimeError:
+            # The context can close between the check and the publish when a
+            # launch process is stopping all children concurrently.
+            return
 
 
 def main(args=None) -> None:
@@ -1074,9 +1140,25 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        node.shutdown()
-        executor.remove_node(node)
-        node.destroy_node()
-        executor.shutdown()
+        _cleanup_navigation_agent(node, executor)
+
+
+def _cleanup_navigation_agent(node, executor) -> None:
+    """Best-effort cleanup after launch has delivered SIGINT to all children."""
+    for cleanup in (
+        node.shutdown,
+        lambda: executor.remove_node(node),
+        node.destroy_node,
+        executor.shutdown,
+    ):
+        try:
+            cleanup()
+        except (KeyboardInterrupt, RuntimeError):
+            # rclpy may interrupt or invalidate the context between any two
+            # cleanup calls when ros2 launch stops all processes together.
+            continue
+    try:
         if rclpy.ok():
             rclpy.shutdown()
+    except (KeyboardInterrupt, RuntimeError):
+        pass

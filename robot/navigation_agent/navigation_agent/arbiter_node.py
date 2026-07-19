@@ -163,6 +163,15 @@ class MotionArbiter(Node):
         message.angular.z = angular_z
         self._publisher.publish(message)
 
+    def shutdown(self) -> None:
+        """Publish a final zero only while this node context is valid."""
+        if not self.context.ok():
+            return
+        try:
+            self._publish(*ZERO_COMMAND)
+        except RuntimeError:
+            return
+
 
 def main(args=None) -> None:
     rclpy.init(args=args)
@@ -172,7 +181,16 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        node._publish(*ZERO_COMMAND)
-        node.destroy_node()
+        node.shutdown()
+        try:
+            if node.context.ok():
+                node.destroy_node()
+        except (KeyboardInterrupt, RuntimeError):
+            # ros2 launch can deliver its stop signal while rclpy is waiting
+            # for an entity to finish destruction.
+            pass
         if rclpy.ok():
-            rclpy.shutdown()
+            try:
+                rclpy.shutdown()
+            except RuntimeError:
+                pass

@@ -307,6 +307,7 @@ input {
   margin-top: 5px;
 }
 .map-meta { color: #bed1cb; white-space: nowrap; }
+.scan-meta { color: #ff7b9b; text-align: right; }
 .map-legend {
   display: flex;
   gap: 10px;
@@ -319,6 +320,10 @@ input {
 .map-legend .current { background: #44b9ff; }
 .map-legend .active-target { background: #ffd166; }
 .map-legend .candidate { background: #58e0ae; }
+.map-legend .lidar {
+  background: #ff5277;
+  box-shadow: 0 0 0 2px rgba(255, 82, 119, 0.18);
+}
 .map-readout {
   position: absolute;
   left: 7px;
@@ -354,6 +359,11 @@ input {
   line-height: 1.25;
 }
 .pose-fields { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.alignment-tools { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); align-items: center; gap: 6px; }
+.alignment-tools[hidden] { display: none; }
+.alignment-tools button { padding: 7px 6px; font-size: 0.61rem; }
+.alignment-tools p { color: var(--muted); font-size: 0.57rem; line-height: 1.25; }
+.alignment-tools p.accepted { color: var(--mint); }
 .navigation-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .navigation-metrics div { min-width: 0; padding: 7px; background: rgba(255, 255, 255, 0.022); border: 1px solid var(--border); border-radius: 8px; }
 .navigation-metrics span { display: block; color: var(--muted); font-size: 0.58rem; }

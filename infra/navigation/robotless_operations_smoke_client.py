@@ -89,6 +89,22 @@ def wait_robot_ready(localized: bool, timeout_sec: float = 5.0) -> None:
     raise AssertionError(f"mock robot did not become ready: {latest}")
 
 
+def wait_lidar_scan(timeout_sec: float = 5.0) -> None:
+    """Wait for the mock to publish real scan geometry to the Gateway."""
+    deadline = time.monotonic() + timeout_sec
+    latest = {}
+    while time.monotonic() < deadline:
+        try:
+            latest = request_json("/api/robots/tb1/scan")
+        except AssertionError:
+            time.sleep(0.1)
+            continue
+        if latest.get("fresh") is True and latest.get("valid_points", 0) >= 40:
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"mock LiDAR scan did not become ready: {latest}")
+
+
 def wait_no_active_goal(timeout_sec: float = 5.0) -> None:
     """Wait for the robot status stream to confirm cancellation completion."""
     deadline = time.monotonic() + timeout_sec
@@ -106,6 +122,7 @@ def main() -> None:
     """Run success, cancel, failure, retry, fault and audit scenarios."""
     request_json("/api/robots/tb1/estop", "POST", {"engaged": False})
     wait_robot_ready(localized=False)
+    wait_lidar_scan()
     request_json(
         "/api/robots/tb1/localization/initial-pose",
         "PUT",

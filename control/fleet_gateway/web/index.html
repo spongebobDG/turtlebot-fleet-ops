@@ -85,11 +85,13 @@
               <output class="map-readout" id="map-readout">커서를 지도 위에 올리세요.</output>
             </div>
             <div class="map-help-row">
-              <p class="map-help">클릭·드래그: 위치·방향 · 휠: 확대 · Shift+드래그: 이동</p>
+              <p class="map-help">클릭 원=로봇 중심 · 드래그 끝 삼각형=로봇 앞 · 휠: 확대 · Shift+드래그: 이동</p>
               <p class="map-meta" id="map-meta">지도 정보 없음</p>
             </div>
+            <p class="map-meta scan-meta" id="scan-meta">LiDAR 대기</p>
             <div class="map-legend" aria-label="지도 표시 범례">
-              <span><i class="current"></i>현재 위치</span>
+              <span><i class="lidar"></i>실시간 LiDAR</span>
+              <span><i class="current"></i>현재 위치·앞방향</span>
               <span><i class="active-target"></i>활성 목표</span>
               <span><i class="candidate"></i>전송 후보</span>
             </div>
@@ -105,6 +107,10 @@
               <label>X (m)<input id="pose-x" type="number" step="0.01" placeholder="지도에서 선택"></label>
               <label>Y (m)<input id="pose-y" type="number" step="0.01" placeholder="지도에서 선택"></label>
               <label>Yaw<input id="pose-yaw" type="number" step="0.01" placeholder="드래그로 지정"></label>
+            </div>
+            <div class="alignment-tools" id="alignment-tools" hidden>
+              <button class="secondary" id="align-initial-pose" type="button" disabled>LiDAR 자동 정렬</button>
+              <p id="alignment-meta">대략 위치를 선택해 자동 정렬하세요.</p>
             </div>
             <div class="navigation-metrics">
               <div><span>남은 거리</span><strong id="distance-remaining">—</strong></div>
@@ -176,6 +182,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="/static/map_math.js" defer></script>
     <script src="/static/map_viewport.js" defer></script>
-    <script src="/static/app.js" defer></script>
+    <script src="/static/robot_display.js?v=map-frame-1" defer></script>
+    <script src="/static/app.js?v=map-frame-1" defer></script>
   </body>
 </html>

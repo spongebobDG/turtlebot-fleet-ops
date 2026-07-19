@@ -24,6 +24,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import LaserScan
 from std_srvs.srv import SetBool
 
 
@@ -40,6 +41,30 @@ def interpolate_pose(
     """Linearly interpolate a planar pose for mock feedback."""
     ratio = max(0.0, min(1.0, float(progress)))
     return tuple(begin + (end - begin) * ratio for begin, end in zip(start, target))
+
+
+def square_room_scan_ranges(
+    pose: Tuple[float, float, float],
+    sample_count: int = 360,
+    wall_coordinate: float = 1.975,
+) -> List[float]:
+    """Ray-cast an ideal local scan against the mock map boundary."""
+    x_value, y_value, yaw = pose
+    ranges = []
+    increment = 2.0 * math.pi / max(1, sample_count - 1)
+    for index in range(sample_count):
+        angle = yaw - math.pi + index * increment
+        direction_x = math.cos(angle)
+        direction_y = math.sin(angle)
+        candidates = []
+        if abs(direction_x) > 1.0e-12:
+            wall_x = wall_coordinate if direction_x > 0.0 else -wall_coordinate
+            candidates.append((wall_x - x_value) / direction_x)
+        if abs(direction_y) > 1.0e-12:
+            wall_y = wall_coordinate if direction_y > 0.0 else -wall_coordinate
+            candidates.append((wall_y - y_value) / direction_y)
+        ranges.append(min(value for value in candidates if value > 0.0))
+    return ranges
 
 
 def _yaw(z_value: float, w_value: float) -> float:
@@ -107,6 +132,11 @@ class MockRobotNode(Node):
             OccupancyGrid,
             "/map",
             latched_qos,
+        )
+        self._scan_publisher = self.create_publisher(
+            LaserScan,
+            "/scan",
+            10,
         )
         self.create_subscription(
             NavigationLease,
@@ -321,7 +351,15 @@ class MockRobotNode(Node):
         message.info.origin.position.x = -2.0
         message.info.origin.position.y = -2.0
         message.info.origin.orientation.w = 1.0
-        message.data = [0] * (message.info.width * message.info.height)
+        width = int(message.info.width)
+        height = int(message.info.height)
+        message.data = [
+            100
+            if row in (0, height - 1) or column in (0, width - 1)
+            else 0
+            for row in range(height)
+            for column in range(width)
+        ]
         self._map_publisher.publish(message)
 
     def _publish_state(self) -> None:
@@ -342,6 +380,19 @@ class MockRobotNode(Node):
                 if command and self._lease_command == command
                 else math.nan
             )
+
+        scan_ranges = square_room_scan_ranges(pose)
+        scan = LaserScan()
+        scan.header.stamp = stamp
+        scan.header.frame_id = "base_scan"
+        scan.angle_min = -math.pi
+        scan.angle_max = math.pi
+        scan.angle_increment = 2.0 * math.pi / 359.0
+        scan.scan_time = 0.2
+        scan.range_min = 0.12
+        scan.range_max = 3.5
+        scan.ranges = scan_ranges
+        self._scan_publisher.publish(scan)
 
         robot = RobotStatus()
         robot.header.stamp = stamp
@@ -365,7 +416,7 @@ class MockRobotNode(Node):
         robot.scan_valid = True
         robot.scan_last_received = stamp
         robot.scan_valid_points = 360
-        robot.scan_min_range = 1.0
+        robot.scan_min_range = min(scan_ranges)
         robot.cpu_percent = 18.0
         robot.memory_percent = 24.0
         robot.disk_percent = 31.0

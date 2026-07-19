@@ -246,18 +246,36 @@ def build_dataset(
     records: Sequence[LogRecord],
     window_sec: float = 60.0,
     created_at: Optional[str] = None,
+    since_timestamp: Optional[float] = None,
+    until_timestamp: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Build immutable time-window rows and a content-addressed manifest."""
     if not math.isfinite(window_sec) or window_sec <= 0:
         raise ValueError("window_sec must be positive and finite")
-    ordered = sorted(
-        (
-            record
-            for record in records
-            if math.isfinite(record.timestamp) and record.timestamp > 0
-        ),
-        key=lambda record: record.timestamp,
-    )
+    for name, value in (
+        ("since_timestamp", since_timestamp),
+        ("until_timestamp", until_timestamp),
+    ):
+        if value is not None and (not math.isfinite(value) or value <= 0):
+            raise ValueError(f"{name} must be positive and finite")
+    if (
+        since_timestamp is not None
+        and until_timestamp is not None
+        and since_timestamp >= until_timestamp
+    ):
+        raise ValueError("since_timestamp must be earlier than until_timestamp")
+    valid_records = [
+        record
+        for record in records
+        if math.isfinite(record.timestamp) and record.timestamp > 0
+    ]
+    selected_records = [
+        record
+        for record in valid_records
+        if (since_timestamp is None or record.timestamp >= since_timestamp)
+        and (until_timestamp is None or record.timestamp < until_timestamp)
+    ]
+    ordered = sorted(selected_records, key=lambda record: record.timestamp)
     buckets: Dict[int, List[LogRecord]] = {}
     for record in ordered:
         bucket = math.floor(record.timestamp / window_sec)
@@ -279,7 +297,10 @@ def build_dataset(
         "window_sec": float(window_sec),
         "feature_names": list(FEATURE_NAMES),
         "record_count": len(ordered),
-        "discarded_record_count": len(records) - len(ordered),
+        "discarded_record_count": len(records) - len(valid_records),
+        "excluded_outside_range_count": len(valid_records) - len(ordered),
+        "since_timestamp": since_timestamp,
+        "until_timestamp": until_timestamp,
         "rows": rows,
     }
     payload["dataset_hash"] = content_hash(payload)
@@ -315,6 +336,9 @@ def train_model(
     sample_count = len(rows)
     record_count = int(dataset.get("record_count", 0))
     discarded_record_count = int(dataset.get("discarded_record_count", 0))
+    excluded_outside_range_count = int(
+        dataset.get("excluded_outside_range_count", 0)
+    )
     gate_passed = sample_count >= 5 and record_count >= 20
     warnings = []
     if discarded_record_count:
@@ -345,6 +369,7 @@ def train_model(
             "sample_count": sample_count,
             "record_count": record_count,
             "discarded_record_count": discarded_record_count,
+            "excluded_outside_range_count": excluded_outside_range_count,
             "minimum_sample_count": 5,
             "minimum_record_count": 20,
             "calibration_p99_score": calibration,
@@ -544,6 +569,44 @@ def read_jsonl(path: Path) -> List[LogRecord]:
     return records
 
 
+def replay_jsonl_range(
+    raw_inputs: Sequence[Path],
+    model: Mapping[str, Any],
+    since_timestamp: float,
+    until_timestamp: float,
+) -> Dict[str, Any]:
+    """Evaluate one immutable JSONL time range without changing live status."""
+    since = float(since_timestamp)
+    until = float(until_timestamp)
+    if not math.isfinite(since) or not math.isfinite(until) or since > until:
+        raise ValueError("replay time range must be finite and ordered")
+
+    selected = []
+    excluded_outside_range = 0
+    excluded_invalid_timestamp = 0
+    for raw_input in raw_inputs:
+        for record in read_jsonl(raw_input):
+            timestamp = float(record.timestamp)
+            if not math.isfinite(timestamp) or timestamp <= 0.0:
+                excluded_invalid_timestamp += 1
+                continue
+            if timestamp < since or timestamp > until:
+                excluded_outside_range += 1
+                continue
+            selected.append(record)
+    selected.sort(key=lambda item: item.timestamp)
+
+    status = analyze_records(selected, model)
+    status["replay"] = {
+        "since_timestamp": since,
+        "until_timestamp": until,
+        "record_count": len(selected),
+        "excluded_outside_range_count": excluded_outside_range,
+        "excluded_invalid_timestamp_count": excluded_invalid_timestamp,
+    }
+    return status
+
+
 def read_recent_jsonl(
     paths: Iterable[Path],
     cutoff_timestamp: float,
@@ -636,7 +699,12 @@ def run_command(arguments: Namespace) -> int:
         records = []
         for raw_input in arguments.input:
             records.extend(read_jsonl(Path(raw_input).expanduser()))
-        dataset = build_dataset(records, arguments.window_sec)
+        dataset = build_dataset(
+            records,
+            arguments.window_sec,
+            since_timestamp=arguments.since_epoch,
+            until_timestamp=arguments.until_epoch,
+        )
         target = paths["datasets"] / f"{_artifact_name('dataset')}.json"
         write_json(target, dataset)
         print(target)
@@ -651,6 +719,22 @@ def run_command(arguments: Namespace) -> int:
     if arguments.command == "promote":
         model = promote_model(root, Path(arguments.input).expanduser())
         print(f"{paths['production']} {model['model_id']}")
+        return 0
+    if arguments.command == "replay":
+        model_path = (
+            Path(arguments.model).expanduser()
+            if arguments.model
+            else paths["production"]
+        )
+        if not model_path.is_file():
+            raise ValueError("Production model is unavailable for replay")
+        status = replay_jsonl_range(
+            [Path(item).expanduser() for item in arguments.input],
+            read_json(model_path),
+            arguments.since_epoch,
+            arguments.until_epoch,
+        )
+        print(json.dumps(status, ensure_ascii=False, sort_keys=True))
         return 0
     if arguments.command in {"analyze", "monitor"}:
         interval = arguments.interval if arguments.command == "monitor" else None
@@ -694,10 +778,17 @@ def build_parser() -> ArgumentParser:
     dataset = subparsers.add_parser("build-dataset")
     dataset.add_argument("--input", required=True, action="append")
     dataset.add_argument("--window-sec", type=float, default=60.0)
+    dataset.add_argument("--since-epoch", type=float)
+    dataset.add_argument("--until-epoch", type=float)
     train = subparsers.add_parser("train")
     train.add_argument("--input", required=True)
     promote = subparsers.add_parser("promote")
     promote.add_argument("--input", required=True)
+    replay = subparsers.add_parser("replay")
+    replay.add_argument("--input", required=True, action="append")
+    replay.add_argument("--since-epoch", required=True, type=float)
+    replay.add_argument("--until-epoch", required=True, type=float)
+    replay.add_argument("--model")
     for name in ("analyze", "monitor"):
         command = subparsers.add_parser(name)
         command.add_argument("--since", default="5 minutes ago")

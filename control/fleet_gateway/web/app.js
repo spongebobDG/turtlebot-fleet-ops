@@ -9,6 +9,7 @@ const mapCanvas = document.querySelector("#map-canvas");
 const mapPlaceholder = document.querySelector("#map-placeholder");
 const mapReadout = document.querySelector("#map-readout");
 const mapMeta = document.querySelector("#map-meta");
+const scanMeta = document.querySelector("#scan-meta");
 const mapZoomOut = document.querySelector("#map-zoom-out");
 const mapZoomIn = document.querySelector("#map-zoom-in");
 const mapZoomLabel = document.querySelector("#map-zoom-label");
@@ -19,6 +20,9 @@ const cancelNavigation = document.querySelector("#cancel-navigation");
 const poseX = document.querySelector("#pose-x");
 const poseY = document.querySelector("#pose-y");
 const poseYaw = document.querySelector("#pose-yaw");
+const alignmentTools = document.querySelector("#alignment-tools");
+const alignInitialPose = document.querySelector("#align-initial-pose");
+const alignmentMeta = document.querySelector("#alignment-meta");
 const navigationState = document.querySelector("#navigation-state");
 const navigationMessage = document.querySelector("#navigation-message");
 const distanceRemaining = document.querySelector("#distance-remaining");
@@ -36,13 +40,16 @@ const mlopsScore = document.querySelector("#mlops-score");
 const mlopsReasons = document.querySelector("#mlops-reasons");
 const mapMath = window.FleetMapMath;
 const viewportMath = window.FleetMapViewport;
+const robotDisplay = window.FleetRobotDisplay;
 
 let reconnectTimer;
 let robots = [];
 let currentMap = null;
+let currentScan = null;
 let currentMapRobot = "";
 let mapMode = "goal";
 let selectedPose = null;
+let poseAlignment = null;
 let dragStart = null;
 let panDrag = null;
 let mapBitmap = null;
@@ -85,6 +92,7 @@ const robotCard = (robot) => {
     ? escapeHtml(robot.fault_codes.join(" · "))
     : "활성 고장 없음";
   const navigation = robot.navigation || {};
+  const displayPose = robotDisplay.selectDisplayPose(robot);
   const activeGoal = Boolean(navigation.active_command_id);
   return `
     <article class="robot-card">
@@ -98,8 +106,8 @@ const robotCard = (robot) => {
       <div class="metrics">
         <div class="metric"><span>배터리</span><strong>${number(robot.battery?.percent, 1, "%")}</strong></div>
         <div class="metric"><span>전압</span><strong>${number(robot.battery?.voltage, 2, "V")}</strong></div>
-        <div class="metric"><span>위치 X / Y</span><strong>${number(robot.odom?.x, 2)} / ${number(robot.odom?.y, 2)}m</strong></div>
-        <div class="metric"><span>방향 Yaw</span><strong>${number(robot.odom?.yaw, 2, "rad")}</strong></div>
+        <div class="metric"><span>위치 X / Y (${escapeHtml(displayPose.frame_id)})</span><strong>${number(displayPose.x, 2)} / ${number(displayPose.y, 2)}m</strong></div>
+        <div class="metric"><span>방향 Yaw (${escapeHtml(displayPose.frame_id)})</span><strong>${number(displayPose.yaw, 2, "rad")}</strong></div>
         <div class="metric"><span>Nav2</span><strong>${escapeHtml(navigation.state || "UNAVAILABLE")}</strong></div>
         <div class="metric"><span>Safety</span><strong>${escapeHtml(robot.safety?.mode || "UNKNOWN")}</strong></div>
         <div class="metric"><span>최근 장애물</span><strong>${number(robot.scan?.min_range, 2, "m")}</strong></div>
@@ -183,8 +191,12 @@ const renderNavigation = () => {
     && !robot?.safety?.estop_active
     && robot?.safety?.motion_armed;
   applyMapCommand.textContent = mapMode === "initial" ? "초기 위치 적용" : "목적지 전송";
+  alignmentTools.hidden = mapMode !== "initial";
+  alignInitialPose.disabled = mapMode !== "initial"
+    || !validCandidate
+    || !currentScan?.fresh;
   applyMapCommand.disabled = !validCandidate
-    || (mapMode === "initial" ? !commonReady : !goalReady);
+    || (mapMode === "initial" ? !commonReady || !poseAlignment?.acceptable : !goalReady);
   cancelNavigation.disabled = !activeGoal;
   createTaskButton.disabled = mapMode !== "goal" || !commonReady || !validCandidate;
   drawMap();
@@ -192,13 +204,19 @@ const renderNavigation = () => {
 
 const resetPoseSelection = () => {
   selectedPose = null;
+  poseAlignment = null;
   dragStart = null;
   poseX.value = "";
   poseY.value = "";
   poseYaw.value = "";
+  alignmentMeta.textContent = "대략 위치를 선택해 자동 정렬하세요.";
+  alignmentMeta.classList.remove("accepted");
 };
 
 const syncPoseSelectionFromFields = () => {
+  poseAlignment = null;
+  alignmentMeta.textContent = "LiDAR 자동 정렬이 필요합니다.";
+  alignmentMeta.classList.remove("accepted");
   const raw = [poseX.value, poseY.value, poseYaw.value];
   if (raw.some((value) => value.trim() === "")) {
     selectedPose = null;
@@ -220,6 +238,7 @@ const syncPoseSelectionFromFields = () => {
 const loadMap = async () => {
   const robotId = robotSelect.value;
   currentMap = null;
+  currentScan = null;
   mapBitmap = null;
   mapViewport = null;
   resetPoseSelection();
@@ -241,9 +260,27 @@ const loadMap = async () => {
     mapFrame.classList.add("loaded");
     drawMap();
     renderNavigation();
+    loadScan();
   } catch (error) {
     mapPlaceholder.textContent = error.message;
   }
+};
+
+const loadScan = async () => {
+  const robotId = robotSelect.value;
+  if (!robotId || currentMapRobot !== robotId) return;
+  try {
+    const response = await fetch(`/api/robots/${encodeURIComponent(robotId)}/scan`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "LiDAR scan unavailable");
+    currentScan = body;
+    const coverage = Number(body.coverage_ratio) * 100;
+    scanMeta.textContent = `LiDAR ${body.valid_points} pts · ${coverage.toFixed(0)}% span · ${number(body.age_sec, 2, "s")}`;
+  } catch (error) {
+    currentScan = null;
+    scanMeta.textContent = `LiDAR: ${error.message}`;
+  }
+  drawMap();
 };
 
 const buildMapBitmap = (map) => {
@@ -320,6 +357,7 @@ const drawMap = () => {
   );
   drawCellGrid(context);
   const robot = selectedRobot();
+  drawScanOverlay(context, robot);
   if (robot?.navigation?.current?.frame_id === "map") {
     drawArrow(context, robot.navigation.current, "#44b9ff");
   }
@@ -337,6 +375,32 @@ const drawMap = () => {
       mapMode === "initial" ? "초기 위치 후보" : "목적지 후보",
     );
   }
+};
+
+const drawScanOverlay = (context, robot) => {
+  if (!currentScan?.fresh || !Array.isArray(currentScan.points)) return;
+  const currentPose = robot?.navigation?.current;
+  const pose = mapMode === "initial" && selectedPose
+    ? selectedPose
+    : currentPose?.frame_id === "map" ? currentPose : null;
+  if (!pose) return;
+  const cosine = Math.cos(pose.yaw);
+  const sine = Math.sin(pose.yaw);
+  context.save();
+  context.fillStyle = "rgba(255, 82, 119, 0.92)";
+  for (const point of currentScan.points) {
+    if (!Array.isArray(point) || point.length !== 2) continue;
+    const localX = Number(point[0]);
+    const localY = Number(point[1]);
+    if (!Number.isFinite(localX) || !Number.isFinite(localY)) continue;
+    const worldX = pose.x + cosine * localX - sine * localY;
+    const worldY = pose.y + sine * localX + cosine * localY;
+    const screen = worldToScreen(worldX, worldY);
+    context.beginPath();
+    context.arc(screen.x, screen.y, 1.8, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.restore();
 };
 
 const drawCellGrid = (context) => {
@@ -377,6 +441,21 @@ const drawArrow = (context, pose, color, label = "") => {
   context.moveTo(start.x, start.y);
   context.lineTo(end.x, end.y);
   context.stroke();
+  const screenYaw = Math.atan2(end.y - start.y, end.x - start.x);
+  const headLength = 9;
+  const headWidth = 5;
+  context.beginPath();
+  context.moveTo(end.x, end.y);
+  context.lineTo(
+    end.x - Math.cos(screenYaw) * headLength + Math.sin(screenYaw) * headWidth,
+    end.y - Math.sin(screenYaw) * headLength - Math.cos(screenYaw) * headWidth,
+  );
+  context.lineTo(
+    end.x - Math.cos(screenYaw) * headLength - Math.sin(screenYaw) * headWidth,
+    end.y - Math.sin(screenYaw) * headLength + Math.cos(screenYaw) * headWidth,
+  );
+  context.closePath();
+  context.fill();
   if (label) {
     context.font = "700 10px system-ui, sans-serif";
     context.textBaseline = "bottom";
@@ -388,11 +467,6 @@ const drawArrow = (context, pose, color, label = "") => {
 const worldToScreen = (x, y) => {
   const mapPoint = mapMath.worldToCanvas(currentMap, x, y);
   return viewportMath.mapToScreen(mapViewport, mapPoint.x, mapPoint.y);
-};
-
-const screenToWorld = (x, y, clampToMap = false) => {
-  const mapPoint = viewportMath.screenToMap(mapViewport, x, y, clampToMap);
-  return mapPoint ? mapMath.canvasToWorld(currentMap, mapPoint.x, mapPoint.y) : null;
 };
 
 const screenCoordinates = (event) => {
@@ -450,6 +524,9 @@ mapCanvas.addEventListener("pointerdown", (event) => {
     return;
   }
   dragStart = cell.center;
+  poseAlignment = null;
+  alignmentMeta.textContent = "LiDAR 자동 정렬이 필요합니다.";
+  alignmentMeta.classList.remove("accepted");
   selectedPose = { ...dragStart, yaw: Number(poseYaw.value) || 0 };
   poseX.value = selectedPose.x.toFixed(3);
   poseY.value = selectedPose.y.toFixed(3);
@@ -467,10 +544,27 @@ mapCanvas.addEventListener("pointermove", (event) => {
     return;
   }
   if (!dragStart || !mapCanvas.hasPointerCapture(event.pointerId)) return;
-  const end = screenToWorld(point.x, point.y, true);
+  const startMapPoint = mapMath.worldToCanvas(
+    currentMap,
+    dragStart.x,
+    dragStart.y,
+  );
+  const endMapPoint = viewportMath.screenToMap(
+    mapViewport,
+    point.x,
+    point.y,
+    true,
+  );
+  const dragYaw = mapMath.yawFromCanvasDrag(
+    currentMap,
+    startMapPoint.x,
+    startMapPoint.y,
+    endMapPoint.x,
+    endMapPoint.y,
+  );
   selectedPose = {
     ...dragStart,
-    yaw: Math.atan2(end.y - dragStart.y, end.x - dragStart.x),
+    yaw: dragYaw ?? selectedPose?.yaw ?? 0,
   };
   poseX.value = selectedPose.x.toFixed(3);
   poseY.value = selectedPose.y.toFixed(3);
@@ -553,6 +647,41 @@ document.querySelectorAll("button[data-map-mode]").forEach((button) => {
 
 [poseX, poseY, poseYaw].forEach((input) => {
   input.addEventListener("input", syncPoseSelectionFromFields);
+});
+
+alignInitialPose.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  const seed = selectedPose ? { ...selectedPose } : null;
+  if (!robot || !seed || !currentScan?.fresh) return;
+  alignInitialPose.disabled = true;
+  alignmentMeta.textContent = "LiDAR와 지도 전체를 비교하는 중입니다.";
+  alignmentMeta.classList.remove("accepted");
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robot.robot_id)}/localization/align-pose`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(seed),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "LiDAR 자동 정렬 실패");
+    selectedPose = { ...body.pose };
+    poseAlignment = body;
+    poseX.value = selectedPose.x.toFixed(3);
+    poseY.value = selectedPose.y.toFixed(3);
+    poseYaw.value = selectedPose.yaw.toFixed(3);
+    alignmentMeta.textContent = `정렬 일치 ${(body.matched_ratio * 100).toFixed(0)}% · 지도 내부 ${(body.inside_ratio * 100).toFixed(0)}%`;
+    alignmentMeta.classList.add("accepted");
+    showToast("LiDAR-지도 보정 후보를 확보했습니다. 붉은 점을 확인한 뒤 적용하세요.");
+  } catch (error) {
+    poseAlignment = null;
+    alignmentMeta.textContent = error.message;
+    showToast(error.message, true);
+  } finally {
+    renderNavigation();
+  }
 });
 
 applyMapCommand.addEventListener("click", async () => {
@@ -834,3 +963,4 @@ const connect = () => {
 
 connect();
 window.setInterval(loadOperations, 3000);
+window.setInterval(loadScan, 400);

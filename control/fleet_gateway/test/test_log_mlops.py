@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,7 @@ from fleet_gateway.log_mlops import (
     pipeline_paths,
     promote_model,
     read_recent_jsonl,
+    replay_jsonl_range,
     run_command,
     score_features,
     status_from_path,
@@ -86,6 +88,30 @@ def test_dataset_discards_nonpositive_and_nonfinite_timestamps():
     assert dataset["record_count"] == 1
     assert dataset["discarded_record_count"] == 2
     assert len(dataset["rows"]) == 1
+
+
+def test_dataset_time_range_excludes_historical_incidents():
+    dataset = build_dataset(
+        [record(100), record(200), record(300), record(400)],
+        since_timestamp=200,
+        until_timestamp=400,
+    )
+
+    assert dataset["record_count"] == 2
+    assert dataset["discarded_record_count"] == 0
+    assert dataset["excluded_outside_range_count"] == 2
+    assert dataset["since_timestamp"] == 200
+    assert dataset["until_timestamp"] == 400
+
+    model = train_model(dataset)
+    assert model["quality"]["excluded_outside_range_count"] == 2
+
+
+def test_dataset_time_range_must_be_valid():
+    with pytest.raises(ValueError, match="positive and finite"):
+        build_dataset([record(1)], since_timestamp=0)
+    with pytest.raises(ValueError, match="earlier"):
+        build_dataset([record(1)], since_timestamp=20, until_timestamp=10)
 
 
 def test_training_gate_and_explainable_anomaly_score():
@@ -246,6 +272,79 @@ def test_dataset_cli_does_not_require_journal_only_arguments(
     assert run_command(arguments) == 0
     artifact = capsys.readouterr().out.strip()
     assert artifact.endswith(".json")
+
+
+def test_dataset_cli_applies_baseline_epoch(tmp_path, capsys):
+    raw_path = tmp_path / "raw.jsonl"
+    write_jsonl(raw_path, [record(100), record(200), record(300)])
+    arguments = build_parser().parse_args(
+        [
+            "--root",
+            str(tmp_path),
+            "build-dataset",
+            "--input",
+            str(raw_path),
+            "--since-epoch",
+            "200",
+        ]
+    )
+
+    assert run_command(arguments) == 0
+    artifact = Path(capsys.readouterr().out.strip())
+    dataset = json.loads(artifact.read_text(encoding="utf-8"))
+    assert dataset["record_count"] == 2
+    assert dataset["excluded_outside_range_count"] == 1
+
+
+def test_replay_cli_scores_an_immutable_error_range(tmp_path, capsys):
+    paths = pipeline_paths(tmp_path)
+    model = train_model(build_dataset(healthy_training_records(), 60.0))
+    model["stage"] = "production"
+    write_json(paths["production"], model)
+    raw_path = tmp_path / "raw.jsonl"
+    write_jsonl(
+        raw_path,
+        [
+            record(0),
+            record(100),
+            record(200, "ERROR", "controller timeout"),
+            record(201, "ERROR", "failed to make progress"),
+            record(300),
+        ],
+    )
+    arguments = build_parser().parse_args(
+        [
+            "--root",
+            str(tmp_path),
+            "replay",
+            "--input",
+            str(raw_path),
+            "--since-epoch",
+            "200",
+            "--until-epoch",
+            "201",
+        ]
+    )
+
+    assert run_command(arguments) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["state"] == "ANOMALY"
+    assert status["feature_values"]["error_rate"] == 1.0
+    assert status["replay"] == {
+        "since_timestamp": 200.0,
+        "until_timestamp": 201.0,
+        "record_count": 2,
+        "excluded_outside_range_count": 2,
+        "excluded_invalid_timestamp_count": 1,
+    }
+
+
+def test_replay_rejects_a_reversed_time_range(tmp_path):
+    raw_path = tmp_path / "raw.jsonl"
+    write_jsonl(raw_path, [record(100)])
+
+    with pytest.raises(ValueError, match="finite and ordered"):
+        replay_jsonl_range([raw_path], {}, 200, 100)
 
 
 def test_recent_jsonl_restore_survives_a_torn_last_record(tmp_path):
