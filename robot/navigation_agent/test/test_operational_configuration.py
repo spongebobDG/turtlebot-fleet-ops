@@ -46,6 +46,15 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "odom_topic: /odom" in nav2_rewrites
     assert "bt_loop_duration: 100" in nav2_rewrites
     assert "default_server_timeout: 2000" in nav2_rewrites
+    assert "controller_frequency: 5.0" in nav2_rewrites
+    assert "debug_trajectory_details: false" in nav2_rewrites
+    assert "vx_samples: 10" in nav2_rewrites
+    assert "vtheta_samples: 20" in nav2_rewrites
+    assert "sim_time: 1.0" in nav2_rewrites
+    assert "acc_lim_x: 0.08" in nav2_rewrites
+    assert "acc_lim_theta: 0.6" in nav2_rewrites
+    assert "decel_lim_x: -0.12" in nav2_rewrites
+    assert "decel_lim_theta: -0.8" in nav2_rewrites
     assert "update_min_d: 0.05" in nav2_rewrites
     assert "update_min_a: 0.05" in nav2_rewrites
     assert "robot_radius: 0.14" in nav2_rewrites

@@ -186,6 +186,18 @@ launch에서 behavior node에 `0.3`, `0.05`, `0.6`을 직접 적용하고, TB1 c
 응답 지연을 회복 실패로 오판하지 않도록 BT server acknowledgement timeout을 20 ms에서 2초로
 늘렸다. 이 변경은 2초 fleet lease, 0.5초 arbiter authorization, watchdog 정지 경계를 바꾸지 않는다.
 
+두 번째 4초 시험은 `ACTIVE -> CANCELED`, 취소 HTTP 202, recovery 0회로 끝났다. 최종 command는
+`0.3 rad/s` 이하, 관측 odometry 최대 각속도는 `0.278 rad/s`, LiDAR 최소 거리는 `0.308 m`였고
+취소 후 선속도·각속도는 사실상 0이었다. planner 지연이 spin recovery로 바뀌는 문제는 사라졌다.
+다만 controller가 10 Hz deadline을 여러 번 놓쳤고 e-stop 중에도 4코어 TB1의 load average가
+`7.06`이었다. 실제 DWB 설정은 `vx_samples=20`, `vtheta_samples=40`, trajectory debug 활성,
+가속도 `2.5/3.2`로 저속 운영에 비해 계산량과 raw 변화가 컸다.
+
+최대 `0.05 m/s`에서는 5 Hz 제어 tick 사이 이동이 최대 1 cm이므로 controller를 5 Hz로 낮추고
+DWB 표본을 `10 x 20`, 예측 시간을 1.0초로 줄였다. trajectory debug를 끄고 DWB 가속·감속을
+smoother의 `0.08/-0.12 m/s²`, `0.6/-0.8 rad/s²`와 맞췄다. 최종 20 Hz smoothing, 속도 상한,
+LiDAR clearance, authorization, watchdog은 유지한다.
+
 ## 배운 점
 
 “부드럽게 움직인다”는 요구는 단순히 timeout을 늘리는 문제가 아니었다. command 보간과

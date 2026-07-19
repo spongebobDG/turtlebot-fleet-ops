@@ -15,10 +15,14 @@ bt_loop_duration: 100
 # lease and watchdog deadlines unchanged, but allow Nav2 servers two seconds
 # to acknowledge before the tree starts a recovery behavior.
 default_server_timeout: 2000
-# The DWB controller remains at the proven 10 Hz CPU budget.  The dedicated
-# velocity smoother below interpolates each command at 20 Hz with bounded
-# acceleration, so the watchdog receives a continuous low-speed stream.
-controller_frequency: 10.0
+# TB1 missed the 10 Hz deadline while evaluating the Burger baseline's 800
+# DWB trajectories per tick. At 0.05 m/s, 5 Hz advances at most 1 cm per
+# control tick; the dedicated 20 Hz smoother still provides continuous output.
+controller_frequency: 5.0
+debug_trajectory_details: false
+vx_samples: 10
+vtheta_samples: 20
+sim_time: 1.0
 max_vel_x: 0.05
 max_speed_xy: 0.05
 max_vel_theta: 0.3
@@ -29,6 +33,10 @@ min_rotational_vel: 0.05
 # deadbands reached /cmd_vel but did not turn the wheels.
 min_speed_xy: 0.02
 min_speed_theta: 0.05
+acc_lim_x: 0.08
+acc_lim_theta: 0.6
+decel_lim_x: -0.12
+decel_lim_theta: -0.8
 trans_stopped_velocity: 0.01
 required_movement_radius: 0.1
 movement_time_allowance: 20.0

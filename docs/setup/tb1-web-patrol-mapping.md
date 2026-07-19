@@ -90,6 +90,10 @@ controller부터 odometry까지 같은 구간을 기록한다.
 ```bash
 ros2 param get /controller_server FollowPath.min_speed_theta
 ros2 param get /controller_server FollowPath.min_speed_xy
+ros2 param get /controller_server controller_frequency
+ros2 param get /controller_server FollowPath.vx_samples
+ros2 param get /controller_server FollowPath.vtheta_samples
+ros2 param get /controller_server FollowPath.sim_time
 ros2 param get /behavior_server max_rotational_vel
 ros2 param get /behavior_server min_rotational_vel
 ros2 param get /behavior_server rotational_acc_lim
@@ -108,6 +112,11 @@ acknowledgement `2000 ms`이다. raw `/cmd_vel_nav`가 `1.0 rad/s`이면 TurtleB
 `recoveries_server` 설정이 현재 `behavior_server`에 적용되지 않은 상태이므로 배포 commit과 실제
 parameter dump를 함께 확인한다. planner acknowledgement 지연과 fleet lease 만료를 혼동해
 lease·authorization·watchdog timeout을 늘리지 않는다.
+
+TB1 저속 DWB 적용값은 controller `5 Hz`, 표본 `10 × 20`, 예측 `1.0 s`이다. 목표 실행 중
+`Control loop missed its desired rate`가 반복되면 e-stop 후 load average와 process별 CPU를
+수집한다. 4코어에서 load average가 4를 지속해서 넘는 상태로 장시간 주행 검증을 계속하지 않는다.
+controller 주기를 낮추더라도 20 Hz smoother와 watchdog Publisher 단일 소유를 함께 확인한다.
 
 ## 4. Deadman 수동 조종
 
