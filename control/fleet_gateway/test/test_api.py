@@ -7,6 +7,7 @@ from fleet_gateway.operations import OperationsStore
 from fleet_gateway.registry import StatusRegistry
 from fleet_gateway.scan_registry import ScanRegistry
 from fleet_gateway.task_manager import NavigationTaskManager
+from fleet_gateway.patrol_manager import PatrolManager
 
 
 class FakeEStopController:
@@ -69,6 +70,50 @@ class FakeNavigationController:
         }
 
 
+class FakeManualController:
+
+    def __init__(self):
+        self.calls = []
+        self.active = False
+
+    def start_manual(self, robot_id):
+        self.calls.append(("start", robot_id))
+        self.active = True
+        return {
+            "success": True,
+            "session_id": "manual-1",
+            "message": "accepted",
+        }
+
+    def send_manual(self, robot_id, session_id, linear_x, angular_z):
+        self.calls.append(
+            ("command", robot_id, session_id, linear_x, angular_z)
+        )
+        return {"success": True, "message": "accepted"}
+
+    def stop_manual(self, robot_id, session_id):
+        self.calls.append(("stop", robot_id, session_id))
+        self.active = False
+        return {"success": True, "message": "stopped"}
+
+    def manual_active(self, robot_id):
+        return self.active
+
+
+class FakeProfileController:
+
+    def __init__(self):
+        self.calls = []
+
+    def set_operating_profile(self, robot_id, profile):
+        self.calls.append(("profile", robot_id, profile))
+        return {"success": True, "profile": profile, "message": "accepted"}
+
+    def save_map(self, robot_id, overwrite):
+        self.calls.append(("save", robot_id, overwrite))
+        return {"success": True, "message": "saved"}
+
+
 def make_registry():
     registry = StatusRegistry(clock=lambda: 10.0)
     registry.update(
@@ -111,6 +156,15 @@ def make_navigation_registry(level=0, active_command_id=""):
             "robot_id": "tb1",
             "estop_active": False,
             "motion_armed": True,
+        },
+        now=10.0,
+    )
+    registry.update_mapping(
+        {
+            "robot_id": "tb1",
+            "profile": "NAVIGATION",
+            "transitioning": False,
+            "map_available": True,
         },
         now=10.0,
     )
@@ -728,3 +782,229 @@ def test_task_routes_reject_invalid_transitions_and_unavailable_store(
     assert client.get("/api/tasks/missing").status_code == 404
     unavailable = TestClient(create_app(registry)).get("/api/events")
     assert unavailable.status_code == 503
+
+
+def test_manual_deadman_routes_and_limits():
+    registry = make_navigation_registry()
+    controller = FakeManualController()
+    client = TestClient(create_app(registry, manual_controller=controller))
+
+    started = client.post(
+        "/api/robots/tb1/manual/sessions",
+        json={"confirm_warnings": False},
+    )
+    command = client.put(
+        "/api/robots/tb1/manual/sessions/manual-1",
+        json={"linear_x": 0.05, "angular_z": -0.3},
+    )
+    too_fast = client.put(
+        "/api/robots/tb1/manual/sessions/manual-1",
+        json={"linear_x": 0.051, "angular_z": 0.0},
+    )
+    stopped = client.delete(
+        "/api/robots/tb1/manual/sessions/manual-1"
+    )
+
+    assert started.status_code == 202
+    assert started.json()["session_id"] == "manual-1"
+    assert command.status_code == 202
+    assert too_fast.status_code == 422
+    assert stopped.status_code == 202
+    assert controller.calls == [
+        ("start", "tb1"),
+        ("command", "tb1", "manual-1", 0.05, -0.3),
+        ("stop", "tb1", "manual-1"),
+    ]
+
+
+def test_manual_is_blocked_by_estop_and_idle_profile():
+    registry = make_navigation_registry()
+    registry.update_safety(
+        {"robot_id": "tb1", "estop_active": True, "motion_armed": False},
+        now=10.0,
+    )
+    client = TestClient(
+        create_app(registry, manual_controller=FakeManualController())
+    )
+    assert client.post(
+        "/api/robots/tb1/manual/sessions", json={}
+    ).status_code == 409
+
+
+def test_manual_session_blocks_navigation_until_explicit_stop():
+    registry = make_navigation_registry()
+    navigation = FakeNavigationController()
+    manual = FakeManualController()
+    client = TestClient(
+        create_app(
+            registry,
+            navigation_controller=navigation,
+            manual_controller=manual,
+            map_registry=make_map_registry(),
+        )
+    )
+
+    started = client.post("/api/robots/tb1/manual/sessions", json={})
+    blocked = client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+    stopped = client.delete(
+        "/api/robots/tb1/manual/sessions/manual-1"
+    )
+    accepted = client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+    )
+
+    assert started.status_code == 202
+    assert blocked.status_code == 409
+    assert "manual session" in blocked.json()["detail"]
+    assert stopped.status_code == 202
+    assert accepted.status_code == 202
+    registry.update_safety(
+        {"robot_id": "tb1", "estop_active": False, "motion_armed": True},
+        now=10.0,
+    )
+    registry.update_mapping(
+        {"robot_id": "tb1", "profile": "IDLE", "transitioning": False},
+        now=10.0,
+    )
+    assert client.post(
+        "/api/robots/tb1/manual/sessions", json={}
+    ).status_code == 409
+
+
+def test_profile_switch_and_map_save_routes():
+    registry = make_navigation_registry()
+    controller = FakeProfileController()
+    client = TestClient(create_app(registry, profile_controller=controller))
+
+    switched = client.post("/api/robots/tb1/profiles/MAPPING")
+    blocked_save = client.post(
+        "/api/robots/tb1/mapping/save", json={"overwrite": True}
+    )
+    registry.update_mapping(
+        {"robot_id": "tb1", "profile": "MAPPING", "transitioning": False},
+        now=10.0,
+    )
+    saved = client.post(
+        "/api/robots/tb1/mapping/save", json={"overwrite": True}
+    )
+
+    assert switched.status_code == 202
+    assert blocked_save.status_code == 409
+    assert saved.status_code == 202
+    assert controller.calls == [
+        ("profile", "tb1", "MAPPING"),
+        ("save", "tb1", True),
+    ]
+
+
+def test_patrol_routes_validate_and_start(tmp_path):
+    registry = make_navigation_registry()
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    navigation = FakeNavigationController()
+    manager = PatrolManager(store, navigation)
+    client = TestClient(
+        create_app(
+            registry,
+            map_registry=make_map_registry(),
+            operations_store=store,
+            patrol_manager=manager,
+        )
+    )
+    try:
+        invalid = client.post(
+            "/api/robots/tb1/patrols",
+            json={"waypoints": [{"x": 0.25, "y": 0.25, "yaw": 0.0}]},
+        )
+        created = client.post(
+            "/api/robots/tb1/patrols",
+            json={
+                "waypoints": [
+                    {"x": 0.25, "y": 0.25, "yaw": 0.0},
+                    {"x": 1.25, "y": 1.25, "yaw": 1.57},
+                ],
+                "loops": 2,
+                "dwell_sec": 0.0,
+            },
+        )
+        patrol_id = created.json()["patrol_id"]
+        started = client.post(f"/api/patrols/{patrol_id}/run")
+        canceled = client.delete(f"/api/patrols/{patrol_id}")
+
+        assert invalid.status_code == 422
+        assert created.status_code == 201
+        assert started.status_code == 202
+        assert started.json()["state"] == "ACTIVE"
+        assert canceled.status_code == 202
+        assert client.get("/api/patrols").json()["patrols"]
+    finally:
+        manager.close()
+
+
+def test_active_patrol_blocks_manual_goal_and_task_then_estop_closes_it(
+    tmp_path,
+):
+    registry = make_navigation_registry()
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    navigation = FakeNavigationController()
+    patrol_manager = PatrolManager(store, navigation)
+    task_manager = NavigationTaskManager(store, navigation)
+    manual = FakeManualController()
+    estop = FakeEStopController()
+    client = TestClient(
+        create_app(
+            registry,
+            estop_controller=estop,
+            navigation_controller=navigation,
+            manual_controller=manual,
+            map_registry=make_map_registry(),
+            operations_store=store,
+            task_manager=task_manager,
+            patrol_manager=patrol_manager,
+        )
+    )
+    try:
+        created = client.post(
+            "/api/robots/tb1/patrols",
+            json={
+                "waypoints": [
+                    {"x": 0.25, "y": 0.25, "yaw": 0.0},
+                    {"x": 1.25, "y": 1.25, "yaw": 1.0},
+                ],
+                "dwell_sec": 1.0,
+            },
+        ).json()
+        assert client.post(
+            f"/api/patrols/{created['patrol_id']}/run"
+        ).status_code == 202
+        task = client.post(
+            "/api/robots/tb1/tasks",
+            json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+        ).json()
+
+        manual_response = client.post(
+            "/api/robots/tb1/manual/sessions", json={}
+        )
+        goal_response = client.post(
+            "/api/robots/tb1/navigation/goals",
+            json={"x": 0.25, "y": 0.25, "yaw": 0.0},
+        )
+        task_response = client.post(f"/api/tasks/{task['task_id']}/run")
+
+        assert manual_response.status_code == 409
+        assert goal_response.status_code == 409
+        assert task_response.status_code == 409
+        assert "patrol" in manual_response.json()["detail"].lower()
+
+        stopped = client.post(
+            "/api/robots/tb1/estop", json={"engaged": True}
+        )
+        assert stopped.status_code == 200
+        patrol = store.get_patrol(created["patrol_id"])
+        assert patrol["state"] == "CANCELED"
+        assert navigation.calls.count(("cancel", "tb1", "goal-1")) == 0
+    finally:
+        patrol_manager.close()

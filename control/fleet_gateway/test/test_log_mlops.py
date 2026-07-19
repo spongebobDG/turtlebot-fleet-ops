@@ -8,7 +8,9 @@ from fleet_gateway.log_mlops import (
     analyze_records,
     build_dataset,
     build_parser,
+    diagnose_records,
     extract_operational_signals,
+    incidents_from_path,
     parse_log_line,
     pipeline_paths,
     promote_model,
@@ -365,3 +367,47 @@ def test_recent_jsonl_restore_survives_a_torn_last_record(tmp_path):
     assert len(restored) == 1
     assert restored[0].timestamp == 20
     assert restored[0].message == "Collision Ahead"
+
+
+def test_root_cause_diagnosis_keeps_evidence_and_recommendation():
+    records = [
+        record(100, "ERROR", "Failed to make progress in map frame"),
+        record(101, "WARNING", "controller progress checker failed"),
+        record(102, "ERROR", "Navigation lease expired after timeout"),
+    ]
+
+    diagnoses = diagnose_records(records)
+
+    assert diagnoses[0]["cause"] == "network_lease"
+    progress = next(
+        item for item in diagnoses if item["cause"] == "navigation_progress"
+    )
+    assert progress["count"] == 2
+    assert progress["confidence"] > 0.5
+    assert "map-frame" in progress["recommended_action"]
+    assert progress["evidence"][-1]["logger"] == "fleet_gateway"
+
+
+def test_incident_artifact_links_raw_evidence_to_model_status(tmp_path):
+    root = tmp_path / "ros2-logs"
+    status_path = root / "status" / "latest.json"
+    write_json(
+        status_path,
+        {
+            "state": "NORMAL",
+            "observed_at": "2026-07-20T00:00:00+00:00",
+            "model_id": "model-1",
+            "score": 1.0,
+            "threshold": 5.0,
+        },
+    )
+    write_jsonl(
+        root / "raw" / "live.jsonl",
+        [record(1_784_473_917, "ERROR", "Failed to make progress")],
+    )
+
+    result = incidents_from_path(status_path)
+
+    assert result["analysis_method"] == "rule_evidence_v1"
+    assert result["model"]["model_id"] == "model-1"
+    assert result["diagnoses"][0]["cause"] == "navigation_progress"

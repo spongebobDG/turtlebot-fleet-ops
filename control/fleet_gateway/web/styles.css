@@ -140,6 +140,9 @@ h3 { font-size: 0.82rem; }
   padding: 0 2px 8px;
 }
 
+.profile-controls { display: flex; align-items: center; gap: 4px; }
+.profile-controls span { color: var(--muted); font-size: 0.58rem; font-weight: 800; }
+
 .robot-grid {
   min-height: 0;
   display: grid;
@@ -347,7 +350,8 @@ input {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
+  overflow: hidden;
 }
 
 .navigation-state strong { display: block; margin: 3px 0 2px; font-size: 1rem; }
@@ -358,7 +362,10 @@ input {
   font-size: 0.64rem;
   line-height: 1.25;
 }
-.pose-fields { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.pose-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.pose-fields input { width: 100%; padding: 5px 4px; }
+.heading-status { color: var(--yellow); font-size: 0.57rem; line-height: 1.25; }
+.heading-status.ready { color: var(--mint); }
 .alignment-tools { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); align-items: center; gap: 6px; }
 .alignment-tools[hidden] { display: none; }
 .alignment-tools button { padding: 7px 6px; font-size: 0.61rem; }
@@ -371,11 +378,28 @@ input {
 .navigation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: auto; }
 .navigation-actions .task-create { grid-column: 1 / -1; }
 
+.patrol-draft { padding: 6px; border: 1px solid var(--border); border-radius: 8px; }
+.patrol-draft[hidden] { display: none; }
+.patrol-draft p { margin-bottom: 5px; color: var(--muted); font-size: 0.58rem; }
+.patrol-draft > div { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.patrol-draft label { color: var(--muted); font-size: 0.55rem; }
+.patrol-draft button { width: calc(50% - 3px); margin-top: 5px; padding: 6px; }
+
+.manual-control { padding: 6px; border: 1px solid var(--border); border-radius: 8px; }
+.manual-title { display: flex; justify-content: space-between; color: var(--mint); font-size: 0.56rem; }
+.manual-pad { margin-top: 5px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+.manual-pad button { padding: 6px 2px; touch-action: none; user-select: none; }
+.manual-pad .manual-stop { color: white; background: #9f252b; }
+.manual-control p { margin-top: 4px; color: var(--muted); font-size: 0.51rem; }
+body[data-map-mode="waypoint"] .navigation-metrics,
+body[data-map-mode="waypoint"] .manual-control,
+body[data-map-mode="waypoint"] .navigation-actions .task-create { display: none; }
+
 .operations-grid {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-rows: minmax(92px, 0.85fr) minmax(70px, 0.62fr) minmax(126px, 1.12fr) minmax(82px, 0.72fr);
+  grid-template-rows: minmax(88px, 0.72fr) minmax(64px, 0.5fr) minmax(106px, 0.88fr) minmax(118px, 1fr);
   gap: 7px;
 }
 
@@ -395,6 +419,9 @@ input {
 .mlops-summary span { display: block; color: var(--muted); font-size: 0.54rem; }
 .mlops-summary strong { display: block; overflow: hidden; margin-top: 1px; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
 .mlops-summary p { grid-column: 1 / -1; overflow: hidden; color: var(--muted); font-size: 0.57rem; text-overflow: ellipsis; white-space: nowrap; }
+.mlops-summary .incident-cause { color: var(--yellow); }
+.mlops-summary .incident-action { color: #bed1cb; }
+.patrol-list { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border); }
 
 .operations-card {
   min-width: 0;

@@ -1,0 +1,128 @@
+# 학습 일지: Phase 8 웹 수동 조종·순찰·매핑·원인 분석
+
+날짜: 2026-07-20
+
+단계: Phase 8
+
+진행 상태: 로봇 없는 구현·검증 진행, 실차 최종 검증 대기
+
+## 오늘의 목표
+
+실제 로봇 위치와 웹 방향의 불일치를 바로잡은 안전 브랜치 위에서 목적지 최종 yaw, 부드러운
+저속 주행, 웹 deadman 수동 조종, 웨이포인트 순찰, 새 지도 작성, ROS 2 로그 원인 분석을 하나의
+운영 흐름으로 확장한다. TB1을 움직일 수 없는 동안 가능한 구현과 검증은 모두 끝내고 실제
+이동은 작업자가 로봇 옆에 있을 때만 한다.
+
+## 구현한 내용
+
+### 목적지 yaw와 속도 평활화
+
+- 목적지와 웨이포인트는 클릭만으로 확정하지 않고 드래그 또는 숫자 yaw 입력을 요구했다.
+- 화면 벡터를 OccupancyGrid origin 회전이 반영된 map 좌표로 바꾼 뒤 yaw를 계산했다.
+- Nav2 controller 10 Hz 뒤에 20 Hz `nav2_velocity_smoother`를 배치했다.
+- 최대 속도 `0.05 m/s`, `0.3 rad/s`와 watchdog 단일 Publisher 경계를 유지했다.
+
+### 수동 조종
+
+- `ManualCommand.srv`와 TB1 로컬 `manual_control_node`를 추가했다.
+- 브라우저는 100 ms마다 lease 성격의 동일 session 명령을 갱신한다.
+- 로봇 로컬은 0.35초 동안 갱신이 없으면 0을 발행하고 arbiter를 IDLE로 전환한다.
+- navigation과 manual 모두 arbiter와 watchdog을 통과하며 Zenoh에 velocity topic을 노출하지 않았다.
+
+### 순찰
+
+- SQLite에 순찰과 순서가 있는 웨이포인트를 저장했다.
+- 각 지점을 기존 `NavigateRobot` action으로 순차 실행해 lease·feedback·cancel을 재사용했다.
+- 한 지점 실패, 명시적 취소, 프로세스 재시작에서 다음 지점을 자동 실행하지 않게 했다.
+
+### 운영 프로필과 지도 저장
+
+- navigation/mapping launch 밖에 상시 `profile_manager_node`를 두었다.
+- `IDLE`, `MAPPING`, `NAVIGATION` 프로필을 systemd user unit으로 상호 배타적으로 전환한다.
+- 프로필 전환과 지도 저장 전에 Gateway가 e-stop을 확인한다.
+- 지도와 pose graph를 TB1 로컬 운영 데이터 경로에 함께 저장하도록 했다.
+
+### 로그 MLOps 원인 분석
+
+- 기존 Production 모델의 이상 상태에 규칙 기반 원인 후보를 연결했다.
+- localization/TF, collision, progress, lease, sensor, restart, resource, safety를 분류한다.
+- API와 웹에 confidence, 원본 증거, 권장 조치를 표시한다.
+- 분석 계층은 움직임 명령, e-stop 해제, 자동 재시도를 하지 않는다.
+
+## 검증 결과
+
+- JavaScript 좌표·origin yaw·viewport·robot pose 테스트: 15 passed
+- systemd unit 정적 검증: `SYSTEMD_UNIT_VALIDATION_OK restart_units=8 network_gate=1`
+- 변경 shell script ShellCheck: 실패 0
+- Python compile, JavaScript syntax, `git diff --check`: 실패 0
+- 1280×720 웹 시각 검증: body 세로·가로 overflow 없음, 목적지 yaw 표기와 waypoint 모드 확인
+- 전체 Humble colcon: 444 tests, 0 errors, 0 failures, 0 skipped
+- operations·실제 Nav2·분리 domain Zenoh의 robotless smoke 3종: 모두 통과
+- 실제 Nav2 smoke 최종 출력: `/motion/navigation/cmd_vel`은 smoother 1개,
+  `/cmd_vel`은 watchdog 1개, 최대 `0.04737 m/s`, `0.16154 rad/s`, 최종 0
+
+Windows의 WSL 마운트에서는 systemd-analyze가 unit 파일을 executable/world-writable로 보고하는
+경고가 발생했다. 이는 NTFS drvfs 권한 표현 때문이며 unit 내용 검증 자체는 성공했다. 실제
+TB1에 배포된 파일은 deploy script가 정상 Linux 권한으로 설치한다.
+
+## 문제와 해결
+
+### 화면 방향과 실제 전방이 반대로 보였던 문제
+
+TB1 LDS-02의 원본 angle 0과 실제 차체 전방이 반대인 장착 특성을 앞선 안전 변경에서
+`/scan_normalized`와 overlay에 같은 π 보정으로 통일했다. Phase 8에서는 목표 화살표를
+screen angle이 아니라 map 좌표 벡터로 계산해 그 기준을 유지했다.
+
+### 브라우저 종료 시 정지 요청 유실 가능성
+
+처음에는 pointer release에서 DELETE를 보내는 것만으로는 부족했다. 탭 강제 종료나 네트워크
+단절에서는 요청이 도착하지 않을 수 있으므로 TB1 로컬 authorization timeout을 최종 fail-safe로
+두었다.
+
+### 프로필 전환 서비스의 자기 종료 가능성
+
+전환 서비스를 navigation launch 안에 넣으면 그 launch를 중지하는 순간 응답과 다음 launch
+시작이 끊길 수 있다. 별도 always-on systemd service로 분리해 해결했다.
+
+### 순찰 자동 재개의 위험
+
+Gateway 재시작 후 ACTIVE 순찰을 그대로 이어가면 사용자가 예상하지 못한 출발이 된다. durable
+정의는 보존하지만 실행 상태는 실패로 정리하고 명시적 재실행만 허용했다.
+
+## 배운 점
+
+“부드럽게 움직인다”는 요구는 단순히 timeout을 늘리는 문제가 아니었다. command 보간과
+가속도 제한을 추가하되 stale authorization과 watchdog 정지는 더 짧고 독립적으로 유지해야
+한다. 사용성 개선과 fail-safe는 같은 파라미터를 타협하는 대신 서로 다른 계층으로 설계하는
+편이 명확했다.
+
+MLOps도 모델 점수만 보여 주면 운영 기능이 되기 어렵다. dataset·model lineage와 함께 실제
+logger·message 근거, 확인 순서를 연결해야 작업자가 판단에 사용할 수 있다. 동시에 분석 모델에
+제어권을 주지 않는 경계가 로봇 시스템에서는 중요하다.
+
+## 완료 체크리스트
+
+- [x] 목적지·웨이포인트 최종 yaw 입력 계약
+- [x] Nav2 20 Hz velocity smoothing과 기존 속도 상한 유지
+- [x] TB1 로컬 timeout을 가진 웹 deadman manual
+- [x] durable 순찰 정의와 순차 action 실행
+- [x] 매핑·주행 프로필과 지도·pose graph 저장 서비스
+- [x] ROS 2 로그 원인·증거·권장 조치 API와 UI
+- [x] 로봇 없는 단위·통합·smoke·화면 검증
+- [ ] TB1 배포와 실제 목표 yaw·평활화 확인
+- [ ] deadman·Gateway·Zenoh 단절 정지 시간 측정
+- [ ] 새 환경 매핑·저장·AMCL 재기동
+- [ ] 실차 순찰·취소·비재개와 incident 확인
+- [ ] 10분 주행 CPU·메모리 및 단일 `/cmd_vel` Publisher 기록
+
+## 남은 시간
+
+새로운 결함이 없다면 실차 최종 검증은 3~4시간으로 예상한다. 배포·서비스 20~30분,
+yaw·manual 20~30분, 매핑 35~50분, 순찰 30~45분, 장애·로그 35~50분, 10분 주행과 기록
+20~30분이다. localization 또는 Zenoh 재조정이 필요하면 1~2시간을 추가한다.
+
+## 관련 문서
+
+- [Phase 8 설계](../design/phase-8-web-patrol-mapping-diagnostics.md)
+- [Phase 8 공부 문서](../study/phase-8-web-control-patrol-diagnostics.md)
+- [Phase 8 운영 절차](../setup/tb1-web-patrol-mapping.md)

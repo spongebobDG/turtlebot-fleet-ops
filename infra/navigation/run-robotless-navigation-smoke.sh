@@ -120,19 +120,20 @@ navigation_cmd_info="$(
   ros2 topic info /motion/navigation/cmd_vel --verbose
 )"
 echo "${navigation_cmd_info}"
-grep -Fq "Publisher count: 5" <<<"${navigation_cmd_info}"
+grep -Fq "Publisher count: 1" <<<"${navigation_cmd_info}"
 grep -Fq "Node name: velocity_smoother" <<<"${navigation_cmd_info}"
-grep -Fq "Node name: behavior_server" <<<"${navigation_cmd_info}"
-if grep -Fq "Node name: controller_server" <<<"${navigation_cmd_info}"; then
-  echo "controller_server bypassed velocity_smoother" >&2
+if grep -Eq "Node name: (controller_server|behavior_server)" \
+  <<<"${navigation_cmd_info}"; then
+  echo "a Nav2 command source bypassed velocity_smoother" >&2
   exit 1
 fi
 
 controller_cmd_info="$(ros2 topic info /cmd_vel_nav --verbose)"
 echo "${controller_cmd_info}"
-grep -Fq "Publisher count: 1" <<<"${controller_cmd_info}"
+grep -Fq "Publisher count: 5" <<<"${controller_cmd_info}"
 grep -Fq "Subscription count: 1" <<<"${controller_cmd_info}"
 grep -Fq "Node name: controller_server" <<<"${controller_cmd_info}"
+grep -Fq "Node name: behavior_server" <<<"${controller_cmd_info}"
 grep -Fq "Node name: velocity_smoother" <<<"${controller_cmd_info}"
 
 python3 - "${telemetry_file}" <<'PY'

@@ -63,6 +63,41 @@ def test_connectivity_transitions_record_loss_and_recovery_once(tmp_path) -> Non
     assert "전원·네트워크·Agent" in events[1]["message"]
 
 
+def test_patrol_waypoints_progress_and_restart_are_durable(tmp_path) -> None:
+    path = tmp_path / "operations.sqlite3"
+    store = OperationsStore(path)
+    patrol = store.create_patrol(
+        "tb1",
+        [
+            {"x": 0.1, "y": 0.2, "yaw": 0.3},
+            {"x": 0.4, "y": 0.5, "yaw": 0.6},
+        ],
+        loops=3,
+        dwell_sec=0.5,
+        confirm_warnings=True,
+    )
+    active = store.update_patrol(
+        patrol["patrol_id"],
+        "ACTIVE",
+        "waypoint active",
+        current_loop=1,
+        current_waypoint=1,
+        command_id="goal-2",
+    )
+
+    reopened = OperationsStore(path)
+    restored = reopened.get_patrol(patrol["patrol_id"])
+    assert active["waypoints"][1]["yaw"] == 0.6
+    assert restored["current_loop"] == 1
+    assert restored["current_waypoint"] == 1
+    assert restored["command_id"] == "goal-2"
+    assert restored["confirm_warnings"] is True
+    assert reopened.reconcile_patrol_restart() == 1
+    failed = reopened.get_patrol(patrol["patrol_id"])
+    assert failed["state"] == "FAILED"
+    assert failed["command_id"] is None
+
+
 def test_task_retry_and_navigation_reconciliation_survive_reopen(
     tmp_path,
 ) -> None:

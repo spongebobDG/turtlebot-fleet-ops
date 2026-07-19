@@ -20,6 +20,7 @@ const cancelNavigation = document.querySelector("#cancel-navigation");
 const poseX = document.querySelector("#pose-x");
 const poseY = document.querySelector("#pose-y");
 const poseYaw = document.querySelector("#pose-yaw");
+const poseHeading = document.querySelector("#pose-heading");
 const alignmentTools = document.querySelector("#alignment-tools");
 const alignInitialPose = document.querySelector("#align-initial-pose");
 const alignmentMeta = document.querySelector("#alignment-meta");
@@ -32,12 +33,24 @@ const recoveryCount = document.querySelector("#recovery-count");
 const createTaskButton = document.querySelector("#create-task");
 const refreshOperationsButton = document.querySelector("#refresh-operations");
 const taskList = document.querySelector("#task-list");
+const patrolList = document.querySelector("#patrol-list");
+const patrolDraft = document.querySelector("#patrol-draft");
+const patrolDraftList = document.querySelector("#patrol-draft-list");
+const patrolLoops = document.querySelector("#patrol-loops");
+const patrolDwell = document.querySelector("#patrol-dwell");
+const createPatrolButton = document.querySelector("#create-patrol");
+const clearWaypointsButton = document.querySelector("#clear-waypoints");
+const profileState = document.querySelector("#profile-state");
+const saveMapButton = document.querySelector("#save-map");
+const manualState = document.querySelector("#manual-state");
 const faultList = document.querySelector("#fault-list");
 const eventList = document.querySelector("#event-list");
 const mlopsState = document.querySelector("#mlops-state");
 const mlopsModel = document.querySelector("#mlops-model");
 const mlopsScore = document.querySelector("#mlops-score");
 const mlopsReasons = document.querySelector("#mlops-reasons");
+const incidentCause = document.querySelector("#incident-cause");
+const incidentAction = document.querySelector("#incident-action");
 const mapMath = window.FleetMapMath;
 const viewportMath = window.FleetMapViewport;
 const robotDisplay = window.FleetRobotDisplay;
@@ -51,13 +64,21 @@ let mapMode = "goal";
 let selectedPose = null;
 let poseAlignment = null;
 let dragStart = null;
+let dragStartScreen = null;
 let panDrag = null;
 let mapBitmap = null;
 let mapViewport = null;
 let tasks = [];
+let patrols = [];
+let draftWaypoints = [];
 let faults = [];
 let events = [];
 let logMlops = null;
+let logIncidents = null;
+let headingSpecified = false;
+let manualSession = null;
+let manualTimer = null;
+let manualPointer = null;
 
 const escapeHtml = (value) => String(value ?? "").replace(
   /[&<>"']/g,
@@ -164,6 +185,7 @@ const updateRobotOptions = () => {
 };
 
 const renderNavigation = () => {
+  document.body.dataset.mapMode = mapMode;
   const robot = selectedRobot();
   const navigation = robot?.navigation || {};
   navigationState.textContent = navigation.state || "UNAVAILABLE";
@@ -172,17 +194,23 @@ const renderNavigation = () => {
   navigationTime.textContent = number(navigation.navigation_time_sec, 1, "s");
   leaseAge.textContent = number(navigation.lease_age_sec, 2, "s");
   recoveryCount.textContent = navigation.number_of_recoveries ?? "—";
+  const profile = robot?.mapping || {};
+  profileState.textContent = `PROFILE ${profile.profile || "—"}`;
+  profileState.title = profile.message || "";
 
   const activeGoal = Boolean(navigation.active_command_id);
   const validCandidate = Boolean(
     selectedPose
     && currentMap
+    && headingSpecified
     && mapMath.isFreePose(currentMap, selectedPose.x, selectedPose.y),
   );
   const commonReady = Boolean(
     robot?.online && robot.level < 2 && currentMap && !activeGoal,
   );
   const goalReady = commonReady
+    && profile.fresh
+    && profile.profile === "NAVIGATION"
     && navigation.fresh
     && navigation.nav2_ready
     && navigation.localization_ready
@@ -190,15 +218,44 @@ const renderNavigation = () => {
     && robot?.safety?.fresh
     && !robot?.safety?.estop_active
     && robot?.safety?.motion_armed;
-  applyMapCommand.textContent = mapMode === "initial" ? "초기 위치 적용" : "목적지 전송";
+  applyMapCommand.textContent = mapMode === "initial"
+    ? "초기 위치 적용"
+    : mapMode === "waypoint" ? "순찰점 추가" : "목적지 전송";
   alignmentTools.hidden = mapMode !== "initial";
+  patrolDraft.hidden = mapMode !== "waypoint";
   alignInitialPose.disabled = mapMode !== "initial"
     || !validCandidate
     || !currentScan?.fresh;
   applyMapCommand.disabled = !validCandidate
-    || (mapMode === "initial" ? !commonReady || !poseAlignment?.acceptable : !goalReady);
+    || (mapMode === "initial"
+      ? !commonReady || !poseAlignment?.acceptable
+      : mapMode === "goal" ? !goalReady : false);
   cancelNavigation.disabled = !activeGoal;
   createTaskButton.disabled = mapMode !== "goal" || !commonReady || !validCandidate;
+  createPatrolButton.disabled = draftWaypoints.length < 2 || !commonReady;
+  patrolDraftList.textContent = draftWaypoints.length
+    ? `순찰점 ${draftWaypoints.length}개 · ${draftWaypoints.map((point, index) => `${index + 1}:${number(point.x, 2)},${number(point.y, 2)} @${number(point.yaw * 180 / Math.PI, 0, "°")}`).join(" · ")}`
+    : "순찰점 0개 · 지도에서 위치→앞방향으로 드래그";
+  poseHeading.textContent = headingSpecified && selectedPose
+    ? `앞방향 ${number(selectedPose.yaw, 3, " rad")} · ${number(selectedPose.yaw * 180 / Math.PI, 1, "°")}`
+    : "앞방향 미지정 · 원에서 화살표 끝까지 드래그";
+  poseHeading.classList.toggle("ready", headingSpecified);
+  const manualReady = Boolean(
+    robot?.online
+    && robot.level < 2
+    && !activeGoal
+    && robot?.safety?.fresh
+    && !robot?.safety?.estop_active
+    && robot?.safety?.motion_armed
+    && profile.fresh
+    && ["MAPPING", "NAVIGATION"].includes(profile.profile)
+    && !profile.transitioning,
+  );
+  document.querySelectorAll("[data-manual-linear]").forEach((button) => {
+    button.disabled = !manualReady;
+  });
+  manualState.textContent = manualSession ? "조종 중" : manualReady ? "준비" : "잠김";
+  saveMapButton.disabled = profile.profile !== "MAPPING" || profile.transitioning;
   drawMap();
 };
 
@@ -206,6 +263,8 @@ const resetPoseSelection = () => {
   selectedPose = null;
   poseAlignment = null;
   dragStart = null;
+  dragStartScreen = null;
+  headingSpecified = false;
   poseX.value = "";
   poseY.value = "";
   poseYaw.value = "";
@@ -220,6 +279,7 @@ const syncPoseSelectionFromFields = () => {
   const raw = [poseX.value, poseY.value, poseYaw.value];
   if (raw.some((value) => value.trim() === "")) {
     selectedPose = null;
+    headingSpecified = false;
   } else {
     const pose = {
       x: Number(raw[0]),
@@ -231,6 +291,7 @@ const syncPoseSelectionFromFields = () => {
       && mapMath.isFreePose(currentMap, pose.x, pose.y)
       ? pose
       : null;
+    headingSpecified = Boolean(selectedPose);
   }
   renderNavigation();
 };
@@ -360,6 +421,22 @@ const drawMap = () => {
   drawScanOverlay(context, robot);
   if (robot?.navigation?.current?.frame_id === "map") {
     drawArrow(context, robot.navigation.current, "#44b9ff");
+  }
+  if (draftWaypoints.length) {
+    context.save();
+    context.strokeStyle = "rgba(88, 224, 174, 0.7)";
+    context.setLineDash([5, 4]);
+    context.beginPath();
+    draftWaypoints.forEach((point, index) => {
+      const screen = worldToScreen(point.x, point.y);
+      if (index === 0) context.moveTo(screen.x, screen.y);
+      else context.lineTo(screen.x, screen.y);
+    });
+    context.stroke();
+    context.restore();
+    draftWaypoints.forEach((point, index) => {
+      drawArrow(context, point, "#58e0ae", `P${index + 1}`);
+    });
   }
   if (
     robot?.navigation?.active_command_id
@@ -524,10 +601,12 @@ mapCanvas.addEventListener("pointerdown", (event) => {
     return;
   }
   dragStart = cell.center;
+  dragStartScreen = point;
+  headingSpecified = false;
   poseAlignment = null;
   alignmentMeta.textContent = "LiDAR 자동 정렬이 필요합니다.";
   alignmentMeta.classList.remove("accepted");
-  selectedPose = { ...dragStart, yaw: Number(poseYaw.value) || 0 };
+  selectedPose = { ...dragStart, yaw: 0 };
   poseX.value = selectedPose.x.toFixed(3);
   poseY.value = selectedPose.y.toFixed(3);
   drawMap();
@@ -562,9 +641,19 @@ mapCanvas.addEventListener("pointermove", (event) => {
     endMapPoint.x,
     endMapPoint.y,
   );
+  const dragPixels = dragStartScreen
+    ? Math.hypot(point.x - dragStartScreen.x, point.y - dragStartScreen.y)
+    : 0;
+  if (dragPixels < 12 || dragYaw === null) {
+    headingSpecified = false;
+    poseYaw.value = "";
+    drawMap();
+    return;
+  }
+  headingSpecified = true;
   selectedPose = {
     ...dragStart,
-    yaw: dragYaw ?? selectedPose?.yaw ?? 0,
+    yaw: dragYaw,
   };
   poseX.value = selectedPose.x.toFixed(3);
   poseY.value = selectedPose.y.toFixed(3);
@@ -586,14 +675,20 @@ mapCanvas.addEventListener("pointerup", (event) => {
   if (!selectedPose) selectedPose = { ...dragStart, yaw: 0 };
   poseX.value = selectedPose.x.toFixed(3);
   poseY.value = selectedPose.y.toFixed(3);
-  poseYaw.value = selectedPose.yaw.toFixed(3);
+  poseYaw.value = headingSpecified ? selectedPose.yaw.toFixed(3) : "";
   dragStart = null;
+  dragStartScreen = null;
   mapCanvas.releasePointerCapture(event.pointerId);
+  if (!headingSpecified) {
+    showToast("위치에서 로봇 앞방향으로 12px 이상 드래그하세요.", true);
+  }
   renderNavigation();
 });
 
 mapCanvas.addEventListener("pointercancel", (event) => {
   dragStart = null;
+  dragStartScreen = null;
+  headingSpecified = false;
   panDrag = null;
   mapCanvas.classList.remove("panning");
   if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
@@ -668,6 +763,7 @@ alignInitialPose.addEventListener("click", async () => {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "LiDAR 자동 정렬 실패");
     selectedPose = { ...body.pose };
+    headingSpecified = true;
     poseAlignment = body;
     poseX.value = selectedPose.x.toFixed(3);
     poseY.value = selectedPose.y.toFixed(3);
@@ -688,8 +784,19 @@ applyMapCommand.addEventListener("click", async () => {
   const robot = selectedRobot();
   if (!robot) return;
   const pose = selectedPose ? { ...selectedPose } : null;
-  if (!pose || !currentMap || !mapMath.isFreePose(currentMap, pose.x, pose.y)) {
+  if (!pose || !headingSpecified || !currentMap || !mapMath.isFreePose(currentMap, pose.x, pose.y)) {
     showToast("지도에서 자유 공간의 위치와 방향을 새로 선택하세요.", true);
+    return;
+  }
+  if (mapMode === "waypoint") {
+    if (draftWaypoints.length >= 20) {
+      showToast("순찰점은 최대 20개입니다.", true);
+      return;
+    }
+    draftWaypoints.push(pose);
+    showToast(`순찰점 ${draftWaypoints.length}을 추가했습니다.`);
+    resetPoseSelection();
+    renderNavigation();
     return;
   }
   const isInitial = mapMode === "initial";
@@ -719,6 +826,41 @@ applyMapCommand.addEventListener("click", async () => {
   }
 });
 
+clearWaypointsButton.addEventListener("click", () => {
+  draftWaypoints = [];
+  resetPoseSelection();
+  renderNavigation();
+});
+
+createPatrolButton.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  if (!robot || draftWaypoints.length < 2) return;
+  const warningConfirmed = robot.level === 1
+    ? window.confirm(`${robot.robot_id} 경고를 확인하고 순찰에 저장할까요?`)
+    : false;
+  if (robot.level === 1 && !warningConfirmed) return;
+  try {
+    const response = await fetch(`/api/robots/${encodeURIComponent(robot.robot_id)}/patrols`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        waypoints: draftWaypoints,
+        loops: Number(patrolLoops.value),
+        dwell_sec: Number(patrolDwell.value),
+        confirm_warnings: warningConfirmed,
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "순찰 저장 실패");
+    draftWaypoints = [];
+    showToast(`순찰 ${body.patrol_id.slice(0, 8)}을 저장했습니다.`);
+    await loadOperations();
+    renderNavigation();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+});
+
 cancelNavigation.addEventListener("click", async () => {
   const robot = selectedRobot();
   const commandId = robot?.navigation?.active_command_id;
@@ -733,6 +875,153 @@ cancelNavigation.addEventListener("click", async () => {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "목표 취소 실패");
     showToast(body.message || "목표 취소를 요청했습니다.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    renderNavigation();
+  }
+});
+
+let manualSending = false;
+
+const sendManualVelocity = async (linearX, angularZ) => {
+  const session = manualSession;
+  if (!session) return false;
+  if (manualSending) return true;
+  manualSending = true;
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(session.robotId)}/manual/sessions/${encodeURIComponent(session.sessionId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linear_x: linearX, angular_z: angularZ }),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "수동 명령 거부");
+    return true;
+  } catch (error) {
+    await stopManualDrive();
+    showToast(error.message, true);
+    return false;
+  } finally {
+    manualSending = false;
+  }
+};
+
+const stopManualDrive = async () => {
+  window.clearInterval(manualTimer);
+  manualTimer = null;
+  manualPointer = null;
+  const session = manualSession;
+  manualSession = null;
+  manualState.textContent = "정지";
+  if (!session) return;
+  try {
+    await fetch(
+      `/api/robots/${encodeURIComponent(session.robotId)}/manual/sessions/${encodeURIComponent(session.sessionId)}`,
+      { method: "DELETE", keepalive: true },
+    );
+  } finally {
+    renderNavigation();
+  }
+};
+
+const startManualDrive = async (button, event) => {
+  if (button.disabled || manualSession) return;
+  const robot = selectedRobot();
+  if (!robot) return;
+  event.preventDefault();
+  manualPointer = event.pointerId;
+  button.setPointerCapture(event.pointerId);
+  const confirmed = robot.level === 1
+    ? window.confirm(`${robot.robot_id} 경고를 확인하고 수동 조종할까요?`)
+    : false;
+  if (robot.level === 1 && !confirmed) {
+    manualPointer = null;
+    return;
+  }
+  try {
+    const response = await fetch(`/api/robots/${encodeURIComponent(robot.robot_id)}/manual/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm_warnings: confirmed }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "수동 세션 시작 실패");
+    manualSession = {
+      robotId: robot.robot_id,
+      sessionId: body.session_id,
+    };
+    if (manualPointer !== event.pointerId) {
+      await stopManualDrive();
+      return;
+    }
+    const linearX = Number(button.dataset.manualLinear);
+    const angularZ = Number(button.dataset.manualAngular);
+    manualState.textContent = "누르는 동안 조종";
+    const accepted = await sendManualVelocity(linearX, angularZ);
+    if (!accepted || !manualSession) return;
+    manualTimer = window.setInterval(
+      () => sendManualVelocity(linearX, angularZ),
+      100,
+    );
+  } catch (error) {
+    manualPointer = null;
+    showToast(error.message, true);
+  }
+};
+
+document.querySelectorAll("[data-manual-linear]").forEach((button) => {
+  button.addEventListener("pointerdown", (event) => startManualDrive(button, event));
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((name) => {
+    button.addEventListener(name, stopManualDrive);
+  });
+});
+document.querySelector("[data-manual-stop]").addEventListener("click", stopManualDrive);
+window.addEventListener("blur", stopManualDrive);
+window.addEventListener("pagehide", stopManualDrive);
+
+document.querySelectorAll("[data-profile]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const robot = selectedRobot();
+    if (!robot) return;
+    const profile = button.dataset.profile;
+    if (!window.confirm(`${profile} 프로필로 전환할까요? e-stop이 체결되고 이전 동작은 재개되지 않습니다.`)) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(
+        `/api/robots/${encodeURIComponent(robot.robot_id)}/profiles/${profile}`,
+        { method: "POST" },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "프로필 전환 실패");
+      showToast(body.message || `${profile} 프로필 전환을 요청했습니다.`);
+      window.setTimeout(loadMap, 2500);
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+});
+
+saveMapButton.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  if (!robot) return;
+  if (!window.confirm("현재 지도와 pose graph를 기존 TB1 지도에 덮어쓸까요? e-stop이 체결됩니다.")) return;
+  saveMapButton.disabled = true;
+  try {
+    const response = await fetch(`/api/robots/${encodeURIComponent(robot.robot_id)}/mapping/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overwrite: true }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "지도 저장 실패");
+    showToast(body.message || "지도 저장 완료");
+    await loadMap();
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -760,8 +1049,19 @@ const taskActions = (task) => {
   return "";
 };
 
+const patrolActions = (patrol) => {
+  if (patrol.state === "CREATED") {
+    return `<button data-patrol-action="run" data-patrol-id="${escapeHtml(patrol.patrol_id)}">순찰 시작</button>
+      <button class="secondary" data-patrol-action="cancel" data-patrol-id="${escapeHtml(patrol.patrol_id)}">취소</button>`;
+  }
+  if (patrol.state === "STARTING" || patrol.state === "ACTIVE") {
+    return `<button class="secondary" data-patrol-action="cancel" data-patrol-id="${escapeHtml(patrol.patrol_id)}">순찰 취소</button>`;
+  }
+  return "";
+};
+
 const renderOperations = () => {
-  document.querySelector("#task-count").textContent = tasks.length;
+  document.querySelector("#task-count").textContent = `${tasks.length} / P${patrols.length}`;
   document.querySelector("#active-fault-count").textContent = faults.length;
   document.querySelector("#event-count").textContent = events.length;
   taskList.innerHTML = tasks.length ? tasks.map((task) => `
@@ -773,6 +1073,15 @@ const renderOperations = () => {
       </div>
       <div class="record-actions">${taskActions(task)}</div>
     </div>`).join("") : '<p class="record-empty">저장된 작업이 없습니다.</p>';
+  patrolList.innerHTML = patrols.length ? patrols.map((patrol) => `
+    <div class="record-item task-item">
+      <div>
+        <span class="record-badge ${escapeHtml(patrol.state.toLowerCase())}">${escapeHtml(patrol.state)}</span>
+        <strong>순찰 ${patrol.waypoints.length}점 · ${patrol.current_loop + 1}/${patrol.loops}회 · P${patrol.current_waypoint + 1}</strong>
+        <p>${escapeHtml(patrol.message || "상태 메시지 없음")} · ${recordTime(patrol.updated_at)}</p>
+      </div>
+      <div class="record-actions">${patrolActions(patrol)}</div>
+    </div>`).join("") : '<p class="record-empty">저장된 순찰이 없습니다.</p>';
   faultList.innerHTML = faults.length ? faults.map((fault) => `
     <div class="record-item">
       <div>
@@ -814,14 +1123,24 @@ const renderLogMlops = () => {
     || status.message
     || "분석 결과가 없습니다.";
   mlopsReasons.title = mlopsReasons.textContent;
+  const diagnosis = logIncidents?.diagnoses?.[0];
+  incidentCause.textContent = diagnosis
+    ? `원인 후보 ${diagnosis.label} · 근거 ${diagnosis.count}건 · ${number(diagnosis.confidence * 100, 0, "%")}`
+    : "최근 로그에서 분류 가능한 원인 후보가 없습니다.";
+  incidentAction.textContent = diagnosis?.recommended_action || logIncidents?.message || "";
+  incidentCause.title = diagnosis?.evidence?.map((item) => `${item.logger}: ${item.message}`).join("\n") || "";
 };
 
 const loadLogMlops = async () => {
   try {
-    const response = await fetch("/api/mlops/ros2-logs");
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.detail || "MLOps 상태 조회 실패");
-    logMlops = body;
+    const responses = await Promise.all([
+      fetch("/api/mlops/ros2-logs"),
+      fetch("/api/mlops/ros2-logs/incidents"),
+    ]);
+    const bodies = await Promise.all(responses.map((response) => response.json()));
+    if (!responses[0].ok) throw new Error(bodies[0].detail || "MLOps 상태 조회 실패");
+    if (!responses[1].ok) throw new Error(bodies[1].detail || "원인 분석 조회 실패");
+    [logMlops, logIncidents] = bodies;
   } catch (error) {
     logMlops = {
       state: "ERROR",
@@ -829,6 +1148,7 @@ const loadLogMlops = async () => {
       model_id: null,
       score: null,
     };
+    logIncidents = { diagnoses: [], message: error.message };
   }
   renderLogMlops();
 };
@@ -838,6 +1158,7 @@ const loadOperations = async () => {
   const robotId = robotSelect.value;
   if (!robotId) {
     tasks = [];
+    patrols = [];
     faults = [];
     events = [];
     renderOperations();
@@ -847,6 +1168,7 @@ const loadOperations = async () => {
     const encoded = encodeURIComponent(robotId);
     const responses = await Promise.all([
       fetch(`/api/tasks?robot_id=${encoded}&limit=50`),
+      fetch(`/api/patrols?robot_id=${encoded}&limit=50`),
       fetch(`/api/robots/${encoded}/faults`),
       fetch(`/api/events?robot_id=${encoded}&limit=50`),
     ]);
@@ -854,8 +1176,9 @@ const loadOperations = async () => {
     const failedIndex = responses.findIndex((response) => !response.ok);
     if (failedIndex >= 0) throw new Error(bodies[failedIndex].detail || "운영 기록 조회 실패");
     tasks = bodies[0].tasks || [];
-    faults = bodies[1].faults || [];
-    events = bodies[2].events || [];
+    patrols = bodies[1].patrols || [];
+    faults = bodies[2].faults || [];
+    events = bodies[3].events || [];
     renderOperations();
   } catch (error) {
     showToast(error.message, true);
@@ -904,6 +1227,26 @@ taskList.addEventListener("click", async (event) => {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || `작업 ${action} 실패`);
     showToast(body.message || `작업 ${action} 요청을 처리했습니다.`);
+    await loadOperations();
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+patrolList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-patrol-action]");
+  if (!button) return;
+  const action = button.dataset.patrolAction;
+  const patrolId = button.dataset.patrolId;
+  const path = `/api/patrols/${encodeURIComponent(patrolId)}${action === "run" ? "/run" : ""}`;
+  button.disabled = true;
+  try {
+    const response = await fetch(path, { method: action === "cancel" ? "DELETE" : "POST" });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || `순찰 ${action} 실패`);
+    showToast(body.message || `순찰 ${action} 요청을 처리했습니다.`);
     await loadOperations();
   } catch (error) {
     showToast(error.message, true);

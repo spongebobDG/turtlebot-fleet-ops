@@ -126,24 +126,23 @@ discovery를 차단한다. 두 bridge의 loopback TCP 연결만 둔 뒤 control 
 ## Humble Nav2의 속도 topic 흐름
 
 Humble `nav2_bringup`은 controller의 `cmd_vel`을 내부 `cmd_vel_nav`로 바꾸고,
-`velocity_smoother`가 이를 받아 smoothed `cmd_vel`을 발행한다. 한편
-`behavior_server`의 recovery 동작은 `/cmd_vel`을 직접 발행한다. 공통 group remap은
+`velocity_smoother`가 이를 받아 smoothed `cmd_vel`을 발행한다. 공통 group remap은
 Nav2 bringup 내부 remap보다 먼저 적용되어 controller나 smoother 입력까지 바꿀 수
 있다. 저장소 소유 non-composed launch는 노드를 직접 시작하면서 controller의
-`cmd_vel → cmd_vel_nav`, smoother의 `cmd_vel_smoothed → /motion/navigation/cmd_vel`,
-behavior의 `cmd_vel → /motion/navigation/cmd_vel` 규칙을 각 노드에만 적용한다.
+`cmd_vel → cmd_vel_nav`, behavior의 `cmd_vel → cmd_vel_nav`, smoother의
+`cmd_vel_smoothed → /motion/navigation/cmd_vel` 규칙을 각 노드에만 적용한다.
 
 ```text
 controller_server --cmd_vel_nav--> velocity_smoother
+behavior_server ---cmd_vel_nav----> velocity_smoother
 velocity_smoother --/motion/navigation/cmd_vel--> motion_arbiter
-behavior_server --/motion/navigation/cmd_vel--> motion_arbiter
 motion_arbiter --/safety/cmd_vel_in--> watchdog_policy
 watchdog_policy --/safety/watchdog_cmd_vel--> C++ watchdog_guard --/cmd_vel--> base
 ```
 
-따라서 `/motion/navigation/cmd_vel`의 주행 publisher는 `velocity_smoother`이고 recovery
-중에는 `behavior_server`도 같은 안전 입력을 사용한다. 그 topic을 controller가 직접
-발행한다고 단정하면 Nav2 내부 smoothing 단계를 놓친다. Python policy는 최종 publisher가
+따라서 `/motion/navigation/cmd_vel`의 publisher는 `velocity_smoother` 하나이며 recovery도
+그 입력을 공유한다. 그 topic을 controller가 직접 발행한다고 단정하면 Nav2 내부 smoothing
+단계를 놓친다. Python policy는 최종 publisher가
 아니며 실제 base topic `/cmd_vel`의 publisher는 C++ node `/safety_watchdog` 하나여야 한다.
 
 ### 왜 watchdog을 policy와 guard로 나눴는가

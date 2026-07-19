@@ -44,8 +44,17 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
                 parameters=[
                     str(config),
-                    {"default_mode": 1, "use_sim_time": use_sim_time},
+                    {"default_mode": 0, "use_sim_time": use_sim_time},
                 ],
+                respawn=True,
+                respawn_delay=3.0,
+            ),
+            Node(
+                package="navigation_agent",
+                executable="manual_control_node",
+                name="manual_control",
+                output="screen",
+                parameters=[str(config), {"use_sim_time": use_sim_time}],
                 respawn=True,
                 respawn_delay=3.0,
             ),

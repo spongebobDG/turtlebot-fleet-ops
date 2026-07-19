@@ -89,4 +89,4 @@ for pid in "${smoke_pids[@]}"; do
   kill -0 "${pid}"
 done
 
-echo "Robotless Zenoh navigation action smoke test passed"
+echo "Robotless Zenoh navigation action and operations smoke test passed"

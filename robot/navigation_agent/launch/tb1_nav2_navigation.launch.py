@@ -88,7 +88,7 @@ def generate_launch_description() -> LaunchDescription:
                 executable="behavior_server",
                 name="behavior_server",
                 remappings=common_remaps
-                + [("cmd_vel", NAVIGATION_CMD_TOPIC)],
+                + [("cmd_vel", "cmd_vel_nav")],
                 **common,
             ),
             Node(
@@ -114,7 +114,26 @@ def generate_launch_description() -> LaunchDescription:
                     ("cmd_vel", "cmd_vel_nav"),
                     ("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC),
                 ],
-                **common,
+                output=common["output"],
+                respawn=common["respawn"],
+                respawn_delay=common["respawn_delay"],
+                arguments=common["arguments"],
+                parameters=[
+                    configured_params,
+                    {
+                        "smoothing_frequency": 20.0,
+                        "scale_velocities": True,
+                        "feedback": "OPEN_LOOP",
+                        "max_velocity": [0.05, 0.0, 0.3],
+                        "min_velocity": [-0.05, 0.0, -0.3],
+                        "max_accel": [0.08, 0.0, 0.6],
+                        "max_decel": [-0.12, 0.0, -0.8],
+                        "odom_topic": "/odom",
+                        "odom_duration": 0.1,
+                        "deadband_velocity": [0.0, 0.0, 0.0],
+                        "velocity_timeout": 0.5,
+                    },
+                ],
             ),
             Node(
                 package="nav2_lifecycle_manager",

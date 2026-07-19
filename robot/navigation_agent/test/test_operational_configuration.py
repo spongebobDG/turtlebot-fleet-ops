@@ -47,13 +47,17 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "robot_radius: 0.14" in nav2_rewrites
     assert "xy_goal_tolerance: 0.10" in nav2_rewrites
     assert "yaw_goal_tolerance: 0.15" in nav2_rewrites
+    assert '"smoothing_frequency": 20.0' in nav2_launch
+    assert '"max_velocity": [0.05, 0.0, 0.3]' in nav2_launch
+    assert '"max_accel": [0.08, 0.0, 0.6]' in nav2_launch
+    assert '"max_decel": [-0.12, 0.0, -0.8]' in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
     assert "SetRemap" not in launch
     assert '"bringup_launch.py"' not in launch
-    assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
-    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' in nav2_launch
+    assert nav2_launch.count('("cmd_vel", "cmd_vel_nav")') == 3
+    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' not in nav2_launch
     assert '("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC)' in nav2_launch
     assert '("/scan", "/scan_normalized")' in nav2_launch
     assert 'NAVIGATION_CMD_TOPIC = "/motion/navigation/cmd_vel"' in (
@@ -146,7 +150,7 @@ def test_tb1_acceptance_tests_are_serialized_and_scoped() -> None:
 
     assert "--executor sequential" in deploy
     assert '--test-result-base "build/${package}"' in deploy
-    assert "Install all seven TB1 user units" in deploy
+    assert "Install all eight TB1 user units" in deploy
 
 
 def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
@@ -208,6 +212,6 @@ def test_only_watchdog_owns_the_real_velocity_topic() -> None:
     ) == 2
     assert "output_topic: /safety/cmd_vel_in" in navigation_config
     assert '"tb1_nav2_navigation.launch.py"' in navigation_launch
-    assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
-    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' in nav2_launch
+    assert nav2_launch.count('("cmd_vel", "cmd_vel_nav")') == 3
+    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' not in nav2_launch
     assert '("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC)' in nav2_launch

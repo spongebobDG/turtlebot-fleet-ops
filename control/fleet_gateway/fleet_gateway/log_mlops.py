@@ -97,6 +97,85 @@ OPERATIONAL_SIGNAL_PATTERNS = (
     ),
 )
 
+ROOT_CAUSE_RULES = (
+    (
+        "localization_tf",
+        "위치추정·TF 불일치",
+        re.compile(
+            r"AMCL cannot publish|set the initial pose|transform.*(?:fail|time)"
+            r"|frame ID.*(?:map|odom)|extrapolation",
+            re.I,
+        ),
+        "초기 위치, map→odom TF 시각, AMCL 센서 정합을 확인하세요.",
+    ),
+    (
+        "collision_clearance",
+        "장애물·여유거리 차단",
+        re.compile(
+            r"collision ahead|obstacle|costmap.*(?:lethal|collision)"
+            r"|no valid trajector",
+            re.I,
+        ),
+        "실물 장애물과 LiDAR 사각지대, local costmap 표시를 함께 확인하세요.",
+    ),
+    (
+        "navigation_progress",
+        "경로 진행 정체",
+        re.compile(
+            r"failed to make progress|progress checker|controller.*fail"
+            r"|failed to create plan|valid path",
+            re.I,
+        ),
+        "목표 경로, 바퀴 미끄러짐, 장애물과 map-frame 진행량을 확인하세요.",
+    ),
+    (
+        "network_lease",
+        "Gateway·Zenoh·lease 단절",
+        re.compile(
+            r"lease.*(?:expired|timeout|stale)|disconnect|unreachable"
+            r"|connection.*(?:lost|closed|refused)|zenoh.*(?:fail|error)",
+            re.I,
+        ),
+        "Gateway와 Zenoh 서비스, Wi-Fi 신호와 2초 lease 만료 기록을 확인하세요.",
+    ),
+    (
+        "sensor_data",
+        "센서 지연·유실",
+        re.compile(
+            r"dropping message|message.*lost|sample.*lost|scan.*stale"
+            r"|odom.*stale|queue.*full",
+            re.I,
+        ),
+        "scan/odom 주기, QoS, CPU 부하와 센서 연결을 확인하세요.",
+    ),
+    (
+        "process_restart",
+        "프로세스 종료·재시작",
+        re.compile(
+            r"process.*(?:died|exited)|restart|lifecycle.*(?:error|finalized)"
+            r"|bond.*(?:broken|timeout)",
+            re.I,
+        ),
+        "해당 systemd unit의 직전 journal과 재시작 횟수를 확인하세요.",
+    ),
+    (
+        "resource_pressure",
+        "CPU·메모리·제어 주기 압박",
+        re.compile(
+            r"control loop missed|tick rate.*exceeded|deadline"
+            r"|out of memory|cpu.*(?:high|warning)|memory.*(?:high|warning)",
+            re.I,
+        ),
+        "10분 CPU·메모리 추세와 Nav2 제어 주기 지연을 비교하세요.",
+    ),
+    (
+        "safety_stop",
+        "안전 정지 개입",
+        re.compile(r"emergency stop active|e-?stop|watchdog.*timeout", re.I),
+        "정지 원인을 해소한 뒤 IDLE·0 입력에서만 수동으로 재무장하세요.",
+    ),
+)
+
 
 @dataclass(frozen=True)
 class LogRecord:
@@ -240,6 +319,104 @@ def extract_operational_signals(
             signals.append({"signal": name, "label": label, "count": count})
     signals.sort(key=lambda item: (-item["count"], item["signal"]))
     return signals
+
+
+def diagnose_records(
+    records: Sequence[LogRecord],
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    """Rank explainable root-cause hypotheses with bounded evidence."""
+    diagnoses = []
+    for cause, label, pattern, recommendation in ROOT_CAUSE_RULES:
+        matches = [record for record in records if pattern.search(record.message)]
+        if not matches:
+            continue
+        loggers = {record.logger for record in matches}
+        confidence = min(
+            0.98,
+            0.5 + 0.08 * math.log2(len(matches) + 1) + 0.04 * len(loggers),
+        )
+        evidence = [
+            {
+                "timestamp": utc_now(record.timestamp),
+                "severity": record.severity,
+                "logger": record.logger,
+                "message": record.message[:300],
+            }
+            for record in matches[-3:]
+        ]
+        diagnoses.append(
+            {
+                "cause": cause,
+                "label": label,
+                "count": len(matches),
+                "confidence": round(confidence, 3),
+                "last_seen": utc_now(matches[-1].timestamp),
+                "evidence": evidence,
+                "recommended_action": recommendation,
+            }
+        )
+    diagnoses.sort(
+        key=lambda item: (item["last_seen"], item["count"]),
+        reverse=True,
+    )
+    return diagnoses[: max(1, min(int(limit), 20))]
+
+
+def incidents_from_path(
+    status_path: Optional[Path],
+    max_records: int = 2000,
+) -> Dict[str, Any]:
+    """Read recent immutable raw logs and return explainable diagnoses."""
+    status = status_from_path(status_path)
+    records: List[LogRecord] = []
+    if status_path is not None:
+        raw_dir = Path(status_path).expanduser().parent.parent / "raw"
+        try:
+            files = sorted(raw_dir.glob("*.jsonl"), reverse=True)
+        except OSError:
+            files = []
+        for path in files:
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in reversed(lines):
+                if len(records) >= max_records:
+                    break
+                try:
+                    payload = json.loads(line)
+                    records.append(
+                        LogRecord(
+                            timestamp=float(payload["timestamp"]),
+                            severity=str(payload.get("severity", "INFO")),
+                            logger=str(payload.get("logger", "unknown")),
+                            message=str(payload.get("message", "")),
+                            unit=str(payload.get("unit", "")),
+                        )
+                    )
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    continue
+            if len(records) >= max_records:
+                break
+    records.sort(key=lambda record: record.timestamp)
+    return {
+        "analysis_method": "rule_evidence_v1",
+        "scope": "recent_ros2_raw_logs",
+        "record_count": len(records),
+        "model": {
+            "model_id": status.get("model_id"),
+            "state": status.get("state"),
+            "score": status.get("score"),
+            "threshold": status.get("threshold"),
+            "observed_at": status.get("observed_at"),
+        },
+        "diagnoses": diagnose_records(records),
+        "message": (
+            "규칙 근거와 Production 모델 상태를 함께 표시합니다. "
+            "원인 후보는 자동 제어에 사용되지 않습니다."
+        ),
+    }
 
 
 def build_dataset(

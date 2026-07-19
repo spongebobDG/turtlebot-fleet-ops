@@ -10,6 +10,10 @@ odom_topic: /odom
 # 10 Hz tree is still faster than the low-speed controller needs and leaves
 # CPU headroom for AMCL, costmaps, the safety path, and Zenoh.
 bt_loop_duration: 100
+# The DWB controller remains at the proven 10 Hz CPU budget.  The dedicated
+# velocity smoother below interpolates each command at 20 Hz with bounded
+# acceleration, so the watchdog receives a continuous low-speed stream.
+controller_frequency: 10.0
 max_vel_x: 0.05
 max_speed_xy: 0.05
 max_vel_theta: 0.3

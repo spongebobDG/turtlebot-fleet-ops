@@ -51,6 +51,22 @@ def wait_task(
     raise AssertionError(f"task {task_id} did not reach {state}: {latest}")
 
 
+def wait_patrol(
+    patrol_id: str,
+    state: str,
+    timeout_sec: float = 12.0,
+) -> Dict[str, Any]:
+    """Wait until a durable patrol reaches the expected state."""
+    deadline = time.monotonic() + timeout_sec
+    latest = {}
+    while time.monotonic() < deadline:
+        latest = request_json(f"/api/patrols/{patrol_id}")
+        if latest.get("state") == state:
+            return latest
+        time.sleep(0.1)
+    raise AssertionError(f"patrol {patrol_id} did not reach {state}: {latest}")
+
+
 def create_task(x_value: float) -> Dict[str, Any]:
     """Create one map-valid TB1 task."""
     return request_json(
@@ -130,6 +146,21 @@ def main() -> None:
     )
     wait_robot_ready(localized=True)
 
+    manual = request_json(
+        "/api/robots/tb1/manual/sessions",
+        "POST",
+        {"confirm_warnings": False},
+    )
+    request_json(
+        f"/api/robots/tb1/manual/sessions/{manual['session_id']}",
+        "PUT",
+        {"linear_x": 0.05, "angular_z": 0.0},
+    )
+    request_json(
+        f"/api/robots/tb1/manual/sessions/{manual['session_id']}",
+        "DELETE",
+    )
+
     succeeded = create_task(0.5)
     request_json(f"/api/tasks/{succeeded['task_id']}/run", "POST")
     wait_task(succeeded["task_id"], "SUCCEEDED")
@@ -151,6 +182,31 @@ def main() -> None:
     request_json(f"/api/tasks/{failed['task_id']}/run", "POST")
     wait_task(failed["task_id"], "FAILED")
 
+    patrol = request_json(
+        "/api/robots/tb1/patrols",
+        "POST",
+        {
+            "waypoints": [
+                {"x": 0.2, "y": 0.0, "yaw": 0.0},
+                {"x": 0.4, "y": 0.0, "yaw": 1.57},
+            ],
+            "loops": 1,
+            "dwell_sec": 0.0,
+            "confirm_warnings": False,
+        },
+    )
+    request_json(f"/api/patrols/{patrol['patrol_id']}/run", "POST")
+    wait_patrol(patrol["patrol_id"], "COMPLETED")
+
+    request_json("/api/robots/tb1/profiles/MAPPING", "POST")
+    time.sleep(0.5)
+    request_json(
+        "/api/robots/tb1/mapping/save",
+        "POST",
+        {"overwrite": True},
+    )
+    request_json("/api/robots/tb1/profiles/NAVIGATION", "POST")
+
     faults = request_json(
         "/api/robots/tb1/faults?include_cleared=true"
     )["faults"]
@@ -167,6 +223,7 @@ def main() -> None:
     print(
         "ROBOTLESS_OPERATIONS_SMOKE_OK "
         f"tasks={len(request_json('/api/tasks')['tasks'])} "
+        f"patrols={len(request_json('/api/patrols')['patrols'])} "
         f"events={len(events)} final_estop=true"
     )
 

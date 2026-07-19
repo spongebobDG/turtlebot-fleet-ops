@@ -55,6 +55,7 @@
 - [Phase 5: SLAM, 지도 산출물과 실차 Nav2 검증](phase-5-slam-nav2.md)
 - [Phase 6: TB1 작업 상태 머신과 운영 기록](phase-6-tb1-operations.md)
 - [Phase 7: ROS 2 로그 분석 MLOps](phase-7-ros2-log-mlops.md)
+- [Phase 8: Deadman 제어·순찰·프로필 전환·설명 가능한 MLOps](phase-8-web-control-patrol-diagnostics.md)
 - [관제 PC: WSL2·ROS 2 지속 실행과 검증 계층](control-pc-wsl-ros2-readiness.md)
 
 ## 이해도 판정 기준

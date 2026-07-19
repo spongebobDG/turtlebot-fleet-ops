@@ -33,6 +33,7 @@ class StatusRegistry:
         self._records: Dict[str, _RobotRecord] = {}
         self._navigation_records: Dict[str, _RobotRecord] = {}
         self._safety_records: Dict[str, _RobotRecord] = {}
+        self._mapping_records: Dict[str, _RobotRecord] = {}
         self._listeners: List[RegistryListener] = []
         self._lock = threading.RLock()
 
@@ -73,6 +74,15 @@ class StatusRegistry:
         """Store one robot's safety status by local receipt time."""
         self._update_auxiliary(self._safety_records, status, now)
         self._notify("safety", status)
+
+    def update_mapping(
+        self,
+        status: Mapping[str, Any],
+        now: Optional[float] = None,
+    ) -> None:
+        """Store one robot's operating-profile status by receipt time."""
+        self._update_auxiliary(self._mapping_records, status, now)
+        self._notify("mapping", status)
 
     def add_listener(self, listener: RegistryListener) -> None:
         """Register a best-effort observer for status transition recording."""
@@ -120,6 +130,10 @@ class StatusRegistry:
         )
         result["safety"] = self._auxiliary_snapshot(
             self._safety_records.get(robot_id),
+            now,
+        )
+        result["mapping"] = self._auxiliary_snapshot(
+            self._mapping_records.get(robot_id),
             now,
         )
         return result

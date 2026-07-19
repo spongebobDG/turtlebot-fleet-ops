@@ -40,6 +40,8 @@ setup(
         "console_scripts": [
             "navigation_agent_node = navigation_agent.agent_node:main",
             "motion_arbiter_node = navigation_agent.arbiter_node:main",
+            "manual_control_node = navigation_agent.manual_control_node:main",
+            "profile_manager_node = navigation_agent.profile_manager_node:main",
             "validate_map = navigation_agent.map_validator:main",
             "scan_normalizer = navigation_agent.scan_normalizer:main",
             "supervised_motion = navigation_agent.supervised_motion:main",

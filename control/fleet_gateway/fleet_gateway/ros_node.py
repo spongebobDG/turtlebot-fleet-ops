@@ -8,12 +8,19 @@ import uuid
 
 from fleet_interfaces.action import NavigateRobot
 from fleet_interfaces.msg import (
+    MappingStatus,
     NavigationLease,
     NavigationStatus,
     RobotStatus,
     SafetyStatus,
 )
-from fleet_interfaces.srv import SetInitialPose
+from fleet_interfaces.srv import (
+    ManualCommand,
+    SaveMap,
+    SetInitialPose,
+    SetOperatingProfile,
+)
+from geometry_msgs.msg import Twist
 from nav_msgs.msg import OccupancyGrid
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -153,6 +160,23 @@ def safety_status_to_dict(message: SafetyStatus) -> Dict[str, Any]:
     }
 
 
+def mapping_status_to_dict(message: MappingStatus) -> Dict[str, Any]:
+    """Convert robot-local operating-profile state for the web snapshot."""
+    names = {
+        MappingStatus.PROFILE_IDLE: "IDLE",
+        MappingStatus.PROFILE_MAPPING: "MAPPING",
+        MappingStatus.PROFILE_NAVIGATION: "NAVIGATION",
+    }
+    return {
+        "robot_id": message.robot_id,
+        "profile": names.get(int(message.profile), "UNKNOWN"),
+        "profile_code": int(message.profile),
+        "transitioning": bool(message.transitioning),
+        "map_available": bool(message.map_available),
+        "message": message.message,
+    }
+
+
 def _pose_to_dict(message: Any) -> Dict[str, Any]:
     orientation = message.pose.orientation
     return {
@@ -216,6 +240,13 @@ class FleetGatewayNode(Node):
             10,
             callback_group=self._callback_group,
         )
+        self._mapping_subscription = self.create_subscription(
+            MappingStatus,
+            str(self.get_parameter("mapping_status_topic").value),
+            self._mapping_status_callback,
+            10,
+            callback_group=self._callback_group,
+        )
         self._lease_publisher = self.create_publisher(
             NavigationLease,
             str(self.get_parameter("navigation_lease_topic").value),
@@ -228,6 +259,13 @@ class FleetGatewayNode(Node):
         initial_pose_names = list(
             self.get_parameter("initial_pose_services").value
         )
+        manual_command_names = list(
+            self.get_parameter("manual_command_services").value
+        )
+        profile_names = list(
+            self.get_parameter("operating_profile_services").value
+        )
+        save_map_names = list(self.get_parameter("save_map_services").value)
         map_topics = list(self.get_parameter("map_topics").value)
         scan_topics = list(self.get_parameter("scan_topics").value)
         scan_sensor_x = list(self.get_parameter("scan_sensor_x_m").value)
@@ -240,6 +278,9 @@ class FleetGatewayNode(Node):
             estop_names,
             action_names,
             initial_pose_names,
+            manual_command_names,
+            profile_names,
+            save_map_names,
             map_topics,
             scan_topics,
             scan_sensor_x,
@@ -270,6 +311,30 @@ class FleetGatewayNode(Node):
                 callback_group=self._callback_group,
             )
             for robot_id, service_name in zip(robot_ids, initial_pose_names)
+        }
+        self._manual_command_clients = {
+            robot_id: self.create_client(
+                ManualCommand,
+                service_name,
+                callback_group=self._callback_group,
+            )
+            for robot_id, service_name in zip(robot_ids, manual_command_names)
+        }
+        self._profile_clients = {
+            robot_id: self.create_client(
+                SetOperatingProfile,
+                service_name,
+                callback_group=self._callback_group,
+            )
+            for robot_id, service_name in zip(robot_ids, profile_names)
+        }
+        self._save_map_clients = {
+            robot_id: self.create_client(
+                SaveMap,
+                service_name,
+                callback_group=self._callback_group,
+            )
+            for robot_id, service_name in zip(robot_ids, save_map_names)
         }
         map_qos = QoSProfile(
             depth=1,
@@ -314,6 +379,9 @@ class FleetGatewayNode(Node):
         ]
 
         self._navigation_lock = threading.RLock()
+        self._manual_lock = threading.RLock()
+        self._manual_sessions: Dict[str, Tuple[str, float]] = {}
+        self._pending_manual: Dict[str, str] = {}
         self._active_navigation: Dict[str, Tuple[str, Any]] = {}
         self._confirmed_navigation: Dict[str, str] = {}
         self._navigation_accepted_at: Dict[str, float] = {}
@@ -353,6 +421,7 @@ class FleetGatewayNode(Node):
             "/fleet/navigation_status",
         )
         self.declare_parameter("safety_status_topic", "/fleet/safety_status")
+        self.declare_parameter("mapping_status_topic", "/fleet/mapping_status")
         self.declare_parameter(
             "navigation_lease_topic",
             "/fleet/navigation_lease",
@@ -374,6 +443,18 @@ class FleetGatewayNode(Node):
         self.declare_parameter(
             "initial_pose_services",
             ["/tb1/navigation/set_initial_pose"],
+        )
+        self.declare_parameter(
+            "manual_command_services",
+            ["/tb1/navigation/manual_command"],
+        )
+        self.declare_parameter(
+            "operating_profile_services",
+            ["/tb1/navigation/set_operating_profile"],
+        )
+        self.declare_parameter(
+            "save_map_services",
+            ["/tb1/navigation/save_map"],
         )
         self.declare_parameter("map_topics", ["/map"])
         self.declare_parameter("scan_topics", ["/scan"])
@@ -422,6 +503,9 @@ class FleetGatewayNode(Node):
 
     def _safety_status_callback(self, message: SafetyStatus) -> None:
         self.registry.update_safety(safety_status_to_dict(message))
+
+    def _mapping_status_callback(self, message: MappingStatus) -> None:
+        self.registry.update_mapping(mapping_status_to_dict(message))
 
     def _map_callback(self, robot_id: str, message: OccupancyGrid) -> None:
         try:
@@ -493,12 +577,274 @@ class FleetGatewayNode(Node):
             with self._navigation_lock:
                 self._estop_engaged[robot_id] = bool(engaged)
             if engaged:
+                self._stop_manual_for_estop(robot_id)
                 cancel_result = self._cancel_active_for_estop(robot_id)
                 if cancel_result.get("command_id"):
                     result["message"] += "; navigation lease stopped"
         elif engaged:
             self._engage_gateway_estop(robot_id)
         return result
+
+    def start_manual(self, robot_id: str) -> Dict[str, Any]:
+        """Create a short-lived robot-local manual driving session."""
+        session_id = uuid.uuid4().hex
+        with self._navigation_lock:
+            if self._estop_engaged.get(robot_id, False):
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "Emergency stop is active",
+                }
+            if (
+                robot_id in self._active_navigation
+                or robot_id in self._pending_navigation
+            ):
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "A navigation goal is active",
+                }
+            with self._manual_lock:
+                active = self._manual_sessions.get(robot_id)
+                if (
+                    robot_id in self._pending_manual
+                    or (
+                        active
+                        and time.monotonic() - active[1] <= 0.5
+                    )
+                ):
+                    return {
+                        "success": False,
+                        "status_code": 409,
+                        "message": "Another manual session is active",
+                    }
+                self._manual_sessions.pop(robot_id, None)
+                self._pending_manual[robot_id] = session_id
+        result = self._call_manual(robot_id, session_id, 0.0, 0.0, False)
+        with self._navigation_lock, self._manual_lock:
+            self._pending_manual.pop(robot_id, None)
+            if result.get("success") and not self._estop_engaged.get(
+                robot_id,
+                False,
+            ):
+                self._manual_sessions[robot_id] = (
+                    session_id,
+                    time.monotonic(),
+                )
+                result["session_id"] = session_id
+                return result
+        if result.get("success"):
+            self._call_manual(robot_id, session_id, 0.0, 0.0, True)
+            return {
+                "success": False,
+                "status_code": 409,
+                "message": "Emergency stop interrupted manual start",
+            }
+        return result
+
+    def manual_active(self, robot_id: str) -> bool:
+        """Report fresh Gateway ownership of a manual session."""
+        with self._manual_lock:
+            if robot_id in self._pending_manual:
+                return True
+            active = self._manual_sessions.get(robot_id)
+            if active is None:
+                return False
+            if time.monotonic() - active[1] <= 0.5:
+                return True
+            self._manual_sessions.pop(robot_id, None)
+            return False
+
+    def send_manual(
+        self,
+        robot_id: str,
+        session_id: str,
+        linear_x: float,
+        angular_z: float,
+    ) -> Dict[str, Any]:
+        """Refresh one exact manual session with a bounded command."""
+        with self._manual_lock:
+            active = self._manual_sessions.get(robot_id)
+            if active is None or active[0] != session_id:
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "No matching manual session",
+                }
+        result = self._call_manual(
+            robot_id,
+            session_id,
+            max(-0.05, min(0.05, float(linear_x))),
+            max(-0.3, min(0.3, float(angular_z))),
+            False,
+        )
+        if result.get("success"):
+            with self._manual_lock:
+                if self._manual_sessions.get(robot_id, ("", 0.0))[0] == session_id:
+                    self._manual_sessions[robot_id] = (
+                        session_id,
+                        time.monotonic(),
+                    )
+        return result
+
+    def stop_manual(self, robot_id: str, session_id: str) -> Dict[str, Any]:
+        """Stop exactly one manual session and remove Gateway ownership."""
+        with self._manual_lock:
+            active = self._manual_sessions.get(robot_id)
+            if active is None or active[0] != session_id:
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "No matching manual session",
+                }
+            self._manual_sessions.pop(robot_id, None)
+        return self._call_manual(robot_id, session_id, 0.0, 0.0, True)
+
+    def _stop_manual_for_estop(self, robot_id: str) -> None:
+        with self._manual_lock:
+            active = self._manual_sessions.pop(robot_id, None)
+            pending = self._pending_manual.pop(robot_id, None)
+        session_id = active[0] if active is not None else pending
+        if session_id:
+            self._call_manual(robot_id, session_id, 0.0, 0.0, True)
+
+    def _call_manual(
+        self,
+        robot_id: str,
+        session_id: str,
+        linear_x: float,
+        angular_z: float,
+        stop: bool,
+    ) -> Dict[str, Any]:
+        client = self._manual_command_clients.get(robot_id)
+        if client is None or not client.wait_for_service(timeout_sec=0.5):
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Manual-control service is unavailable",
+            }
+        request = ManualCommand.Request()
+        request.session_id = session_id
+        request.command = Twist()
+        request.command.linear.x = linear_x
+        request.command.angular.z = angular_z
+        request.stop = bool(stop)
+        try:
+            response = self._future_result(client.call_async(request), 1.0)
+        except Exception:  # noqa: B902
+            response = None
+        if response is None:
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Manual-control service timed out",
+            }
+        return {
+            "success": bool(response.success),
+            "status_code": 202 if response.success else 409,
+            "robot_id": robot_id,
+            "message": response.message,
+        }
+
+    def set_operating_profile(
+        self,
+        robot_id: str,
+        profile: str,
+    ) -> Dict[str, Any]:
+        """Engage e-stop, then ask TB1 to switch its systemd profile."""
+        estop = self.set_estop(robot_id, True)
+        if not estop.get("success"):
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Cannot switch profile without confirmed e-stop",
+            }
+        codes = {
+            "IDLE": SetOperatingProfile.Request.PROFILE_IDLE,
+            "MAPPING": SetOperatingProfile.Request.PROFILE_MAPPING,
+            "NAVIGATION": SetOperatingProfile.Request.PROFILE_NAVIGATION,
+        }
+        client = self._profile_clients.get(robot_id)
+        if client is None or not client.wait_for_service(timeout_sec=1.0):
+            return {
+                "success": False,
+                "status_code": 503,
+                "estop_engaged": True,
+                "message": "Operating-profile service is unavailable",
+            }
+        request = SetOperatingProfile.Request()
+        request.profile = codes[profile]
+        try:
+            response = self._future_result(client.call_async(request), 45.0)
+        except Exception:  # noqa: B902
+            response = None
+        if response is None:
+            observed = self.registry.get(robot_id)
+            mapping = (observed or {}).get("mapping") or {}
+            if mapping.get("fresh") and mapping.get("profile") == profile:
+                return {
+                    "success": True,
+                    "status_code": 202,
+                    "robot_id": robot_id,
+                    "profile": profile,
+                    "estop_engaged": True,
+                    "message": (
+                        "Profile transition confirmed by status after "
+                        "the Zenoh bridge reconnected; e-stop remains active"
+                    ),
+                }
+            return {
+                "success": False,
+                "status_code": 503,
+                "estop_engaged": True,
+                "message": "Operating-profile service timed out",
+            }
+        return {
+            "success": bool(response.success),
+            "status_code": 202 if response.success else 409,
+            "robot_id": robot_id,
+            "profile": profile,
+            "estop_engaged": True,
+            "message": response.message,
+        }
+
+    def save_map(self, robot_id: str, overwrite: bool) -> Dict[str, Any]:
+        """Stop motion and save the fixed TB1 map and pose graph."""
+        estop = self.set_estop(robot_id, True)
+        if not estop.get("success"):
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Cannot save map without confirmed e-stop",
+            }
+        client = self._save_map_clients.get(robot_id)
+        if client is None or not client.wait_for_service(timeout_sec=1.0):
+            return {
+                "success": False,
+                "status_code": 503,
+                "estop_engaged": True,
+                "message": "Map-save service is unavailable",
+            }
+        request = SaveMap.Request()
+        request.overwrite = bool(overwrite)
+        try:
+            response = self._future_result(client.call_async(request), 95.0)
+        except Exception:  # noqa: B902
+            response = None
+        if response is None:
+            return {
+                "success": False,
+                "status_code": 503,
+                "estop_engaged": True,
+                "message": "Map-save service timed out",
+            }
+        return {
+            "success": bool(response.success),
+            "status_code": 202 if response.success else 409,
+            "robot_id": robot_id,
+            "estop_engaged": True,
+            "message": response.message,
+        }
 
     def set_initial_pose(
         self,
@@ -573,6 +919,12 @@ class FleetGatewayNode(Node):
                     "success": False,
                     "status_code": 409,
                     "message": "Cancel the active navigation goal first",
+                }
+            if self.manual_active(robot_id):
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "A manual session is active",
                 }
             self._pending_navigation.add(robot_id)
         command_id = uuid.uuid4().hex

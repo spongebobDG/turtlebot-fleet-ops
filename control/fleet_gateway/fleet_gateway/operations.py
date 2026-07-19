@@ -88,6 +88,33 @@ class OperationsStore:
                 );
                 CREATE INDEX IF NOT EXISTS tasks_robot_time
                     ON tasks(robot_id, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS patrols (
+                    patrol_id TEXT PRIMARY KEY,
+                    robot_id TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    loops INTEGER NOT NULL,
+                    current_loop INTEGER NOT NULL,
+                    current_waypoint INTEGER NOT NULL,
+                    dwell_sec REAL NOT NULL,
+                    confirm_warnings INTEGER NOT NULL,
+                    command_id TEXT,
+                    message TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS patrols_robot_time
+                    ON patrols(robot_id, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS patrol_waypoints (
+                    patrol_id TEXT NOT NULL,
+                    waypoint_index INTEGER NOT NULL,
+                    x REAL NOT NULL,
+                    y REAL NOT NULL,
+                    yaw REAL NOT NULL,
+                    PRIMARY KEY (patrol_id, waypoint_index),
+                    FOREIGN KEY (patrol_id) REFERENCES patrols(patrol_id)
+                        ON DELETE CASCADE
+                );
                 """
             )
             connection.commit()
@@ -397,6 +424,191 @@ class OperationsStore:
             attempt=int(task["attempt"]) + 1,
             parent_task_id=task_id,
         )
+
+    def create_patrol(
+        self,
+        robot_id: str,
+        waypoints: List[Mapping[str, float]],
+        loops: int,
+        dwell_sec: float,
+        confirm_warnings: bool,
+    ) -> Dict[str, Any]:
+        """Create a durable ordered waypoint patrol without running it."""
+        patrol_id = str(uuid.uuid4())
+        now = _utc_now()
+        with self._lock, closing(self._connect()) as connection:
+            connection.execute(
+                """
+                INSERT INTO patrols VALUES (
+                    ?, ?, 'CREATED', ?, 0, 0, ?, ?, NULL, '', ?, ?
+                )
+                """,
+                (
+                    patrol_id,
+                    robot_id,
+                    int(loops),
+                    float(dwell_sec),
+                    int(bool(confirm_warnings)),
+                    now,
+                    now,
+                ),
+            )
+            connection.executemany(
+                """
+                INSERT INTO patrol_waypoints VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        patrol_id,
+                        index,
+                        float(waypoint["x"]),
+                        float(waypoint["y"]),
+                        float(waypoint["yaw"]),
+                    )
+                    for index, waypoint in enumerate(waypoints)
+                ],
+            )
+            connection.commit()
+        self.record_event(
+            robot_id,
+            "PATROL",
+            "PATROL_CREATED",
+            "Waypoint patrol created",
+            details={
+                "patrol_id": patrol_id,
+                "waypoint_count": len(waypoints),
+                "loops": loops,
+                "dwell_sec": dwell_sec,
+            },
+        )
+        return self.get_patrol(patrol_id) or {}
+
+    def get_patrol(self, patrol_id: str) -> Optional[Dict[str, Any]]:
+        """Return one patrol and its ordered map-frame waypoints."""
+        with self._lock, closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM patrols WHERE patrol_id = ?",
+                (patrol_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            points = connection.execute(
+                """
+                SELECT x, y, yaw FROM patrol_waypoints
+                WHERE patrol_id = ? ORDER BY waypoint_index
+                """,
+                (patrol_id,),
+            ).fetchall()
+        result = dict(row)
+        result["confirm_warnings"] = bool(result["confirm_warnings"])
+        result["waypoints"] = [
+            {
+                "frame_id": "map",
+                "x": point["x"],
+                "y": point["y"],
+                "yaw": point["yaw"],
+            }
+            for point in points
+        ]
+        return result
+
+    def list_patrols(
+        self,
+        robot_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Return newest patrol definitions with their waypoints."""
+        bounded = max(1, min(int(limit), 500))
+        query = "SELECT patrol_id FROM patrols"
+        values: List[Any] = []
+        if robot_id:
+            query += " WHERE robot_id = ?"
+            values.append(robot_id)
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        values.append(bounded)
+        with self._lock, closing(self._connect()) as connection:
+            rows = connection.execute(query, values).fetchall()
+        return [
+            patrol
+            for row in rows
+            if (patrol := self.get_patrol(str(row["patrol_id"]))) is not None
+        ]
+
+    def update_patrol(
+        self,
+        patrol_id: str,
+        state: str,
+        message: str,
+        current_loop: Optional[int] = None,
+        current_waypoint: Optional[int] = None,
+        command_id: Optional[str] = None,
+        clear_command: bool = False,
+    ) -> Dict[str, Any]:
+        """Persist one patrol transition and progress checkpoint."""
+        patrol = self.get_patrol(patrol_id)
+        if patrol is None:
+            raise KeyError(patrol_id)
+        now = _utc_now()
+        loop_value = (
+            patrol["current_loop"] if current_loop is None else current_loop
+        )
+        waypoint_value = (
+            patrol["current_waypoint"]
+            if current_waypoint is None
+            else current_waypoint
+        )
+        resolved_command = (
+            None if clear_command else command_id or patrol.get("command_id")
+        )
+        with self._lock, closing(self._connect()) as connection:
+            connection.execute(
+                """
+                UPDATE patrols SET state = ?, current_loop = ?,
+                    current_waypoint = ?, command_id = ?, message = ?,
+                    updated_at = ? WHERE patrol_id = ?
+                """,
+                (
+                    state,
+                    int(loop_value),
+                    int(waypoint_value),
+                    resolved_command,
+                    message,
+                    now,
+                    patrol_id,
+                ),
+            )
+            connection.commit()
+        if state != patrol["state"] or message != patrol["message"]:
+            self.record_event(
+                patrol["robot_id"],
+                "PATROL",
+                f"PATROL_{state}",
+                message,
+                severity="ERROR" if state == "FAILED" else "INFO",
+                command_id=resolved_command,
+                details={
+                    "patrol_id": patrol_id,
+                    "current_loop": loop_value,
+                    "current_waypoint": waypoint_value,
+                },
+            )
+        return self.get_patrol(patrol_id) or {}
+
+    def reconcile_patrol_restart(self) -> int:
+        """Fail nonterminal patrols because Gateway never auto-resumes them."""
+        active = [
+            patrol
+            for patrol in self.list_patrols(limit=500)
+            if patrol["state"] in {"STARTING", "ACTIVE"}
+        ]
+        for patrol in active:
+            self.update_patrol(
+                patrol["patrol_id"],
+                "FAILED",
+                "Fleet Gateway restarted; prior patrol will not resume",
+                clear_command=True,
+            )
+        return len(active)
 
     def reconcile_gateway_restart(self) -> int:
         """Fail tasks whose in-memory action ownership was lost on restart."""

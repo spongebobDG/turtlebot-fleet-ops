@@ -118,6 +118,15 @@ def generate_launch_description() -> LaunchDescription:
                 respawn=True,
                 respawn_delay=3.0,
             ),
+            Node(
+                package="navigation_agent",
+                executable="manual_control_node",
+                name="manual_control",
+                output="screen",
+                parameters=[str(agent_config), {"use_sim_time": use_sim_time}],
+                respawn=True,
+                respawn_delay=3.0,
+            ),
             navigation_agent,
             RegisterEventHandler(
                 OnProcessExit(

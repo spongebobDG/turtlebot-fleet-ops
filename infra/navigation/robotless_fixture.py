@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import time
 
-from fleet_interfaces.msg import RobotStatus
+from fleet_interfaces.msg import MappingStatus, RobotStatus
 from geometry_msgs.msg import (
     PoseWithCovarianceStamped,
     TransformStamped,
@@ -90,6 +90,11 @@ class RobotlessFixture(Node):
         self._status_publisher = self.create_publisher(
             RobotStatus,
             "/fleet/robot_status",
+            10,
+        )
+        self._mapping_status_publisher = self.create_publisher(
+            MappingStatus,
+            "/fleet/mapping_status",
             10,
         )
         self.create_subscription(Twist, "/cmd_vel", self._on_command, 10)
@@ -235,6 +240,15 @@ class RobotlessFixture(Node):
         status.cpu_percent = 10.0
         status.memory_percent = 20.0
         self._status_publisher.publish(status)
+
+        mapping = MappingStatus()
+        mapping.header.stamp = stamp
+        mapping.robot_id = "tb1"
+        mapping.profile = MappingStatus.PROFILE_NAVIGATION
+        mapping.transitioning = False
+        mapping.map_available = True
+        mapping.message = "Robotless NAVIGATION profile"
+        self._mapping_status_publisher.publish(mapping)
         self._write_telemetry()
 
     def _write_telemetry(self) -> None:

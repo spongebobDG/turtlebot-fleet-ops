@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>TurtleBot Fleet Ops</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=phase8-1">
   </head>
   <body>
     <header class="topbar">
@@ -58,7 +58,13 @@
             <p class="eyebrow">MAP NAVIGATION</p>
             <h2 id="navigation-pane-title">지도 목적지 제어</h2>
           </div>
-          <button class="secondary compact" id="refresh-map" type="button">지도 새로고침</button>
+          <div class="profile-controls" role="group" aria-label="TB1 운영 프로필">
+            <span id="profile-state">PROFILE —</span>
+            <button class="secondary compact" data-profile="MAPPING" type="button">새 지도</button>
+            <button class="secondary compact" data-profile="NAVIGATION" type="button">주행 모드</button>
+            <button class="secondary compact" id="save-map" type="button">지도 저장</button>
+            <button class="secondary compact" id="refresh-map" type="button">새로고침</button>
+          </div>
         </div>
 
         <div class="navigation-panel">
@@ -70,6 +76,7 @@
               </label>
               <div class="mode-switch" role="group" aria-label="지도 클릭 모드">
                 <button class="mode active" data-map-mode="goal" type="button">목적지</button>
+                <button class="mode" data-map-mode="waypoint" type="button">순찰점</button>
                 <button class="mode" data-map-mode="initial" type="button">초기 위치</button>
               </div>
               <div class="map-viewport-controls" role="group" aria-label="지도 확대와 이동">
@@ -106,8 +113,9 @@
             <div class="pose-fields">
               <label>X (m)<input id="pose-x" type="number" step="0.01" placeholder="지도에서 선택"></label>
               <label>Y (m)<input id="pose-y" type="number" step="0.01" placeholder="지도에서 선택"></label>
-              <label>Yaw<input id="pose-yaw" type="number" step="0.01" placeholder="드래그로 지정"></label>
+              <label>Yaw (rad)<input id="pose-yaw" type="number" step="0.01" placeholder="반드시 드래그"></label>
             </div>
+            <output class="heading-status" id="pose-heading">앞방향 미지정 · 원에서 화살표 끝까지 드래그</output>
             <div class="alignment-tools" id="alignment-tools" hidden>
               <button class="secondary" id="align-initial-pose" type="button" disabled>LiDAR 자동 정렬</button>
               <p id="alignment-meta">대략 위치를 선택해 자동 정렬하세요.</p>
@@ -122,6 +130,26 @@
               <button class="primary" id="apply-map-command" type="button" disabled>목적지 전송</button>
               <button class="secondary" id="cancel-navigation" type="button" disabled>목표 취소</button>
               <button class="secondary task-create" id="create-task" type="button" disabled>작업으로 저장</button>
+            </div>
+            <div class="patrol-draft" id="patrol-draft" hidden>
+              <p id="patrol-draft-list">순찰점 0개</p>
+              <div>
+                <label>반복<input id="patrol-loops" type="number" min="1" max="100" value="1"></label>
+                <label>대기(s)<input id="patrol-dwell" type="number" min="0" max="300" step="0.5" value="0"></label>
+              </div>
+              <button class="primary" id="create-patrol" type="button" disabled>순찰 저장</button>
+              <button class="secondary" id="clear-waypoints" type="button">초기화</button>
+            </div>
+            <div class="manual-control" aria-label="누르는 동안만 동작하는 수동 조종">
+              <div class="manual-title"><span>DEADMAN MANUAL</span><strong id="manual-state">대기</strong></div>
+              <div class="manual-pad">
+                <button data-manual-linear="0.05" data-manual-angular="0" aria-label="앞으로">▲</button>
+                <button data-manual-linear="0" data-manual-angular="0.3" aria-label="왼쪽 회전">↶</button>
+                <button class="manual-stop" data-manual-stop type="button">STOP</button>
+                <button data-manual-linear="0" data-manual-angular="-0.3" aria-label="오른쪽 회전">↷</button>
+                <button data-manual-linear="-0.05" data-manual-angular="0" aria-label="뒤로">▼</button>
+              </div>
+              <p>버튼을 누르는 동안만 최대 0.05 m/s · 0.3 rad/s</p>
             </div>
           </aside>
         </div>
@@ -144,6 +172,9 @@
             </div>
             <div class="record-list" id="task-list">
               <p class="record-empty">저장된 작업이 없습니다.</p>
+            </div>
+            <div class="record-list patrol-list" id="patrol-list">
+              <p class="record-empty">저장된 순찰이 없습니다.</p>
             </div>
           </article>
           <article class="operations-card faults-card">
@@ -173,6 +204,8 @@
               <div><span>Production model</span><strong id="mlops-model">—</strong></div>
               <div><span>Anomaly score</span><strong id="mlops-score">—</strong></div>
               <p id="mlops-reasons">로그 분석 상태를 불러오는 중입니다.</p>
+              <p class="incident-cause" id="incident-cause">원인 후보를 계산하는 중입니다.</p>
+              <p class="incident-action" id="incident-action"></p>
             </div>
           </article>
         </div>
@@ -183,6 +216,6 @@
     <script src="/static/map_math.js" defer></script>
     <script src="/static/map_viewport.js" defer></script>
     <script src="/static/robot_display.js?v=map-frame-1" defer></script>
-    <script src="/static/app.js?v=map-frame-1" defer></script>
+    <script src="/static/app.js?v=phase8-1" defer></script>
   </body>
 </html>

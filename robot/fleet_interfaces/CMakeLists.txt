@@ -12,10 +12,14 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/NavigateRobot.action"
   "msg/NavigationLease.msg"
   "msg/NavigationStatus.msg"
+  "msg/MappingStatus.msg"
   "msg/RobotStatus.msg"
   "msg/SafetyStatus.msg"
   "srv/SetInitialPose.srv"
   "srv/SetMotionMode.srv"
+  "srv/ManualCommand.srv"
+  "srv/SaveMap.srv"
+  "srv/SetOperatingProfile.srv"
   DEPENDENCIES action_msgs builtin_interfaces geometry_msgs std_msgs
 )
 

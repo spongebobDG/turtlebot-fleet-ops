@@ -50,6 +50,9 @@ workspace를 Humble로 빌드한 뒤 다음 smoke를 실행한다.
 bash infra/navigation/run-robotless-zenoh-action-smoke.sh
 ```
 
+이 smoke는 서로 다른 robot/control DDS domain 사이에서 `NavigateRobot` action·lease·상태뿐
+아니라 Phase 8의 manual, operating-profile, map-save 서비스와 `MappingStatus`도 왕복시킨다.
+
 script는 robot domain 160과 control domain 161을 분리하고 두 Zenoh bridge를 loopback
 TCP로만 연결한다. `NavigateRobot`의 goal·feedback·성공 result·cancel과
 `NavigationLease`·`NavigationStatus`가 모두 bridge를 통과해야 성공한다. 이 검증은

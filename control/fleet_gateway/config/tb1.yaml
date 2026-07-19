@@ -3,6 +3,7 @@ fleet_gateway:
     status_topic: /fleet/robot_status
     navigation_status_topic: /fleet/navigation_status
     safety_status_topic: /fleet/safety_status
+    mapping_status_topic: /fleet/mapping_status
     navigation_lease_topic: /fleet/navigation_lease
     online_timeout_sec: 3.0
     web_host: 0.0.0.0
@@ -17,6 +18,12 @@ fleet_gateway:
       - /tb1/navigation/navigate
     initial_pose_services:
       - /tb1/navigation/set_initial_pose
+    manual_command_services:
+      - /tb1/navigation/manual_command
+    operating_profile_services:
+      - /tb1/navigation/set_operating_profile
+    save_map_services:
+      - /tb1/navigation/save_map
     map_topics:
       - /map
     scan_topics:

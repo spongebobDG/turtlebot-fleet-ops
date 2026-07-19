@@ -1,0 +1,6 @@
+string session_id
+geometry_msgs/Twist command
+bool stop
+---
+bool success
+string message

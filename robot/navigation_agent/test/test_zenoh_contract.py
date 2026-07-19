@@ -23,9 +23,17 @@ def test_bridge_halves_cover_navigation_contract() -> None:
         "^/fleet/robot_status$",
         "^/fleet/navigation_status$",
         "^/fleet/safety_status$",
+        "^/fleet/mapping_status$",
     ):
         assert topic in robot["publishers"]
         assert topic in control["subscribers"]
+    for service in (
+        "^/tb1/navigation/manual_command$",
+        "^/tb1/navigation/set_operating_profile$",
+        "^/tb1/navigation/save_map$",
+    ):
+        assert service in robot["service_servers"]
+        assert service in control["service_clients"]
     assert "^/tb1/navigation/navigate$" in robot["action_servers"]
     assert "^/tb1/navigation/navigate$" in control["action_clients"]
 

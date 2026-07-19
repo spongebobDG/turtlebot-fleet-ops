@@ -11,3 +11,4 @@
 - [Phase 5 TB1 로컬 Nav2와 웹 목적지 제어](phase-5-tb1-navigation.md)
 - [Phase 6 TB1 작업·고장·감사 기록](phase-6-tb1-operations.md)
 - [Phase 7 ROS 2 로그 이상탐지 MLOps와 정밀 지도 UX](phase-7-ros2-log-mlops.md)
+- [Phase 8 웹 수동 조종·순찰·매핑·원인 분석](phase-8-web-patrol-mapping-diagnostics.md)

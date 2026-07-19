@@ -9,6 +9,7 @@
         "subscribers": [
           "^/fleet/robot_status$",
           "^/fleet/navigation_status$",
+          "^/fleet/mapping_status$",
           "^/fleet/safety_status$",
           "^/fleet/rosout$",
           "^/scan$",
@@ -32,6 +33,9 @@
           "^/safety_watchdog/set_estop$",
           "^/tb1/navigation/set_initial_pose$",
           "^/tb1/navigation/set_motion_mode$"
+          ,"^/tb1/navigation/manual_command$"
+          ,"^/tb1/navigation/set_operating_profile$"
+          ,"^/tb1/navigation/save_map$"
         ],
         "action_servers": [],
         "action_clients": [
