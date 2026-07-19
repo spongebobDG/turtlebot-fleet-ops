@@ -271,6 +271,20 @@ Humble workspace 218개 모두 실패 0이다. domain 142 navigation·Zenoh acti
 ShellCheck·systemd·Windows 스크립트 검증도 통과했다. 별도 계측 노드 시작 순간 CPU 93.7%는
 30초 재측정에서 최소 61.6%, 평균 65.15%, 최대 70.5%, 90% 이상 0회로 일시적이었다.
 
+첫 TB1 배포에서는 새 stalled 통합 테스트가 lease 갱신용 ROS timer를 executor 실행 중 제거하면서
+간헐 race를 만들었다. control PC와 CI에서는 통과했지만 TB1에서 executor thread가
+`InvalidHandle`로 끝나 다음 action 응답이 timeout 됐다. 배포 스크립트는 즉시 실패하고 motion
+서비스를 정지한 채 종료했다. timer entity를 제거하는 대신 별도 갱신 thread를 event로 멈추도록
+바꾸고 격리 domain에서 같은 통합 테스트를 5회 연속 통과시켰다.
+
+실패 배포가 통신 bridge까지 정지해 재시도 preflight가 Zenoh 7447을 거부했으므로, motion profile은
+정지 상태로 유지하고 `tb1-zenoh-bridge.service`만 먼저 복구했다. 두 번째 배포는 TB1 전체 테스트와
+감사 수집을 통과했고 코드 커밋 `cfab5f9`가 설치됐다. 배포 profile은 의도대로 IDLE이어서 저장 지도
+navigation profile을 별도로 시작했다. 이전 비수렴 AMCL 자세는 자동 복원하지 않았다. 따라서
+초기 pose 전 상태는 `UNAVAILABLE`, active command 없음, 선속도 0이며 목표 API는
+`409 Nav2 is not ready`로 거부됐다. 설치 설정에서 20초·3초·180초 supervision 값을 확인했고
+`/cmd_vel` Publisher는 watchdog 하나였다.
+
 Phase 5 완료 시점에는 Phase 6가 robotless 상태여서 TB1 전체 MVP를 완료로 표시하지 않았다.
 같은 날 이어서 실제 task와 복구를 검증한 결과는
 [Phase 6 TB1 작업·복구 수용 시험](2026-07-19-phase-6-tb1-operations-acceptance.md)에 기록했고,
