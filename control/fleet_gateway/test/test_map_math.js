@@ -3,7 +3,12 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { canvasToWorld, worldToCanvas } = require("../web/map_math.js");
+const {
+  canvasToWorld,
+  isFreePose,
+  worldToCanvas,
+  worldToCell,
+} = require("../web/map_math.js");
 
 const closeTo = (actual, expected, tolerance = 1e-12) => {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
@@ -51,4 +56,40 @@ test("invalid map metadata and coordinates fail closed", () => {
   assert.throws(() => canvasToWorld(map, Number.NaN, 0), /Coordinates/);
   map.height = 0;
   assert.throws(() => worldToCanvas(map, 0, 0), /dimensions/);
+});
+
+test("world coordinates resolve to the row-major occupancy cell", () => {
+  const map = {
+    width: 3,
+    height: 2,
+    resolution: 0.5,
+    origin: { x: -1, y: -2, yaw: 0 },
+    data: [100, 0, -1, 0, 0, 100],
+  };
+
+  assert.deepEqual(worldToCell(map, -0.25, -1.75), {
+    x: 1,
+    y: 0,
+    index: 1,
+  });
+  assert.equal(isFreePose(map, -0.25, -1.75), true);
+  assert.equal(isFreePose(map, -0.75, -1.75), false);
+  assert.equal(worldToCell(map, 1, -1.75), null);
+});
+
+test("world-to-cell honors a rotated map origin", () => {
+  const map = {
+    width: 2,
+    height: 2,
+    resolution: 1,
+    origin: { x: 10, y: 20, yaw: Math.PI / 2 },
+    data: [0, 100, 100, 100],
+  };
+
+  assert.deepEqual(worldToCell(map, 9.5, 20.5), {
+    x: 0,
+    y: 0,
+    index: 0,
+  });
+  assert.equal(isFreePose(map, 9.5, 20.5), true);
 });

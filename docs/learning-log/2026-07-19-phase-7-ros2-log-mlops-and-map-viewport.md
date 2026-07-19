@@ -29,7 +29,7 @@ SHA-256 lineage, candidate 품질 gate와 명시적 promote를 제공한다. Gat
 - Python 테스트: journal/ROS console 파싱, dataset hash, 품질 gate, anomaly 설명, 승격 거부·성공
 - FastAPI 테스트: 모델 없음의 `MODEL_NOT_READY`, 게시 상태 반환, 정적 viewport asset allowlist
 - JavaScript syntax와 Python compile 확인
-- WSL Humble 전체 결과: `206 tests, 0 errors, 0 failures, 0 skipped`
+- WSL Humble 전체 결과: `208 tests, 0 errors, 0 failures, 0 skipped`
 - ShellCheck, systemd unit 검증, domain 142 운영·Nav2·Zenoh 액션 무로봇 스모크 모두 통과
 - 1280×720 실제 Dashboard: 문서 높이와 viewport 높이가 모두 720px여서 세로 스크롤 없음
 - 58×96 실지도 자유 셀 29,48 클릭: 기대 좌표와 입력 좌표가 모두 `(-0.785, 1.365)`이고
@@ -43,6 +43,44 @@ SHA-256 lineage, candidate 품질 gate와 명시적 promote를 제공한다. Gat
 - 최종 후보 `ros2-log-mad-2026-07-19T054758.458802+0000-39a30b17`: 유효 7개 60초 창·35건으로
   수량 gate는 통과했지만 잘못된 시각 10건 제외 경고와 robot agent·수용 프로브 편중을 확인했다.
   Nav2·AMCL 정상 주행 기준을 대표하지 못하므로 Production에는 승격하지 않음
+
+## 재부팅 직후 목적지 지연 사건과 수정
+
+TB1 재부팅 후 웹 초기 위치와 목표를 새로 보냈지만 처음에는 움직이지 않다가 뒤늦게 주행했다.
+Gateway 상태에서 목표·lease·Nav2·AMCL·safety는 모두 준비됐으므로 명령 전달 실패는 아니었다.
+첫 목표는 162.7초 동안 7회 recovery 뒤 목표 3.5cm 앞에서 운영자 취소로 종료됐다. 이어 보낸
+목표는 27.8초 동안 22회 recovery 후 `FAILED`가 됐다. 당시 LiDAR 최소 거리는 약 0.163m였고
+TB1 journal에는 다음 신호가 함께 있었다.
+
+- `Behavior Tree tick rate 100.00 was exceeded`
+- `Control loop missed its desired rate of 10.0000Hz`
+- `Failed to make progress`
+- `failed to generate a valid path`
+- `Collision Ahead - Exiting Spin/DriveOnHeading`
+
+원인은 한 가지가 아니었다. 가까운 장애물·부정확한 초기 pose 때문에 planner와 recovery가 충돌
+방지에 걸렸고, Humble 기준의 10ms Behavior Tree loop가 TB1에서 경고 로그 폭주와 CPU 부하를
+키웠다. 저장소 overlay에 `bt_loop_duration: 100`을 추가해 BT를 10Hz로 낮췄다. 저속 상한과
+watchdog 경로는 바꾸지 않았다.
+
+웹에서는 실패·취소된 과거 target을 계속 노란 활성 목표처럼 그렸고, 새 선택이 없어도 기본
+입력 `(0,0,0)`을 보낼 수 있었다. 이제 활성 command ID가 있을 때만 활성 목표를 표시한다. 자유
+셀의 새 후보가 있어야 전송 버튼이 켜지고 모드 변경·지도 재로딩·성공 접수 뒤 후보를 폐기한다.
+58×96, 5cm/cell이라는 원본 지도 품질도 화면에 표시해 픽셀화와 좌표 오차를 구분한다.
+
+MLOps 추론은 검토된 정상 baseline이 없어 계속 `MODEL_NOT_READY`로 유지했다. 대신 최근 로그의
+제어 지연·경로 실패·충돌 방지·진척 실패·메시지 유실을 `operational_signals`로 집계해 모델
+승격 전에도 사건 원인을 Dashboard에서 설명한다. 이는 motion authority가 아니며 안전 판단은
+계속 watchdog과 arbiter가 담당한다.
+
+저장된 incident 구간 411건을 새 분석기로 replay한 결과는 제어 주기 지연 20회, 경로 생성 실패
+7회, 센서 메시지 지연·유실 3회, 충돌 방지 개입 2회였고 `navigation_failure_rate`는 약
+0.0170이었다. 이 값은 정상 baseline과 비교한 anomaly score가 아니라 사건 파서 수용 증거다.
+
+진단 도중 collector를 재시작하자 메모리의 최근 5분 창이 비어 직전 사건 신호가 사라지는 문제도
+발견했다. 시작 시 당일·전일 raw JSONL에서 lookback 창을 복원하고, 전원 차단으로 마지막 줄이
+부분 기록됐을 때는 그 줄만 건너뛰도록 변경했다. 따라서 “갑자기 껐다 켠 경우 무엇이 로그에
+남는가”를 서비스 메모리가 아니라 append-only raw artifact로 설명할 수 있다.
 
 수량 gate 통과는 승격의 필요조건이지 충분조건이 아니다. 정상 Nav2·AMCL 주행 데이터를 15~30분
 더 수집해 logger·작업 상태의 대표성과 timestamp 경고가 없는 후보를 다시 검토해야 한다. 따라서

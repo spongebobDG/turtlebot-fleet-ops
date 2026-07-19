@@ -22,6 +22,11 @@ find ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/raw \
 allowlist의 `/fleet/rosout`,
 publisher/subscriber 수와 `fleet-log-mlops.service` journal을 확인한다.
 
+`MODEL_NOT_READY`에서도 Dashboard와 REST의 `operational_signals`는 최근 5분의 제어 주기 지연,
+경로 생성 실패, 충돌 방지 개입, 주행 진척 없음과 메시지 유실 횟수를 보여준다. 이는 규칙 기반
+현장 설명이며 anomaly score가 아니다. 활성 목표가 멈췄다면 먼저 이 신호와 `NavigationStatus`의
+복구 횟수, LiDAR 최소 거리를 대조하고 같은 목표를 연속 전송하지 않는다.
+
 ## 2. 깨끗한 기준 구간 수집
 
 초기 기준은 e-stop·통신 단절·프로세스 종료 시험을 하지 않는 정상 운전 구간으로 잡는다.
@@ -74,7 +79,7 @@ curl -sS http://localhost:8000/api/mlops/ros2-logs | jq
 
 ```bash
 watch -n 2 'curl -sS http://localhost:8000/api/mlops/ros2-logs | \
-  jq "{state,model_id,score,threshold,log_count,top_features,message}"'
+  jq "{state,model_id,score,threshold,log_count,top_features,operational_signals,message}"'
 ```
 
 `ANOMALY`는 자동 e-stop이 아니다. 상위 특징을 보고 관련 unit journal, NavigationStatus, safety

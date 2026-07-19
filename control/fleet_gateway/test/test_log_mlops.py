@@ -7,9 +7,11 @@ from fleet_gateway.log_mlops import (
     analyze_records,
     build_dataset,
     build_parser,
+    extract_operational_signals,
     parse_log_line,
     pipeline_paths,
     promote_model,
+    read_recent_jsonl,
     run_command,
     score_features,
     status_from_path,
@@ -177,6 +179,33 @@ def test_model_not_ready_still_reports_collection_health():
     assert status["feature_values"]["warning_rate"] == 0.5
 
 
+def test_nav2_operational_signals_are_explainable_before_promotion():
+    records = [
+        record(1, "WARNING", "Control loop missed its desired rate"),
+        record(2, "WARNING", "Behavior Tree tick rate 100.00 was exceeded"),
+        record(3, "WARNING", "Planning algorithm failed to generate a valid path"),
+        record(4, "WARNING", "Collision Ahead - Exiting Spin"),
+        record(5, "ERROR", "Failed to make progress"),
+    ]
+
+    signals = extract_operational_signals(records)
+    status = analyze_records(records, None)
+
+    assert signals[0] == {
+        "signal": "control_deadline_miss",
+        "label": "제어 주기 지연",
+        "count": 2,
+    }
+    assert {item["signal"] for item in signals} == {
+        "control_deadline_miss",
+        "planning_failure",
+        "collision_guard",
+        "progress_failure",
+    }
+    assert status["operational_signals"] == signals
+    assert "현재 운영 신호" in status["message"]
+
+
 def test_dataset_cli_does_not_require_journal_only_arguments(
     tmp_path,
     capsys,
@@ -196,3 +225,23 @@ def test_dataset_cli_does_not_require_journal_only_arguments(
     assert run_command(arguments) == 0
     artifact = capsys.readouterr().out.strip()
     assert artifact.endswith(".json")
+
+
+def test_recent_jsonl_restore_survives_a_torn_last_record(tmp_path):
+    raw = tmp_path / "live.jsonl"
+    raw.write_text(
+        "\n".join(
+            [
+                json.dumps(record(10).__dict__),
+                json.dumps(record(20, "WARNING", "Collision Ahead").__dict__),
+                '{"timestamp":',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    restored = read_recent_jsonl([raw], cutoff_timestamp=15)
+
+    assert len(restored) == 1
+    assert restored[0].timestamp == 20
+    assert restored[0].message == "Collision Ahead"

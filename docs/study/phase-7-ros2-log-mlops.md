@@ -36,6 +36,14 @@ data drift는 로그의 양·비율 같은 입력 분포가 바뀌는 것이고,
 반대로 모델 ANOMALY만으로 모터를 갑자기 정지시키면 false positive가 물리 동작을 방해한다.
 현재 모델은 관측과 진단 우선순위를 제공할 뿐 motion authority를 갖지 않는다.
 
+### 모델이 준비되기 전의 결정론적 로그 신호
+
+MLOps를 도입했다고 모든 진단을 모델에 맡기면 안 된다. `Collision Ahead`나
+`Control loop missed`처럼 의미가 명확한 로그는 즉시 횟수와 문맥을 보여주고, 같은 레코드를
+버전된 특징 데이터에도 넣는다. 전자는 현재 사건을 설명하는 규칙 기반 관측이고 후자는 정상
+기준에서의 편차를 학습하는 MLOps 입력이다. 둘을 구분하면 `MODEL_NOT_READY`를 장애 은폐로
+오해하지 않으면서도 검토되지 않은 모델을 서둘러 Production에 올리지 않을 수 있다.
+
 ## 이 프로젝트의 MLOps 수명주기
 
 1. TB1 relay가 `/rosout`을 `/fleet/rosout`으로 바꾸고 Zenoh allowlist로 전달한다.
@@ -45,7 +53,8 @@ data drift는 로그의 양·비율 같은 입력 분포가 바뀌는 것이고,
 5. 최소 window·record gate를 통과하고 timestamp 품질·logger·작업 대표성을 검토한 candidate만
    명시적으로 Production에 승격한다. 숫자 gate는 필요조건이지 충분조건이 아니다.
 6. 최근 5분 점수와 threshold, 원인 특징을 REST와 Dashboard에 표시한다.
-7. false positive, 미탐과 software 변경을 근거로 새 dataset/model lineage를 만든다.
+7. 승격 전에는 같은 로그의 결정론적 운영 신호로 현장 원인을 설명한다.
+8. false positive, 미탐과 software 변경을 근거로 새 dataset/model lineage를 만든다.
 
 ## 자주 하는 틀린 설명
 
