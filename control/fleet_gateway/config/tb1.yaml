@@ -19,3 +19,11 @@ fleet_gateway:
       - /tb1/navigation/set_initial_pose
     map_topics:
       - /map
+    scan_topics:
+      - /scan
+    scan_sensor_x_m:
+      - -0.032
+    scan_sensor_y_m:
+      - 0.0
+    scan_sensor_yaw_rad:
+      - 0.0

@@ -9,6 +9,7 @@ const mapCanvas = document.querySelector("#map-canvas");
 const mapPlaceholder = document.querySelector("#map-placeholder");
 const mapReadout = document.querySelector("#map-readout");
 const mapMeta = document.querySelector("#map-meta");
+const scanMeta = document.querySelector("#scan-meta");
 const mapZoomOut = document.querySelector("#map-zoom-out");
 const mapZoomIn = document.querySelector("#map-zoom-in");
 const mapZoomLabel = document.querySelector("#map-zoom-label");
@@ -40,6 +41,7 @@ const viewportMath = window.FleetMapViewport;
 let reconnectTimer;
 let robots = [];
 let currentMap = null;
+let currentScan = null;
 let currentMapRobot = "";
 let mapMode = "goal";
 let selectedPose = null;
@@ -220,6 +222,7 @@ const syncPoseSelectionFromFields = () => {
 const loadMap = async () => {
   const robotId = robotSelect.value;
   currentMap = null;
+  currentScan = null;
   mapBitmap = null;
   mapViewport = null;
   resetPoseSelection();
@@ -241,9 +244,27 @@ const loadMap = async () => {
     mapFrame.classList.add("loaded");
     drawMap();
     renderNavigation();
+    loadScan();
   } catch (error) {
     mapPlaceholder.textContent = error.message;
   }
+};
+
+const loadScan = async () => {
+  const robotId = robotSelect.value;
+  if (!robotId || currentMapRobot !== robotId) return;
+  try {
+    const response = await fetch(`/api/robots/${encodeURIComponent(robotId)}/scan`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "LiDAR scan unavailable");
+    currentScan = body;
+    const coverage = Number(body.coverage_ratio) * 100;
+    scanMeta.textContent = `LiDAR ${body.valid_points} pts · ${coverage.toFixed(0)}% span · ${number(body.age_sec, 2, "s")}`;
+  } catch (error) {
+    currentScan = null;
+    scanMeta.textContent = `LiDAR: ${error.message}`;
+  }
+  drawMap();
 };
 
 const buildMapBitmap = (map) => {
@@ -320,6 +341,7 @@ const drawMap = () => {
   );
   drawCellGrid(context);
   const robot = selectedRobot();
+  drawScanOverlay(context, robot);
   if (robot?.navigation?.current?.frame_id === "map") {
     drawArrow(context, robot.navigation.current, "#44b9ff");
   }
@@ -337,6 +359,32 @@ const drawMap = () => {
       mapMode === "initial" ? "초기 위치 후보" : "목적지 후보",
     );
   }
+};
+
+const drawScanOverlay = (context, robot) => {
+  if (!currentScan?.fresh || !Array.isArray(currentScan.points)) return;
+  const currentPose = robot?.navigation?.current;
+  const pose = mapMode === "initial" && selectedPose
+    ? selectedPose
+    : currentPose?.frame_id === "map" ? currentPose : null;
+  if (!pose) return;
+  const cosine = Math.cos(pose.yaw);
+  const sine = Math.sin(pose.yaw);
+  context.save();
+  context.fillStyle = "rgba(255, 82, 119, 0.92)";
+  for (const point of currentScan.points) {
+    if (!Array.isArray(point) || point.length !== 2) continue;
+    const localX = Number(point[0]);
+    const localY = Number(point[1]);
+    if (!Number.isFinite(localX) || !Number.isFinite(localY)) continue;
+    const worldX = pose.x + cosine * localX - sine * localY;
+    const worldY = pose.y + sine * localX + cosine * localY;
+    const screen = worldToScreen(worldX, worldY);
+    context.beginPath();
+    context.arc(screen.x, screen.y, 1.8, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.restore();
 };
 
 const drawCellGrid = (context) => {
@@ -834,3 +882,4 @@ const connect = () => {
 
 connect();
 window.setInterval(loadOperations, 3000);
+window.setInterval(loadScan, 400);

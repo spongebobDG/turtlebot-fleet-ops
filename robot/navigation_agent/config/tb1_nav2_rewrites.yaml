@@ -26,5 +26,6 @@ movement_time_allowance: 20.0
 # also keeps map->odom current while the base performs slow goal rotations.
 update_min_d: 0.05
 update_min_a: 0.05
+robot_radius: 0.14
 xy_goal_tolerance: 0.10
 yaw_goal_tolerance: 0.15

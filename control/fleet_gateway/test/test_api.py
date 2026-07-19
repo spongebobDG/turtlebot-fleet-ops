@@ -5,6 +5,7 @@ from fleet_gateway.api import create_app
 from fleet_gateway.map_registry import MapRegistry
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.registry import StatusRegistry
+from fleet_gateway.scan_registry import ScanRegistry
 from fleet_gateway.task_manager import NavigationTaskManager
 
 
@@ -96,6 +97,12 @@ def make_navigation_registry(level=0, active_command_id=""):
             "localization_ready": True,
             "safety_ready": True,
             "active_command_id": active_command_id,
+            "current": {
+                "frame_id": "map",
+                "x": 0.25,
+                "y": 0.25,
+                "yaw": 0.0,
+            },
         },
         now=10.0,
     )
@@ -126,6 +133,19 @@ def make_map_registry():
     return registry
 
 
+def make_scan_registry():
+    registry = ScanRegistry()
+    registry.update(
+        "tb1",
+        {
+            "frame_id": "base_scan",
+            "points": [[0.5, 0.0]],
+            "valid_points": 1,
+        },
+    )
+    return registry
+
+
 def test_health_and_robot_routes():
     client = TestClient(create_app(make_registry()))
 
@@ -137,6 +157,22 @@ def test_health_and_robot_routes():
     assert health.json()["online_robots"] == 1
     assert robots.json()["robots"][0]["robot_id"] == "tb1"
     assert missing.status_code == 404
+
+
+def test_scan_route_is_separate_from_robot_snapshot():
+    registry = make_registry()
+    client = TestClient(
+        create_app(registry, scan_registry=make_scan_registry())
+    )
+
+    response = client.get("/api/robots/tb1/scan")
+
+    assert response.status_code == 200
+    assert response.json()["frame_id"] == "base_scan"
+    assert response.json()["points"] == [[0.5, 0.0]]
+    assert "points" not in client.get("/api/robots/tb1").json().get(
+        "scan", {}
+    )
 
 
 def test_estop_route_calls_controller():

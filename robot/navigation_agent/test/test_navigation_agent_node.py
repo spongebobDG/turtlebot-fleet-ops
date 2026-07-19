@@ -257,6 +257,10 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         robot = RobotStatus()
         robot.robot_id = "tb1"
         robot.level = RobotStatus.LEVEL_OK
+        robot.scan_received = True
+        robot.scan_fresh = True
+        robot.scan_valid = True
+        robot.scan_min_range = 0.5
         robot_publisher.publish(robot)
         safety = SafetyStatus()
         safety.robot_id = "tb1"
