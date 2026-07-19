@@ -15,6 +15,8 @@ grep -Fq "ExecStartPre=/usr/bin/test -r %h/.local/share/" \
   "${units_dir}/tb1-navigation.service"
 grep -Fq "After=fleet-control-zenoh.service" \
   "${units_dir}/fleet-gateway.service"
+grep -Fq "After=fleet-gateway.service" \
+  "${units_dir}/fleet-log-mlops.service"
 grep -Fq "ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/scripts/tb1/wait_network_ready.sh" \
   "${units_dir}/tb1-network-ready.service"
 for unit in \
@@ -38,9 +40,10 @@ for unit in \
   tb1-navigation.service \
   tb1-zenoh-bridge.service \
   fleet-control-zenoh.service \
-  fleet-gateway.service; do
+  fleet-gateway.service \
+  fleet-log-mlops.service; do
   grep -Eq '^Restart=(always|on-failure)$' "${units_dir}/${unit}"
   grep -Eq '^RestartSec=[1-9][0-9]*$' "${units_dir}/${unit}"
 done
 
-echo "SYSTEMD_UNIT_VALIDATION_OK restart_units=6 network_gate=1"
+echo "SYSTEMD_UNIT_VALIDATION_OK restart_units=7 network_gate=1"

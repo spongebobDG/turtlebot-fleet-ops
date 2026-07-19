@@ -7,6 +7,11 @@ const robotSelect = document.querySelector("#navigation-robot");
 const mapFrame = document.querySelector("#map-frame");
 const mapCanvas = document.querySelector("#map-canvas");
 const mapPlaceholder = document.querySelector("#map-placeholder");
+const mapReadout = document.querySelector("#map-readout");
+const mapZoomOut = document.querySelector("#map-zoom-out");
+const mapZoomIn = document.querySelector("#map-zoom-in");
+const mapZoomLabel = document.querySelector("#map-zoom-label");
+const mapFit = document.querySelector("#map-fit");
 const refreshMapButton = document.querySelector("#refresh-map");
 const applyMapCommand = document.querySelector("#apply-map-command");
 const cancelNavigation = document.querySelector("#cancel-navigation");
@@ -24,7 +29,12 @@ const refreshOperationsButton = document.querySelector("#refresh-operations");
 const taskList = document.querySelector("#task-list");
 const faultList = document.querySelector("#fault-list");
 const eventList = document.querySelector("#event-list");
+const mlopsState = document.querySelector("#mlops-state");
+const mlopsModel = document.querySelector("#mlops-model");
+const mlopsScore = document.querySelector("#mlops-score");
+const mlopsReasons = document.querySelector("#mlops-reasons");
 const mapMath = window.FleetMapMath;
+const viewportMath = window.FleetMapViewport;
 
 let reconnectTimer;
 let robots = [];
@@ -33,9 +43,13 @@ let currentMapRobot = "";
 let mapMode = "goal";
 let selectedPose = null;
 let dragStart = null;
+let panDrag = null;
+let mapBitmap = null;
+let mapViewport = null;
 let tasks = [];
 let faults = [];
 let events = [];
+let logMlops = null;
 
 const escapeHtml = (value) => String(value ?? "").replace(
   /[&<>"']/g,
@@ -172,6 +186,8 @@ const renderNavigation = () => {
 const loadMap = async () => {
   const robotId = robotSelect.value;
   currentMap = null;
+  mapBitmap = null;
+  mapViewport = null;
   currentMapRobot = robotId;
   mapFrame.classList.remove("loaded");
   mapPlaceholder.textContent = robotId ? "지도를 불러오는 중입니다." : "로봇 지도를 기다리는 중입니다.";
@@ -184,8 +200,7 @@ const loadMap = async () => {
     if (!response.ok) throw new Error(body.detail || "지도를 불러오지 못했습니다.");
     if (body.data.length !== body.width * body.height) throw new Error("지도 크기와 데이터가 일치하지 않습니다.");
     currentMap = body;
-    mapCanvas.width = body.width;
-    mapCanvas.height = body.height;
+    mapBitmap = buildMapBitmap(body);
     mapFrame.classList.add("loaded");
     drawMap();
     renderNavigation();
@@ -194,23 +209,79 @@ const loadMap = async () => {
   }
 };
 
-const drawMap = () => {
-  if (!currentMap) return;
-  const context = mapCanvas.getContext("2d");
-  const image = context.createImageData(currentMap.width, currentMap.height);
-  for (let y = 0; y < currentMap.height; y += 1) {
-    for (let x = 0; x < currentMap.width; x += 1) {
-      const value = currentMap.data[y * currentMap.width + x];
-      const displayY = currentMap.height - 1 - y;
-      const offset = (displayY * currentMap.width + x) * 4;
-      const shade = value < 0 ? 70 : Math.round(238 - (Math.min(value, 100) / 100) * 225);
+const buildMapBitmap = (map) => {
+  const bitmap = document.createElement("canvas");
+  bitmap.width = map.width;
+  bitmap.height = map.height;
+  const context = bitmap.getContext("2d");
+  const image = context.createImageData(map.width, map.height);
+  for (let y = 0; y < map.height; y += 1) {
+    for (let x = 0; x < map.width; x += 1) {
+      const value = map.data[y * map.width + x];
+      const displayY = map.height - 1 - y;
+      const offset = (displayY * map.width + x) * 4;
+      const shade = value < 0
+        ? 61
+        : Math.round(242 - (Math.min(value, 100) / 100) * 228);
       image.data[offset] = shade;
       image.data[offset + 1] = shade;
-      image.data[offset + 2] = value < 0 ? shade + 4 : shade;
+      image.data[offset + 2] = value < 0 ? shade + 7 : shade;
       image.data[offset + 3] = 255;
     }
   }
   context.putImageData(image, 0, 0);
+  return bitmap;
+};
+
+const ensureMapViewport = () => {
+  const bounds = mapCanvas.getBoundingClientRect();
+  const width = Math.max(1, bounds.width);
+  const height = Math.max(1, bounds.height);
+  const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+  const pixelWidth = Math.round(width * pixelRatio);
+  const pixelHeight = Math.round(height * pixelRatio);
+  if (mapCanvas.width !== pixelWidth || mapCanvas.height !== pixelHeight) {
+    mapCanvas.width = pixelWidth;
+    mapCanvas.height = pixelHeight;
+  }
+  if (!mapViewport) {
+    mapViewport = viewportMath.fit(currentMap.width, currentMap.height, width, height);
+  } else if (mapViewport.viewWidth !== width || mapViewport.viewHeight !== height) {
+    const center = viewportMath.screenToMap(
+      mapViewport,
+      mapViewport.viewWidth / 2,
+      mapViewport.viewHeight / 2,
+      true,
+    );
+    const previousZoom = mapViewport.zoom;
+    mapViewport = viewportMath.fit(currentMap.width, currentMap.height, width, height);
+    mapViewport.zoom = previousZoom;
+    mapViewport.scale = mapViewport.fitScale * previousZoom;
+    mapViewport.offsetX = width / 2 - center.x * mapViewport.scale;
+    mapViewport.offsetY = height / 2 - center.y * mapViewport.scale;
+    viewportMath.pan(mapViewport, 0, 0);
+  }
+  mapZoomLabel.textContent = `${Math.round(mapViewport.zoom * 100)}%`;
+  return { width, height, pixelRatio };
+};
+
+const drawMap = () => {
+  if (!currentMap || !mapBitmap) return;
+  const { width, height, pixelRatio } = ensureMapViewport();
+  const context = mapCanvas.getContext("2d");
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#060b0a";
+  context.fillRect(0, 0, width, height);
+  context.imageSmoothingEnabled = false;
+  context.drawImage(
+    mapBitmap,
+    mapViewport.offsetX,
+    mapViewport.offsetY,
+    currentMap.width * mapViewport.scale,
+    currentMap.height * mapViewport.scale,
+  );
+  drawCellGrid(context);
   const robot = selectedRobot();
   if (robot?.navigation?.current?.frame_id === "map") {
     drawArrow(context, robot.navigation.current, "#44b9ff");
@@ -221,19 +292,39 @@ const drawMap = () => {
   if (selectedPose) drawArrow(context, selectedPose, "#58e0ae");
 };
 
+const drawCellGrid = (context) => {
+  if (mapViewport.scale < 12) return;
+  context.save();
+  context.strokeStyle = "rgba(145, 170, 163, 0.16)";
+  context.lineWidth = 0.5;
+  context.beginPath();
+  for (let x = 0; x <= currentMap.width; x += 1) {
+    const point = viewportMath.mapToScreen(mapViewport, x, 0);
+    context.moveTo(point.x, mapViewport.offsetY);
+    context.lineTo(point.x, mapViewport.offsetY + currentMap.height * mapViewport.scale);
+  }
+  for (let y = 0; y <= currentMap.height; y += 1) {
+    const point = viewportMath.mapToScreen(mapViewport, 0, y);
+    context.moveTo(mapViewport.offsetX, point.y);
+    context.lineTo(mapViewport.offsetX + currentMap.width * mapViewport.scale, point.y);
+  }
+  context.stroke();
+  context.restore();
+};
+
 const drawArrow = (context, pose, color) => {
-  const start = worldToCanvas(pose.x, pose.y);
+  const start = worldToScreen(pose.x, pose.y);
   const length = Math.max(currentMap.resolution * 5, 0.25);
-  const end = worldToCanvas(
+  const end = worldToScreen(
     pose.x + Math.cos(pose.yaw) * length,
     pose.y + Math.sin(pose.yaw) * length,
   );
   context.save();
   context.strokeStyle = color;
   context.fillStyle = color;
-  context.lineWidth = Math.max(1.5, currentMap.width / 260);
+  context.lineWidth = 2;
   context.beginPath();
-  context.arc(start.x, start.y, Math.max(3, currentMap.width / 100), 0, Math.PI * 2);
+  context.arc(start.x, start.y, 4.5, 0, Math.PI * 2);
   context.fill();
   context.beginPath();
   context.moveTo(start.x, start.y);
@@ -242,35 +333,87 @@ const drawArrow = (context, pose, color) => {
   context.restore();
 };
 
-const worldToCanvas = (x, y) => {
-  return mapMath.worldToCanvas(currentMap, x, y);
+const worldToScreen = (x, y) => {
+  const mapPoint = mapMath.worldToCanvas(currentMap, x, y);
+  return viewportMath.mapToScreen(mapViewport, mapPoint.x, mapPoint.y);
 };
 
-const canvasToWorld = (x, y) => {
-  return mapMath.canvasToWorld(currentMap, x, y);
+const screenToWorld = (x, y, clampToMap = false) => {
+  const mapPoint = viewportMath.screenToMap(mapViewport, x, y, clampToMap);
+  return mapPoint ? mapMath.canvasToWorld(currentMap, mapPoint.x, mapPoint.y) : null;
 };
 
-const canvasCoordinates = (event) => {
+const screenCoordinates = (event) => {
   const bounds = mapCanvas.getBoundingClientRect();
   return {
-    x: (event.clientX - bounds.left) * (mapCanvas.width / bounds.width),
-    y: (event.clientY - bounds.top) * (mapCanvas.height / bounds.height),
+    x: event.clientX - bounds.left,
+    y: event.clientY - bounds.top,
   };
+};
+
+const cellAtScreenPoint = (point) => {
+  const mapPoint = viewportMath.screenToMap(mapViewport, point.x, point.y, false);
+  if (!mapPoint) return null;
+  const cellX = Math.floor(mapPoint.x);
+  const cellY = currentMap.height - 1 - Math.floor(mapPoint.y);
+  if (cellX < 0 || cellY < 0 || cellX >= currentMap.width || cellY >= currentMap.height) return null;
+  const value = currentMap.data[cellY * currentMap.width + cellX];
+  const center = mapMath.canvasToWorld(
+    currentMap,
+    cellX + 0.5,
+    currentMap.height - cellY - 0.5,
+  );
+  return { cellX, cellY, value, center, mapPoint };
+};
+
+const updateMapReadout = (point) => {
+  const cell = cellAtScreenPoint(point);
+  if (!cell) {
+    mapReadout.textContent = "지도 밖";
+    return;
+  }
+  const world = mapMath.canvasToWorld(currentMap, cell.mapPoint.x, cell.mapPoint.y);
+  const state = cell.value < 0 ? "UNKNOWN" : cell.value === 0 ? "FREE" : `OCCUPIED ${cell.value}`;
+  mapReadout.textContent = `map x ${world.x.toFixed(3)} · y ${world.y.toFixed(3)} m · cell ${cell.cellX},${cell.cellY} · ${state}`;
 };
 
 mapCanvas.addEventListener("pointerdown", (event) => {
   if (!currentMap) return;
   mapCanvas.setPointerCapture(event.pointerId);
-  const point = canvasCoordinates(event);
-  dragStart = canvasToWorld(point.x, point.y);
+  const point = screenCoordinates(event);
+  if (event.shiftKey || event.button === 1) {
+    panDrag = point;
+    mapCanvas.classList.add("panning");
+    return;
+  }
+  const cell = cellAtScreenPoint(point);
+  if (!cell) {
+    showToast("지도 안의 자유 공간을 선택하세요.", true);
+    return;
+  }
+  if (cell.value !== 0) {
+    showToast(cell.value < 0 ? "알 수 없는 셀은 선택할 수 없습니다." : "장애물 셀은 선택할 수 없습니다.", true);
+    return;
+  }
+  dragStart = cell.center;
   selectedPose = { ...dragStart, yaw: Number(poseYaw.value) || 0 };
+  poseX.value = selectedPose.x.toFixed(3);
+  poseY.value = selectedPose.y.toFixed(3);
   drawMap();
 });
 
 mapCanvas.addEventListener("pointermove", (event) => {
-  if (!currentMap || !dragStart || !mapCanvas.hasPointerCapture(event.pointerId)) return;
-  const point = canvasCoordinates(event);
-  const end = canvasToWorld(point.x, point.y);
+  if (!currentMap) return;
+  const point = screenCoordinates(event);
+  updateMapReadout(point);
+  if (panDrag && mapCanvas.hasPointerCapture(event.pointerId)) {
+    viewportMath.pan(mapViewport, point.x - panDrag.x, point.y - panDrag.y);
+    panDrag = point;
+    drawMap();
+    return;
+  }
+  if (!dragStart || !mapCanvas.hasPointerCapture(event.pointerId)) return;
+  const end = screenToWorld(point.x, point.y, true);
   selectedPose = {
     ...dragStart,
     yaw: Math.atan2(end.y - dragStart.y, end.x - dragStart.x),
@@ -282,6 +425,12 @@ mapCanvas.addEventListener("pointermove", (event) => {
 });
 
 mapCanvas.addEventListener("pointerup", (event) => {
+  if (panDrag) {
+    panDrag = null;
+    mapCanvas.classList.remove("panning");
+    if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
+    return;
+  }
   if (!dragStart) return;
   if (!selectedPose) selectedPose = { ...dragStart, yaw: 0 };
   poseX.value = selectedPose.x.toFixed(3);
@@ -291,6 +440,48 @@ mapCanvas.addEventListener("pointerup", (event) => {
   mapCanvas.releasePointerCapture(event.pointerId);
   drawMap();
 });
+
+mapCanvas.addEventListener("pointercancel", (event) => {
+  dragStart = null;
+  panDrag = null;
+  mapCanvas.classList.remove("panning");
+  if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
+});
+
+mapCanvas.addEventListener("pointerleave", () => {
+  if (!dragStart && !panDrag) mapReadout.textContent = "커서를 지도 위에 올리세요.";
+});
+
+mapCanvas.addEventListener("wheel", (event) => {
+  if (!currentMap) return;
+  event.preventDefault();
+  const point = screenCoordinates(event);
+  const factor = event.deltaY < 0 ? 1.25 : 0.8;
+  viewportMath.zoomAt(mapViewport, mapViewport.zoom * factor, point.x, point.y);
+  drawMap();
+}, { passive: false });
+
+const changeMapZoom = (factor) => {
+  if (!mapViewport) return;
+  viewportMath.zoomAt(
+    mapViewport,
+    mapViewport.zoom * factor,
+    mapViewport.viewWidth / 2,
+    mapViewport.viewHeight / 2,
+  );
+  drawMap();
+};
+
+mapZoomOut.addEventListener("click", () => changeMapZoom(0.8));
+mapZoomIn.addEventListener("click", () => changeMapZoom(1.25));
+mapFit.addEventListener("click", () => {
+  if (!currentMap) return;
+  const bounds = mapCanvas.getBoundingClientRect();
+  mapViewport = viewportMath.fit(currentMap.width, currentMap.height, bounds.width, bounds.height);
+  drawMap();
+});
+
+new ResizeObserver(() => drawMap()).observe(mapFrame);
 
 document.querySelectorAll("button[data-map-mode]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -412,7 +603,43 @@ const renderOperations = () => {
     </div>`).join("") : '<p class="record-empty">기록된 이벤트가 없습니다.</p>';
 };
 
+const renderLogMlops = () => {
+  const status = logMlops || { state: "UNAVAILABLE" };
+  const state = String(status.state || "UNAVAILABLE");
+  mlopsState.textContent = state;
+  mlopsState.className = `mlops-state ${state.toLowerCase().replaceAll("_", "-")}`;
+  mlopsModel.textContent = status.model_id || "승격 모델 없음";
+  mlopsModel.title = status.model_id || "";
+  mlopsScore.textContent = status.score === null || status.score === undefined
+    ? "—"
+    : `${number(status.score, 2)} / ${number(status.threshold, 2)}`;
+  const reasons = (status.top_features || [])
+    .filter((item) => Number(item.deviation) >= 1)
+    .map((item) => `${item.feature} ${number(item.deviation, 1)}σ`)
+    .join(" · ");
+  mlopsReasons.textContent = reasons || status.message || "분석 결과가 없습니다.";
+  mlopsReasons.title = mlopsReasons.textContent;
+};
+
+const loadLogMlops = async () => {
+  try {
+    const response = await fetch("/api/mlops/ros2-logs");
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "MLOps 상태 조회 실패");
+    logMlops = body;
+  } catch (error) {
+    logMlops = {
+      state: "ERROR",
+      message: error.message,
+      model_id: null,
+      score: null,
+    };
+  }
+  renderLogMlops();
+};
+
 const loadOperations = async () => {
+  loadLogMlops();
   const robotId = robotSelect.value;
   if (!robotId) {
     tasks = [];

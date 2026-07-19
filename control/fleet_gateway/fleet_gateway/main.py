@@ -27,6 +27,13 @@ def main(args: Optional[List[str]] = None) -> None:
         )
     ).expanduser()
     operations_store = OperationsStore(database_path)
+    log_mlops_status_path = Path(
+        os.environ.get(
+            "FLEET_LOG_MLOPS_STATUS",
+            "~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/"
+            "status/latest.json",
+        )
+    ).expanduser()
     recovered_tasks = operations_store.reconcile_gateway_restart()
     if recovered_tasks:
         node.get_logger().warning(
@@ -52,6 +59,7 @@ def main(args: Optional[List[str]] = None) -> None:
         map_registry=node.map_registry,
         operations_store=operations_store,
         task_manager=task_manager,
+        log_mlops_status_path=log_mlops_status_path,
         static_dir=share_dir / "web",
     )
     try:

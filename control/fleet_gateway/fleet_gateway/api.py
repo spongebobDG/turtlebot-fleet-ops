@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from fleet_gateway.registry import StatusRegistry
 from fleet_gateway.map_registry import MapRegistry
+from fleet_gateway.log_mlops import status_from_path
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.task_manager import NavigationTaskManager
 
@@ -81,6 +82,7 @@ def create_app(
     map_registry: Optional[MapRegistry] = None,
     operations_store: Optional[OperationsStore] = None,
     task_manager: Optional[NavigationTaskManager] = None,
+    log_mlops_status_path: Optional[Path] = None,
     static_dir: Optional[Path] = None,
     websocket_interval_sec: float = 0.5,
 ) -> FastAPI:
@@ -127,6 +129,10 @@ def create_app(
     @app.get("/api/robots")
     def list_robots() -> Dict[str, Any]:
         return {"robots": registry.snapshot()}
+
+    @app.get("/api/mlops/ros2-logs")
+    def ros2_log_mlops_status() -> Dict[str, Any]:
+        return status_from_path(log_mlops_status_path)
 
     @app.get("/api/events")
     def list_events(
@@ -402,7 +408,12 @@ def create_app(
 
     resolved_static = Path(static_dir) if static_dir is not None else None
     if resolved_static is not None and resolved_static.is_dir():
-        allowed_assets = {"app.js", "map_math.js", "styles.css"}
+        allowed_assets = {
+            "app.js",
+            "map_math.js",
+            "map_viewport.js",
+            "styles.css",
+        }
 
         @app.get("/static/{asset_name}", include_in_schema=False)
         def static_asset(asset_name: str) -> FileResponse:

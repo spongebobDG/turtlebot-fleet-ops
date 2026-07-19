@@ -1,0 +1,15 @@
+[Unit]
+Description=ROS 2 log anomaly inference monitor
+After=fleet-gateway.service
+Wants=fleet-gateway.service
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/turtlebot-fleet-ops/control.env
+ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/infra/mlops/start-log-monitor.sh
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

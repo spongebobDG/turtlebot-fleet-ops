@@ -9,6 +9,7 @@ from builtin_interfaces.msg import Time as TimeMessage
 from fleet_interfaces.msg import RobotStatus
 from nav_msgs.msg import Odometry
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, LaserScan
@@ -327,13 +328,16 @@ def main(args=None) -> None:
     try:
         node = RobotAgent()
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (ExternalShutdownException, KeyboardInterrupt):
         pass
     finally:
-        if node is not None:
-            node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        try:
+            if node is not None:
+                node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()
+        except (ExternalShutdownException, KeyboardInterrupt):
+            pass
 
 
 if __name__ == "__main__":

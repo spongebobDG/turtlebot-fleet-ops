@@ -28,6 +28,12 @@ def generate_launch_description() -> LaunchDescription:
                 name="robot_agent",
                 output="screen",
                 parameters=[str(config_path), {"use_sim_time": use_sim_time}],
-            )
+            ),
+            Node(
+                package="robot_agent",
+                executable="rosout_relay",
+                name="rosout_relay",
+                output="screen",
+            ),
         ]
     )

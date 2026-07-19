@@ -78,7 +78,10 @@ else
   fail "production ROS domain mismatch"
 fi
 
-for unit in fleet-control-zenoh.service fleet-gateway.service; do
+for unit in \
+  fleet-control-zenoh.service \
+  fleet-gateway.service \
+  fleet-log-mlops.service; do
   if systemctl --user is-enabled --quiet "${unit}"; then
     pass "${unit} enabled"
   else

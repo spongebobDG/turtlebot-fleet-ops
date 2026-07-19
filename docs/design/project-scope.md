@@ -2,7 +2,7 @@
 
 결정일: 2026-07-16
 
-상태: TB1 단일 로봇 MVP 실차 수용 시험 완료(2026-07-19), Draft PR 검토 전
+상태: TB1 단일 로봇 MVP 실차 수용 시험·main 병합 완료(2026-07-19), Phase 7 MLOps 확장 진행
 
 ## 결정
 
@@ -20,6 +20,9 @@
 - Nav2 Goal 성공·취소·실패·timeout·재시도와 e-stop 상호작용
 - 단일 로봇 작업 수명주기, 로그, 장애 감지와 운영 절차
 - 자동 테스트, CI, systemd 배포, GitHub Flow, 학습·면접 문서
+
+Phase 7의 정밀 지도 뷰포트와 ROS 2 로그 MLOps는 완료된 TB1 MVP를 무효화하지 않는 운영
+관측 확장이다. 단, Production 모델 품질은 실제 TB1 로그 수용 시험 전까지 완료로 주장하지 않는다.
 
 ## 향후 확장 범위
 
@@ -45,7 +48,8 @@
 프로세스 장애를, Phase 6에서 task 성공·취소·retry, Gateway·navigation agent 재시작과
 재부팅 뒤 무재개를 실제 TB1 terminal 및 SQLite 기록과 연결했다. 관제 PC 격리 Humble
 191개와 TB1 현재 소스 범위 144개 테스트도 오류와 실패 없이 통과했다. 따라서 이 문서의
-TB1 단일 로봇 MVP 범위는 완료다. `main` 반영은 Draft PR 검토와 squash merge 절차로 남는다.
+TB1 단일 로봇 MVP 범위는 완료이며 해당 결과는 `main`에 병합됐다. 이후 Phase 7은 같은 TB1의
+관측 가능성과 운영 학습 수명주기를 강화하는 별도 확장으로 추적한다.
 
 ## 선택 이유
 

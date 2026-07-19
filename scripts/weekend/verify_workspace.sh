@@ -18,6 +18,7 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-142}"
 bad_files="$(
   grep -Il $'\r' \
     infra/zenoh/*.sh \
+    infra/mlops/*.sh \
     infra/systemd/user/*.service \
     scripts/control-pc/*.sh \
     scripts/weekend/*.sh \
@@ -49,7 +50,7 @@ colcon test \
 colcon test-result --verbose
 
 shellcheck --exclude=SC1090,SC1091 \
-  infra/navigation/*.sh infra/systemd/*.sh infra/zenoh/*.sh \
+  infra/mlops/*.sh infra/navigation/*.sh infra/systemd/*.sh infra/zenoh/*.sh \
   scripts/control-pc/*.sh scripts/tb1/*.sh scripts/weekend/*.sh
 bash scripts/tb1/deploy_acceptance.sh --dry-run >/dev/null
 bash infra/systemd/validate-units.sh
