@@ -118,7 +118,12 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
+        try:
+            if node.context.ok():
+                node.destroy_node()
+        except (KeyboardInterrupt, RuntimeError):
+            # A launch-wide stop may interrupt entity destruction.
+            pass
         if rclpy.ok():
             try:
                 rclpy.shutdown()

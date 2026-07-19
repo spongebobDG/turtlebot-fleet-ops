@@ -182,6 +182,15 @@ def main(args=None) -> None:
         pass
     finally:
         node.shutdown()
-        node.destroy_node()
+        try:
+            if node.context.ok():
+                node.destroy_node()
+        except (KeyboardInterrupt, RuntimeError):
+            # ros2 launch can deliver its stop signal while rclpy is waiting
+            # for an entity to finish destruction.
+            pass
         if rclpy.ok():
-            rclpy.shutdown()
+            try:
+                rclpy.shutdown()
+            except RuntimeError:
+                pass
