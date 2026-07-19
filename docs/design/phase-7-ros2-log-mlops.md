@@ -93,7 +93,8 @@ Production 모델이 없으면 HTTP 오류로 숨기지 않고 `MODEL_NOT_READY`
 
 모델 승격 전에도 현재 장애를 설명할 수 있도록 `control loop missed`, `failed to create plan`,
 `Collision Ahead`, `failed to make progress`, sensor message drop을 결정론적 운영 신호로 함께
-집계한다. 이 집계는 학습 모델을 대신하거나 주행을 제어하지 않는다. 모델 lifecycle이 준비되는
+집계한다. Nav2 기동 후 `map→base_link`가 없는 정상 대기는 `초기 위치 대기`로 별도 구분한다.
+이 집계는 학습 모델을 대신하거나 주행을 제어하지 않는다. 모델 lifecycle이 준비되는
 동안 현장 로그를 사람이 해석할 수 있게 하고, 같은 문구는 `navigation_failure_rate` 특징에도
 반영해 이후 Production 추론과 연결한다.
 

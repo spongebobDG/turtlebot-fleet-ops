@@ -27,6 +27,9 @@ publisher/subscriber 수와 `fleet-log-mlops.service` journal을 확인한다.
 현장 설명이며 anomaly score가 아니다. 활성 목표가 멈췄다면 먼저 이 신호와 `NavigationStatus`의
 복구 횟수, LiDAR 최소 거리를 대조하고 같은 목표를 연속 전송하지 않는다.
 
+Nav2 재기동 직후 `초기 위치 대기`는 AMCL 오류가 아니라 웹에서 실제 로봇 pose를 다시 지정해야
+한다는 뜻이다. 이 구간의 transform timeout을 정상 주행 baseline에 섞지 않는다.
+
 ## 2. 깨끗한 기준 구간 수집
 
 초기 기준은 e-stop·통신 단절·프로세스 종료 시험을 하지 않는 정상 운전 구간으로 잡는다.

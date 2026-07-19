@@ -62,6 +62,15 @@ PATTERNS = {
 
 OPERATIONAL_SIGNAL_PATTERNS = (
     (
+        "initial_pose_wait",
+        "초기 위치 대기",
+        re.compile(
+            r"timed out waiting for transform.*(?:base_link|map)"
+            r"|AMCL cannot publish.*set the initial pose",
+            re.I,
+        ),
+    ),
+    (
         "control_deadline_miss",
         "제어 주기 지연",
         re.compile(r"control loop missed|tick rate .* exceeded", re.I),

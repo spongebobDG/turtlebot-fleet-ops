@@ -206,6 +206,27 @@ def test_nav2_operational_signals_are_explainable_before_promotion():
     assert "현재 운영 신호" in status["message"]
 
 
+def test_initial_pose_wait_is_distinct_from_navigation_failure():
+    records = [
+        record(
+            1,
+            "WARNING",
+            "Timed out waiting for transform from base_link to map to become available",
+        ),
+        record(
+            2,
+            "WARNING",
+            "AMCL cannot publish a pose. Please set the initial pose...",
+        ),
+    ]
+
+    signals = extract_operational_signals(records)
+
+    assert signals == [
+        {"signal": "initial_pose_wait", "label": "초기 위치 대기", "count": 2}
+    ]
+
+
 def test_dataset_cli_does_not_require_journal_only_arguments(
     tmp_path,
     capsys,
