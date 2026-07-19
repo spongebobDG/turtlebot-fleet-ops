@@ -35,6 +35,11 @@ min_rotational_vel: 0.05
 # DWB uses min_speed_xy/min_speed_theta rather than the behavior-server
 # min_rotational_vel parameter. Commands below these measured TB1 drive
 # deadbands reached /cmd_vel but did not turn the wheels.
+# StandardTrajectoryGenerator samples the X interval independently of the
+# radial speed filter.  Pin the forward-only Burger interval above the
+# measured 0.02 m/s drive deadband; otherwise DWB can select its first
+# 0.00556 m/s sample indefinitely while odometry remains stationary.
+min_vel_x: 0.02
 min_speed_xy: 0.02
 min_speed_theta: 0.05
 acc_lim_x: 0.08

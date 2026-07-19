@@ -38,6 +38,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "max_vel_theta: 0.22" in nav2_rewrites
     assert "max_rotational_vel: 0.22" in nav2_rewrites
     assert "min_rotational_vel: 0.05" in nav2_rewrites
+    assert "min_vel_x: 0.02" in nav2_rewrites
     assert "min_speed_xy: 0.02" in nav2_rewrites
     assert "min_speed_theta: 0.05" in nav2_rewrites
     assert "base_frame_id: base_footprint" in nav2_rewrites
