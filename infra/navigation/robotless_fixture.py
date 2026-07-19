@@ -33,6 +33,31 @@ def _yaw_from_quaternion(z_value: float, w_value: float) -> float:
     )
 
 
+def _square_room_scan_ranges(
+    x_value: float,
+    y_value: float,
+    yaw: float,
+    sample_count: int = 360,
+    wall_coordinate: float = 1.975,
+) -> list:
+    """Ray-cast an ideal scan against the fixture's square map boundary."""
+    ranges = []
+    increment = 2.0 * math.pi / max(1, sample_count - 1)
+    for index in range(sample_count):
+        angle = yaw - math.pi + index * increment
+        direction_x = math.cos(angle)
+        direction_y = math.sin(angle)
+        candidates = []
+        if abs(direction_x) > 1.0e-12:
+            wall_x = wall_coordinate if direction_x > 0.0 else -wall_coordinate
+            candidates.append((wall_x - x_value) / direction_x)
+        if abs(direction_y) > 1.0e-12:
+            wall_y = wall_coordinate if direction_y > 0.0 else -wall_coordinate
+            candidates.append((wall_y - y_value) / direction_y)
+        ranges.append(min(value for value in candidates if value > 0.0))
+    return ranges
+
+
 class RobotlessFixture(Node):
     """Integrate safe velocity output and publish the minimum TB1 sensors."""
 
@@ -160,7 +185,11 @@ class RobotlessFixture(Node):
         scan.scan_time = 0.05
         scan.range_min = 0.12
         scan.range_max = 3.5
-        scan.ranges = [3.5] * 360
+        scan.ranges = _square_room_scan_ranges(
+            self._x,
+            self._y,
+            self._yaw,
+        )
         self._scan_publisher.publish(scan)
 
         amcl = PoseWithCovarianceStamped()
@@ -198,7 +227,7 @@ class RobotlessFixture(Node):
         status.scan_fresh = True
         status.scan_valid = True
         status.scan_valid_points = 360
-        status.scan_min_range = 3.5
+        status.scan_min_range = min(scan.ranges)
         status.cpu_percent = 10.0
         status.memory_percent = 20.0
         self._status_publisher.publish(status)
