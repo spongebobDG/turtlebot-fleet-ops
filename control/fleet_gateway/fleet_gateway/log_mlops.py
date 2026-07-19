@@ -569,6 +569,44 @@ def read_jsonl(path: Path) -> List[LogRecord]:
     return records
 
 
+def replay_jsonl_range(
+    raw_inputs: Sequence[Path],
+    model: Mapping[str, Any],
+    since_timestamp: float,
+    until_timestamp: float,
+) -> Dict[str, Any]:
+    """Evaluate one immutable JSONL time range without changing live status."""
+    since = float(since_timestamp)
+    until = float(until_timestamp)
+    if not math.isfinite(since) or not math.isfinite(until) or since > until:
+        raise ValueError("replay time range must be finite and ordered")
+
+    selected = []
+    excluded_outside_range = 0
+    excluded_invalid_timestamp = 0
+    for raw_input in raw_inputs:
+        for record in read_jsonl(raw_input):
+            timestamp = float(record.timestamp)
+            if not math.isfinite(timestamp) or timestamp <= 0.0:
+                excluded_invalid_timestamp += 1
+                continue
+            if timestamp < since or timestamp > until:
+                excluded_outside_range += 1
+                continue
+            selected.append(record)
+    selected.sort(key=lambda item: item.timestamp)
+
+    status = analyze_records(selected, model)
+    status["replay"] = {
+        "since_timestamp": since,
+        "until_timestamp": until,
+        "record_count": len(selected),
+        "excluded_outside_range_count": excluded_outside_range,
+        "excluded_invalid_timestamp_count": excluded_invalid_timestamp,
+    }
+    return status
+
+
 def read_recent_jsonl(
     paths: Iterable[Path],
     cutoff_timestamp: float,
@@ -682,6 +720,22 @@ def run_command(arguments: Namespace) -> int:
         model = promote_model(root, Path(arguments.input).expanduser())
         print(f"{paths['production']} {model['model_id']}")
         return 0
+    if arguments.command == "replay":
+        model_path = (
+            Path(arguments.model).expanduser()
+            if arguments.model
+            else paths["production"]
+        )
+        if not model_path.is_file():
+            raise ValueError("Production model is unavailable for replay")
+        status = replay_jsonl_range(
+            [Path(item).expanduser() for item in arguments.input],
+            read_json(model_path),
+            arguments.since_epoch,
+            arguments.until_epoch,
+        )
+        print(json.dumps(status, ensure_ascii=False, sort_keys=True))
+        return 0
     if arguments.command in {"analyze", "monitor"}:
         interval = arguments.interval if arguments.command == "monitor" else None
         while True:
@@ -730,6 +784,11 @@ def build_parser() -> ArgumentParser:
     train.add_argument("--input", required=True)
     promote = subparsers.add_parser("promote")
     promote.add_argument("--input", required=True)
+    replay = subparsers.add_parser("replay")
+    replay.add_argument("--input", required=True, action="append")
+    replay.add_argument("--since-epoch", required=True, type=float)
+    replay.add_argument("--until-epoch", required=True, type=float)
+    replay.add_argument("--model")
     for name in ("analyze", "monitor"):
         command = subparsers.add_parser(name)
         command.add_argument("--since", default="5 minutes ago")

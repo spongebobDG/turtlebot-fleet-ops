@@ -3,6 +3,15 @@
 이 절차는 관제 PC에서 TB1 `/rosout` 수집, 기준 데이터 학습, Production 승격, 추론 확인과
 rollback을 수행한다. 원시 로그와 모델은 Git이 아닌 사용자 로컬 데이터 디렉터리에 저장한다.
 
+운영 보존 기준은 raw JSONL 30일이다. dataset, candidate model과 Production registry는 lineage
+감사를 위해 자동 삭제하지 않는다. 삭제 스크립트는 기본 dry-run이며 출력 경로를 검토한 뒤에만
+`--apply`를 사용한다.
+
+```bash
+bash scripts/control-pc/prune_ros2_log_raw.sh --raw-days 30
+bash scripts/control-pc/prune_ros2_log_raw.sh --raw-days 30 --apply
+```
+
 ## 1. 서비스와 데이터 확인
 
 ```bash
@@ -102,6 +111,20 @@ status와 `/cmd_vel`을 교차 확인한다. 모델이 NORMAL이어도 watchdog 
 검증용 오류는 빈 공간에서 활성 목표가 없고 e-stop인 상태에서만 주입한다. 물리 안전 시험을
 로그 모델 검증 때문에 임의로 반복하지 않는다. 이미 기록된 오류 JSONL을 별도 test root에서
 offline 분석하는 방법을 우선한다.
+
+Production 상태나 live status 파일을 바꾸지 않고 저장된 오류 구간을 재평가할 수 있다.
+
+```bash
+ros2 run fleet_gateway ros2_log_mlops \
+  --root ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs \
+  replay \
+  --input ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/raw/live-20260719.jsonl \
+  --since-epoch ERROR_RANGE_START \
+  --until-epoch ERROR_RANGE_END
+```
+
+출력의 `state`, `score`, `threshold`, `top_features`, `operational_signals`와 `replay` 범위·제외
+건수를 함께 기록한다. replay는 Production registry와 실시간 `latest.json`을 수정하지 않는다.
 
 ## 6. Rollback과 재학습
 

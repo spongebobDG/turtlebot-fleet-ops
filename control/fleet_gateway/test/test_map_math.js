@@ -8,6 +8,7 @@ const {
   isFreePose,
   worldToCanvas,
   worldToCell,
+  yawFromCanvasDrag,
 } = require("../web/map_math.js");
 
 const closeTo = (actual, expected, tolerance = 1e-12) => {
@@ -92,4 +93,29 @@ test("world-to-cell honors a rotated map origin", () => {
     index: 0,
   });
   assert.equal(isFreePose(map, 9.5, 20.5), true);
+});
+
+test("canvas drag yaw follows the triangle endpoint in map coordinates", () => {
+  const map = {
+    width: 10,
+    height: 10,
+    resolution: 0.1,
+    origin: { x: 0, y: 0, yaw: 0 },
+  };
+
+  closeTo(yawFromCanvasDrag(map, 5, 5, 7, 5), 0);
+  closeTo(yawFromCanvasDrag(map, 5, 5, 5, 3), Math.PI / 2);
+  assert.equal(yawFromCanvasDrag(map, 5, 5, 5, 5), null);
+});
+
+test("canvas drag yaw includes a rotated occupancy-grid origin", () => {
+  const map = {
+    width: 10,
+    height: 10,
+    resolution: 0.1,
+    origin: { x: 2, y: -1, yaw: Math.PI / 2 },
+  };
+
+  closeTo(yawFromCanvasDrag(map, 5, 5, 7, 5), Math.PI / 2);
+  closeTo(yawFromCanvasDrag(map, 5, 5, 5, 3), Math.PI);
 });

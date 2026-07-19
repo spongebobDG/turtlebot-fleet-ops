@@ -441,6 +441,21 @@ const drawArrow = (context, pose, color, label = "") => {
   context.moveTo(start.x, start.y);
   context.lineTo(end.x, end.y);
   context.stroke();
+  const screenYaw = Math.atan2(end.y - start.y, end.x - start.x);
+  const headLength = 9;
+  const headWidth = 5;
+  context.beginPath();
+  context.moveTo(end.x, end.y);
+  context.lineTo(
+    end.x - Math.cos(screenYaw) * headLength + Math.sin(screenYaw) * headWidth,
+    end.y - Math.sin(screenYaw) * headLength - Math.cos(screenYaw) * headWidth,
+  );
+  context.lineTo(
+    end.x - Math.cos(screenYaw) * headLength - Math.sin(screenYaw) * headWidth,
+    end.y - Math.sin(screenYaw) * headLength + Math.cos(screenYaw) * headWidth,
+  );
+  context.closePath();
+  context.fill();
   if (label) {
     context.font = "700 10px system-ui, sans-serif";
     context.textBaseline = "bottom";
@@ -452,11 +467,6 @@ const drawArrow = (context, pose, color, label = "") => {
 const worldToScreen = (x, y) => {
   const mapPoint = mapMath.worldToCanvas(currentMap, x, y);
   return viewportMath.mapToScreen(mapViewport, mapPoint.x, mapPoint.y);
-};
-
-const screenToWorld = (x, y, clampToMap = false) => {
-  const mapPoint = viewportMath.screenToMap(mapViewport, x, y, clampToMap);
-  return mapPoint ? mapMath.canvasToWorld(currentMap, mapPoint.x, mapPoint.y) : null;
 };
 
 const screenCoordinates = (event) => {
@@ -534,10 +544,27 @@ mapCanvas.addEventListener("pointermove", (event) => {
     return;
   }
   if (!dragStart || !mapCanvas.hasPointerCapture(event.pointerId)) return;
-  const end = screenToWorld(point.x, point.y, true);
+  const startMapPoint = mapMath.worldToCanvas(
+    currentMap,
+    dragStart.x,
+    dragStart.y,
+  );
+  const endMapPoint = viewportMath.screenToMap(
+    mapViewport,
+    point.x,
+    point.y,
+    true,
+  );
+  const dragYaw = mapMath.yawFromCanvasDrag(
+    currentMap,
+    startMapPoint.x,
+    startMapPoint.y,
+    endMapPoint.x,
+    endMapPoint.y,
+  );
   selectedPose = {
     ...dragStart,
-    yaw: Math.atan2(end.y - dragStart.y, end.x - dragStart.x),
+    yaw: dragYaw ?? selectedPose?.yaw ?? 0,
   };
   poseX.value = selectedPose.x.toFixed(3);
   poseY.value = selectedPose.y.toFixed(3);

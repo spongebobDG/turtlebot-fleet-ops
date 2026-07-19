@@ -13,6 +13,7 @@ from fleet_gateway.log_mlops import (
     pipeline_paths,
     promote_model,
     read_recent_jsonl,
+    replay_jsonl_range,
     run_command,
     score_features,
     status_from_path,
@@ -293,6 +294,57 @@ def test_dataset_cli_applies_baseline_epoch(tmp_path, capsys):
     dataset = json.loads(artifact.read_text(encoding="utf-8"))
     assert dataset["record_count"] == 2
     assert dataset["excluded_outside_range_count"] == 1
+
+
+def test_replay_cli_scores_an_immutable_error_range(tmp_path, capsys):
+    paths = pipeline_paths(tmp_path)
+    model = train_model(build_dataset(healthy_training_records(), 60.0))
+    model["stage"] = "production"
+    write_json(paths["production"], model)
+    raw_path = tmp_path / "raw.jsonl"
+    write_jsonl(
+        raw_path,
+        [
+            record(0),
+            record(100),
+            record(200, "ERROR", "controller timeout"),
+            record(201, "ERROR", "failed to make progress"),
+            record(300),
+        ],
+    )
+    arguments = build_parser().parse_args(
+        [
+            "--root",
+            str(tmp_path),
+            "replay",
+            "--input",
+            str(raw_path),
+            "--since-epoch",
+            "200",
+            "--until-epoch",
+            "201",
+        ]
+    )
+
+    assert run_command(arguments) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["state"] == "ANOMALY"
+    assert status["feature_values"]["error_rate"] == 1.0
+    assert status["replay"] == {
+        "since_timestamp": 200.0,
+        "until_timestamp": 201.0,
+        "record_count": 2,
+        "excluded_outside_range_count": 2,
+        "excluded_invalid_timestamp_count": 1,
+    }
+
+
+def test_replay_rejects_a_reversed_time_range(tmp_path):
+    raw_path = tmp_path / "raw.jsonl"
+    write_jsonl(raw_path, [record(100)])
+
+    with pytest.raises(ValueError, match="finite and ordered"):
+        replay_jsonl_range([raw_path], {}, 200, 100)
 
 
 def test_recent_jsonl_restore_survives_a_torn_last_record(tmp_path):
