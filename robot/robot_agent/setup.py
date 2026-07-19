@@ -36,6 +36,7 @@ setup(
     entry_points={
         "console_scripts": [
             "robot_agent = robot_agent.node:main",
+            "rosout_relay = robot_agent.rosout_relay:main",
         ],
     },
 )

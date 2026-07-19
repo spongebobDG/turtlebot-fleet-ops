@@ -41,6 +41,8 @@ setup(
         "console_scripts": [
             "fleet_gateway = fleet_gateway.main:main",
             "mock_robot = fleet_gateway.mock_robot:main",
+            "ros2_log_mlops = fleet_gateway.log_mlops:main",
+            "ros2_log_mlops_node = fleet_gateway.log_mlops_node:main",
         ],
     },
 )

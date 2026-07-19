@@ -17,6 +17,7 @@ cd "${repo_root}"
 # before isolated robotless smoke tests so port 8000 and ROS domain 142 belong
 # only to the test fixture. The services are installed and started again below.
 systemctl --user stop \
+  fleet-log-mlops.service \
   fleet-gateway.service \
   fleet-control-zenoh.service \
   2>/dev/null || true
@@ -31,12 +32,15 @@ mkdir -p \
 install -m 0644 \
   infra/systemd/user/fleet-control-zenoh.service \
   infra/systemd/user/fleet-gateway.service \
+  infra/systemd/user/fleet-log-mlops.service \
   "${HOME}/.config/systemd/user/"
 
 cat >"${HOME}/.config/turtlebot-fleet-ops/control.env" <<EOF
 ROBOT_ADDRESS=${robot_address}
 ROS_DISTRO=humble
 ROS_DOMAIN_ID=42
+FLEET_LOG_MLOPS_ROOT=${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs
+FLEET_LOG_MLOPS_STATUS=${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/status/latest.json
 EOF
 chmod 0600 "${HOME}/.config/turtlebot-fleet-ops/control.env"
 
@@ -55,6 +59,7 @@ sudo loginctl enable-linger "${USER}"
 systemctl --user daemon-reload
 systemctl --user enable --now \
   fleet-control-zenoh.service \
-  fleet-gateway.service
+  fleet-gateway.service \
+  fleet-log-mlops.service
 
 echo "CONTROL_PC_LINUX_BOOTSTRAP_OK robot=${robot_address}"

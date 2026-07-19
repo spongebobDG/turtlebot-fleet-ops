@@ -236,6 +236,21 @@ button:disabled { opacity: 0.42; cursor: not-allowed; }
   margin-bottom: 6px;
 }
 
+.map-viewport-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.map-viewport-controls button { padding: 5px 7px; background: transparent; }
+.map-viewport-controls span {
+  min-width: 38px;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 800;
+  text-align: center;
+}
+
 .map-toolbar label,
 .pose-fields label {
   display: grid;
@@ -276,17 +291,33 @@ input {
 #map-canvas {
   display: none;
   height: 100%;
-  width: auto;
-  max-width: 100%;
-  max-height: 100%;
-  image-rendering: pixelated;
+  width: 100%;
+  touch-action: none;
   cursor: crosshair;
 }
+#map-canvas.panning { cursor: grabbing; }
 
 .map-frame.loaded #map-canvas { display: block; }
 .map-frame.loaded .map-placeholder { display: none; }
 .map-placeholder, .map-help { color: var(--muted); font-size: 0.64rem; }
 .map-help { margin-top: 5px; }
+.map-readout {
+  position: absolute;
+  left: 7px;
+  bottom: 7px;
+  display: none;
+  max-width: calc(100% - 14px);
+  padding: 4px 7px;
+  overflow: hidden;
+  color: #d7e8e3;
+  background: rgba(3, 10, 8, 0.82);
+  border: 1px solid rgba(145, 170, 163, 0.34);
+  border-radius: 6px;
+  font-size: 0.58rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.map-frame.loaded .map-readout { display: block; }
 
 .navigation-controls {
   min-width: 0;
@@ -316,9 +347,26 @@ input {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-rows: minmax(120px, 1.05fr) minmax(88px, 0.62fr) minmax(170px, 1.45fr);
+  grid-template-rows: minmax(92px, 0.85fr) minmax(70px, 0.62fr) minmax(126px, 1.12fr) minmax(82px, 0.72fr);
   gap: 7px;
 }
+
+.mlops-state { color: var(--muted) !important; font-size: 0.58rem !important; }
+.mlops-state.normal { color: var(--mint) !important; }
+.mlops-state.anomaly { color: var(--red) !important; }
+.mlops-state.model-not-ready,
+.mlops-state.stale { color: var(--yellow) !important; }
+.mlops-summary {
+  min-height: 0;
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+  gap: 4px 7px;
+}
+.mlops-summary div { min-width: 0; }
+.mlops-summary span { display: block; color: var(--muted); font-size: 0.54rem; }
+.mlops-summary strong { display: block; overflow: hidden; margin-top: 1px; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+.mlops-summary p { grid-column: 1 / -1; overflow: hidden; color: var(--muted); font-size: 0.57rem; text-overflow: ellipsis; white-space: nowrap; }
 
 .operations-card {
   min-width: 0;

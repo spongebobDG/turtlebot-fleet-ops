@@ -200,7 +200,16 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
     (source_dir / "styles.css").write_text("body { color: white; }")
     (source_dir / "app.js").write_text("console.log('fleet');")
     (source_dir / "map_math.js").write_text("globalThis.FleetMapMath = {};")
-    for name in ("index.html", "styles.css", "app.js", "map_math.js"):
+    (source_dir / "map_viewport.js").write_text(
+        "globalThis.FleetMapViewport = {};"
+    )
+    for name in (
+        "index.html",
+        "styles.css",
+        "app.js",
+        "map_math.js",
+        "map_viewport.js",
+    ):
         try:
             (static_dir / name).symlink_to(source_dir / name)
         except OSError:
@@ -212,6 +221,7 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
     assert client.get("/static/styles.css").status_code == 200
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/map_math.js").status_code == 200
+    assert client.get("/static/map_viewport.js").status_code == 200
     assert client.get("/static/secret.txt").status_code == 404
 
 
@@ -221,12 +231,34 @@ def test_dashboard_serves_map_math_from_regular_install(tmp_path):
         "styles.css": "body {}",
         "app.js": "console.log('fleet');",
         "map_math.js": "globalThis.FleetMapMath = {};",
+        "map_viewport.js": "globalThis.FleetMapViewport = {};",
     }.items():
         (tmp_path / name).write_text(content)
     client = TestClient(create_app(make_registry(), static_dir=tmp_path))
 
     assert client.get("/static/map_math.js").status_code == 200
+    assert client.get("/static/map_viewport.js").status_code == 200
     assert client.get("/static/not-allowed.js").status_code == 404
+
+
+def test_ros2_log_mlops_status_route_is_fail_visible(tmp_path):
+    status_path = tmp_path / "latest.json"
+    client = TestClient(
+        create_app(make_registry(), log_mlops_status_path=status_path)
+    )
+
+    missing = client.get("/api/mlops/ros2-logs")
+    status_path.write_text(
+        '{"state":"NORMAL","model_id":"model-1","score":0.5,'
+        '"observed_at":"2999-01-01T00:00:00+00:00"}',
+        encoding="utf-8",
+    )
+    available = client.get("/api/mlops/ros2-logs")
+
+    assert missing.status_code == 200
+    assert missing.json()["state"] == "MODEL_NOT_READY"
+    assert available.json()["state"] == "NORMAL"
+    assert available.json()["model_id"] == "model-1"
 
 
 def test_navigation_map_initial_pose_goal_and_cancel_routes():

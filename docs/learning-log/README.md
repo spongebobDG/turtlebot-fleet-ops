@@ -31,6 +31,7 @@
 - Phase 5 실차: [TB1 로컬 Nav2 실차 수용 시험 완료](2026-07-19-phase-5-tb1-navigation-acceptance.md)
 - Phase 6 실차: [TB1 작업·복구 실차 수용 시험 완료](2026-07-19-phase-6-tb1-operations-acceptance.md)
 - 관제 UX: [한 화면 관제와 heartbeat 단절 감사 로그](2026-07-19-single-screen-dashboard-connectivity-audit.md)
+- Phase 7: [ROS 2 로그 MLOps와 정밀 지도 뷰포트](2026-07-19-phase-7-ros2-log-mlops-and-map-viewport.md)
 
 ## 공부와 면접용 문서
 
@@ -51,6 +52,8 @@
 - [Phase 4 Fleet Gateway 설계](../design/phase-4-tb1-web-dashboard.md)
 - [Phase 5 TB1 Nav2와 웹 목적지 설계](../design/phase-5-tb1-navigation.md)
 - [Phase 6 TB1 작업·고장·감사 설계](../design/phase-6-tb1-operations.md)
+- [Phase 7 ROS 2 로그 MLOps와 지도 뷰포트 설계](../design/phase-7-ros2-log-mlops.md)
+- [Phase 7 ROS 2 로그 분석 MLOps 공부](../study/phase-7-ros2-log-mlops.md)
 
 ## 기록 원칙
 

@@ -64,7 +64,7 @@ else {
 }
 
 & $wslExe -d $Distro -u $LinuxUser -- `
-    bash -lc "systemctl --user start fleet-control-zenoh.service fleet-gateway.service"
+    bash -lc "systemctl --user start fleet-control-zenoh.service fleet-gateway.service fleet-log-mlops.service"
 if ($LASTEXITCODE -ne 0) {
     throw "Could not start the WSL fleet control services."
 }
@@ -88,7 +88,7 @@ foreach ($attempt in 1..90) {
 if (-not $healthy) {
     & $wslExe -d $Distro -u $LinuxUser -- `
         systemctl --user --no-pager --full status `
-        fleet-control-zenoh.service fleet-gateway.service
+        fleet-control-zenoh.service fleet-gateway.service fleet-log-mlops.service
     throw "Fleet Gateway did not become healthy within 90 seconds."
 }
 

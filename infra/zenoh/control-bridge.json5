@@ -10,6 +10,7 @@
           "^/fleet/robot_status$",
           "^/fleet/navigation_status$",
           "^/fleet/safety_status$",
+          "^/fleet/rosout$",
           "^/scan$",
           "^/scan_normalized$",
           "^/odom$",

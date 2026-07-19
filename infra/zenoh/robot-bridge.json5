@@ -7,6 +7,7 @@
           "^/fleet/robot_status$",
           "^/fleet/navigation_status$",
           "^/fleet/safety_status$",
+          "^/fleet/rosout$",
           "^/scan$",
           "^/scan_normalized$",
           "^/odom$",
@@ -38,6 +39,7 @@
         "action_clients": []
       },
       "pub_max_frequencies": [
+        "^/fleet/rosout$=20",
         "^/scan$=10",
         "^/scan_normalized$=10",
         "^/tf$=30"
@@ -46,6 +48,7 @@
         "^/fleet/robot_status$=1:express",
         "^/fleet/navigation_status$=1:express",
         "^/fleet/safety_status$=1:express",
+        "^/fleet/rosout$=5",
         "^/tf$=2",
         "^/scan_normalized$=3",
         "^/scan$=4"
