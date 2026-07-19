@@ -49,7 +49,15 @@ def main(args: Optional[List[str]] = None) -> None:
         )
     node.registry.add_listener(operations_store.observe)
     task_manager = NavigationTaskManager(operations_store, node)
-    patrol_manager = PatrolManager(operations_store, node)
+    patrol_manager = PatrolManager(
+        operations_store,
+        node,
+        current_pose_provider=lambda robot_id: (
+            ((node.registry.get(robot_id) or {}).get("navigation") or {}).get(
+                "current"
+            )
+        ),
+    )
     node.registry.add_listener(patrol_manager.observe)
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)

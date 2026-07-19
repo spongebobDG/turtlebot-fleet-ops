@@ -76,6 +76,56 @@ def test_patrol_advances_matching_waypoints_and_completes(tmp_path):
         manager.close()
 
 
+def test_patrol_splits_translation_from_requested_final_yaw(tmp_path):
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    navigation = FakeNavigation()
+    pose = {"x": 0.0, "y": 0.0, "yaw": 0.0}
+    manager = PatrolManager(
+        store,
+        navigation,
+        current_pose_provider=lambda _robot_id: pose,
+    )
+    try:
+        patrol = manager.create(
+            "tb1",
+            [{"x": 1.0, "y": 0.0, "yaw": 1.5}],
+            loops=1,
+            dwell_sec=0.0,
+            confirm_warnings=False,
+        )
+        active = manager.run(patrol["patrol_id"])
+        assert navigation.goals[0][1:4] == (1.0, 0.0, 0.0)
+
+        pose.update({"x": 0.94, "y": 0.01, "yaw": 0.02})
+        # The registry listener normally updates current pose before it queues
+        # the terminal status; emulate that ordering for the orientation goal.
+        manager._handle_terminal(
+            {
+                "robot_id": "tb1",
+                "state": "SUCCEEDED",
+                "target": {"x": 1.0, "y": 0.0, "yaw": 0.0},
+            }
+        )
+        orientation = navigation.goals[-1]
+        assert orientation[1:4] == (0.94, 0.01, 1.5)
+        current = store.get_patrol(active["patrol_id"])
+        assert current["state"] == "ACTIVE"
+        assert current["current_waypoint"] == 0
+
+        manager._handle_terminal(
+            {
+                "robot_id": "tb1",
+                "state": "SUCCEEDED",
+                "target": {"x": 0.94, "y": 0.01, "yaw": 1.5},
+            }
+        )
+        completed = store.get_patrol(active["patrol_id"])
+        assert completed["state"] == "COMPLETED"
+        assert len(navigation.goals) == 2
+    finally:
+        manager.close()
+
+
 def test_patrol_failure_and_cancel_never_start_next_waypoint(tmp_path):
     store = OperationsStore(tmp_path / "operations.sqlite3")
     navigation = FakeNavigation()

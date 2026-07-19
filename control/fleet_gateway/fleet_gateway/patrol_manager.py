@@ -4,7 +4,7 @@ import math
 import queue
 import threading
 import time
-from typing import Any, Dict, Mapping, Protocol
+from typing import Any, Callable, Dict, Mapping, Optional, Protocol
 
 from fleet_gateway.operations import OperationsStore
 
@@ -37,9 +37,16 @@ class PatrolManager:
         self,
         store: OperationsStore,
         navigation: PatrolNavigationAdapter,
+        current_pose_provider: Optional[
+            Callable[[str], Optional[Mapping[str, Any]]]
+        ] = None,
     ) -> None:
         self.store = store
         self.navigation = navigation
+        self.current_pose_provider = current_pose_provider
+        self._goal_lock = threading.RLock()
+        self._goal_phase: Dict[str, str] = {}
+        self._expected_target: Dict[str, Dict[str, float]] = {}
         self._updates: queue.Queue = queue.Queue()
         self._closed = threading.Event()
         self._thread = threading.Thread(
@@ -115,13 +122,16 @@ class PatrolManager:
                     clear_command=True,
                 )
                 failed["status_code"] = int(result.get("status_code", 503))
+                self._forget_goal(patrol_id)
                 return failed
-        return self.store.update_patrol(
+        canceled = self.store.update_patrol(
             patrol_id,
             "CANCELED",
             "Patrol canceled; no waypoint will resume",
             clear_command=True,
         )
+        self._forget_goal(patrol_id)
+        return canceled
 
     def stop_for_safety(self, robot_id: str, reason: str) -> int:
         """Close patrol ownership after e-stop already stopped motion."""
@@ -137,6 +147,7 @@ class PatrolManager:
                 f"{reason}; no waypoint will resume",
                 clear_command=True,
             )
+            self._forget_goal(patrol["patrol_id"])
         return len(active)
 
     def observe(self, kind: str, status: Mapping[str, Any]) -> None:
@@ -187,7 +198,14 @@ class PatrolManager:
                 str(status.get("message") or f"Waypoint {state.lower()}"),
                 clear_command=True,
             )
+            self._forget_goal(patrol["patrol_id"])
             return
+        with self._goal_lock:
+            phase = self._goal_phase.get(patrol["patrol_id"], "waypoint")
+        if phase == "translation":
+            self._start_orientation(patrol["patrol_id"])
+            return
+        self._forget_goal(patrol["patrol_id"])
         next_waypoint = int(patrol["current_waypoint"]) + 1
         next_loop = int(patrol["current_loop"])
         if next_waypoint >= len(patrol["waypoints"]):
@@ -222,11 +240,66 @@ class PatrolManager:
     def _start_current_waypoint(self, patrol_id: str) -> Dict[str, Any]:
         patrol = self._patrol(patrol_id)
         point = patrol["waypoints"][int(patrol["current_waypoint"])]
+        pose = self._current_pose(patrol["robot_id"])
+        yaw = float(point["yaw"])
+        phase = "waypoint"
+        if pose is not None:
+            delta_x = float(point["x"]) - float(pose["x"])
+            delta_y = float(point["y"]) - float(pose["y"])
+            if math.hypot(delta_x, delta_y) > 0.02:
+                approach_yaw = math.atan2(delta_y, delta_x)
+                if self._yaw_difference(approach_yaw, yaw) > 0.15:
+                    yaw = approach_yaw
+                    phase = "translation"
+        return self._start_goal(patrol, point["x"], point["y"], yaw, phase)
+
+    def _start_orientation(self, patrol_id: str) -> Dict[str, Any]:
+        """Finish one waypoint yaw with an orientation-only Nav2 goal."""
+        patrol = self._patrol(patrol_id)
+        point = patrol["waypoints"][int(patrol["current_waypoint"])]
+        pose = self._current_pose(patrol["robot_id"])
+        x_value = float(point["x"])
+        y_value = float(point["y"])
+        if pose is not None:
+            x_value = float(pose["x"])
+            y_value = float(pose["y"])
+        self.store.update_patrol(
+            patrol_id,
+            "STARTING",
+            "Aligning patrol waypoint yaw",
+            clear_command=True,
+        )
+        patrol = self._patrol(patrol_id)
+        return self._start_goal(
+            patrol,
+            x_value,
+            y_value,
+            float(point["yaw"]),
+            "orientation",
+        )
+
+    def _start_goal(
+        self,
+        patrol: Mapping[str, Any],
+        x_value: float,
+        y_value: float,
+        yaw: float,
+        phase: str,
+    ) -> Dict[str, Any]:
+        patrol_id = str(patrol["patrol_id"])
+        expected = {
+            "x": float(x_value),
+            "y": float(y_value),
+            "yaw": float(yaw),
+        }
+        with self._goal_lock:
+            self._goal_phase[patrol_id] = phase
+            self._expected_target[patrol_id] = expected
         result = self.navigation.start_navigation(
             patrol["robot_id"],
-            point["x"],
-            point["y"],
-            point["yaw"],
+            expected["x"],
+            expected["y"],
+            expected["yaw"],
             patrol["confirm_warnings"],
         )
         if not result.get("success", False):
@@ -237,6 +310,7 @@ class PatrolManager:
                 clear_command=True,
             )
             failed["status_code"] = int(result.get("status_code", 503))
+            self._forget_goal(patrol_id)
             return failed
         return self.store.update_patrol(
             patrol_id,
@@ -244,6 +318,25 @@ class PatrolManager:
             result.get("message", "Patrol waypoint active"),
             command_id=str(result.get("command_id", "")),
         )
+
+    def _current_pose(self, robot_id: str) -> Optional[Mapping[str, Any]]:
+        if self.current_pose_provider is None:
+            return None
+        pose = self.current_pose_provider(robot_id)
+        if not isinstance(pose, Mapping):
+            return None
+        try:
+            values = tuple(float(pose[key]) for key in ("x", "y", "yaw"))
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not all(math.isfinite(value) for value in values):
+            return None
+        return {"x": values[0], "y": values[1], "yaw": values[2]}
+
+    def _forget_goal(self, patrol_id: str) -> None:
+        with self._goal_lock:
+            self._goal_phase.pop(patrol_id, None)
+            self._expected_target.pop(patrol_id, None)
 
     def _fail_active_after_worker_error(
         self,
@@ -260,6 +353,7 @@ class PatrolManager:
                 f"Patrol orchestration error: {type(error).__name__}",
                 clear_command=True,
             )
+            self._forget_goal(patrol["patrol_id"])
 
     def _patrol(self, patrol_id: str) -> Dict[str, Any]:
         patrol = self.store.get_patrol(patrol_id)
@@ -267,15 +361,19 @@ class PatrolManager:
             raise KeyError(patrol_id)
         return patrol
 
-    @staticmethod
     def _target_matches(
+        self,
         status: Mapping[str, Any],
         patrol: Mapping[str, Any],
     ) -> bool:
         target = status.get("target")
         if not isinstance(target, Mapping):
             return True
-        point = patrol["waypoints"][int(patrol["current_waypoint"])]
+        patrol_id = str(patrol["patrol_id"])
+        with self._goal_lock:
+            point = self._expected_target.get(patrol_id)
+        if point is None:
+            point = patrol["waypoints"][int(patrol["current_waypoint"])]
         try:
             yaw_delta = float(target["yaw"]) - float(point["yaw"])
             return (
@@ -286,3 +384,8 @@ class PatrolManager:
             )
         except (KeyError, TypeError, ValueError):
             return False
+
+    @staticmethod
+    def _yaw_difference(first: float, second: float) -> float:
+        delta = first - second
+        return abs(math.atan2(math.sin(delta), math.cos(delta)))
