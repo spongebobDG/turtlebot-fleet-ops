@@ -136,7 +136,7 @@ def generate_launch_description() -> LaunchDescription:
                         # TurtleBot3 Humble stores these under the legacy
                         # recoveries_server key, so the behavior_server node
                         # otherwise falls back to 1.0 rad/s and 3.2 rad/s^2.
-                        "max_rotational_vel": 0.3,
+                        "max_rotational_vel": 0.27,
                         "min_rotational_vel": 0.05,
                         "rotational_acc_lim": 0.6,
                     },
@@ -175,8 +175,8 @@ def generate_launch_description() -> LaunchDescription:
                         "smoothing_frequency": 20.0,
                         "scale_velocities": True,
                         "feedback": "OPEN_LOOP",
-                        "max_velocity": [0.05, 0.0, 0.3],
-                        "min_velocity": [-0.05, 0.0, -0.3],
+                        "max_velocity": [0.05, 0.0, 0.27],
+                        "min_velocity": [-0.05, 0.0, -0.27],
                         "max_accel": [0.08, 0.0, 0.6],
                         "max_decel": [-0.12, 0.0, -0.8],
                         "odom_topic": "/odom",
