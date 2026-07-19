@@ -120,13 +120,36 @@ overflow 없이 순찰·deadman·프로필·로그 MLOps 영역을 한 화면에
 `ntp.ubuntu.com`에 동기화되어 offset 약 1.5 ms였지만 Windows는 `Local CMOS Clock`, 미동기화
 상태였고 WSL이 Windows 시각을 따르고 있었다.
 
-WSL에 `ntpdate`를 설치해 네 NTP 서버를 조회하자 offset은 +0.574~+0.586초로 재현됐다. TB1이
-e-stop 활성, motion 미재무장, 활성 목표 없음인 것을 다시 확인한 뒤 WSL 시각을 NTP에 맞추고
-control bridge와 Gateway를 재시작했다. 재조회 offset은 +0.001~+0.013초였고 새 bridge PID에는
-timestamp rejection이 더 이상 기록되지 않았다. TB1 online과 e-stop 상태도 유지됐다.
+WSL에 `ntpdate`를 설치해 네 NTP 서버를 조회하자 offset은 +0.574~+0.586초로 재현됐다. WSL만
+보정하면 Windows 공유 시계가 약 40초 뒤 원래 오차를 다시 적용했다. 15초 주기의 WSL timer도
+같은 이유로 영구 해법이 아니어서 제거하고 기본 WSL 서비스 상태를 복구했다.
 
-Windows Time 자체는 관리자 권한이 필요한 별도 호스트 설정이다. 현재 WSL runtime은 보정됐지만
-Windows 또는 WSL을 재부팅한 뒤에는 실차 이동 전에 NTP offset과 bridge 오류를 다시 확인한다.
+저장소에 관리자용 `configure_windows_time.ps1`를 추가했다. Windows Time을 세 외부 NTP peer에
+연결한 뒤 최초 offset이 0.2초보다 크면 `MaxAllowedPhaseOffset`을 한 번만 0으로 바꿔 즉시
+보정하고 원래 값을 복구한다. Microsoft가 설명한 점진 보정과 즉시 clock set 경계를 그대로
+사용한 것이다. 사전점검도 외부 NTP 표본이 ±0.2초를 넘으면 실차 모드에서 실패하도록 바꿨다.
+
+실행 전 offset `+0.6038752초`가 실행 후 `+0.0032821초`로 줄었다. 이어 Windows stripchart는
+`-0.0156~+0.0176초`, WSL NTP 조회는 약 `-0.100초`였고, control bridge와 Gateway를 재시작한
+새 systemd invocation에서 70초 동안 timestamp rejection과 ERROR는 0건이었다. TB1은 online,
+e-stop 활성, motion 미재무장, 활성 목표 없음 상태를 유지했다. 재부팅 뒤에도
+`test_tb1_connection.ps1 -RequireRobot`으로 같은 ±0.2초 기준을 다시 검사한다.
+
+### Deadman, Gateway, Zenoh 단절 정지 측정
+
+초기 위치와 목표가 없는 빈 공간에서 e-stop을 해제하고 `0.1rad/s` 수동 회전 명령만 사용했다.
+각 시험 직후에는 e-stop을 다시 활성화했으며 이전 수동 세션이나 목표가 재개되지 않았다.
+
+| 시험 | 최종 `/cmd_vel` non-zero 지속 | 관찰 결과 |
+| --- | ---: | --- |
+| 한 번의 manual 명령 뒤 갱신 중단 | 0.301초 | 로컬 authorization 만료, arbiter `MANUAL -> IDLE` |
+| manual 중 Gateway `SIGKILL` | 0.304초 | systemd 복구 7.532초, 이전 session 비재개 |
+| manual 중 control Zenoh bridge `SIGKILL` | 0.305초 | 로컬 timeout 정지, bridge 자동 재시작, 이전 session 비재개 |
+
+세 경우 모두 TB1의 0.35초 manual authorization이 Gateway의 재시작 시간이나 네트워크 복구보다
+먼저 동작했다. Gateway 종료 시험 뒤 MLOps incident API는 `network_lease` 원인 후보와
+`manual_control: Manual command lease expired` 원본 증거를 연결했다. 즉 분석 결과는 정지를
+발생시키는 제어 경계가 아니라, 로컬 fail-safe가 동작한 뒤 원인을 설명하는 관측 경계로 유지됐다.
 
 ### TB1 Phase 8 배포와 profile status 복구
 
@@ -277,18 +300,18 @@ logger·message 근거, 확인 순서를 연결해야 작업자가 판단에 사
 - [x] Nav2 무진행 원인을 DWB 최소 속도와 실제 odometry로 분리 진단
 - [x] 실제 목표 yaw·평활화 확인 (`ACTIVE -> SUCCEEDED`, 전체 명령 최대 0.27rad/s)
 - [x] 현재 WSL·TB1 시각 차이 500 ms 미만 및 새 bridge 오류 없음 확인
-- [ ] Windows Time 영구 동기화 또는 재부팅 후 WSL NTP 재확인
-- [ ] deadman·Gateway·Zenoh 단절 정지 시간 측정
+- [x] Windows Time 외부 NTP 영구 설정과 즉시 보정 (Windows +0.003초, 새 bridge 70초 오류 0건)
+- [x] deadman·Gateway·Zenoh 단절 정지 시간 측정 (최종 0.301~0.305초, 무재개)
 - [ ] 새 환경 매핑·저장·AMCL 재기동
 - [ ] 실차 순찰·취소·비재개와 incident 확인
 - [ ] 10분 주행 CPU·메모리 및 단일 `/cmd_vel` Publisher 기록
 
 ## 남은 시간
 
-목적지 yaw와 평활화 검증을 제외한 남은 실차 검증은 새로운 결함이 없다면 약 2.5~3.5시간으로
-예상한다. deadman과 단절 정지 20~30분, 매핑·재기동 35~50분, 순찰 30~45분, 장애·incident
-35~50분, 10분 주행과 기록 20~30분이다. localization 또는 Zenoh 재조정이 필요하면
-1~2시간을 추가한다.
+목적지 yaw·평활화와 deadman 단절 검증을 제외한 남은 실차 검증은 새로운 결함이 없다면 약
+2~3시간으로 예상한다. 매핑·재기동 35~50분, 순찰 30~45분, 남은 장애·incident 20~35분,
+10분 주행과 기록 20~30분에 현장 재배치 여유를 포함한 값이다. localization 또는 Zenoh
+재조정이 다시 필요하면 1~2시간을 추가한다.
 
 ## 관련 문서
 

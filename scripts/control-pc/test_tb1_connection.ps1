@@ -75,6 +75,30 @@ else {
     Write-Fail "no active Windows IPv4 address in the TB1 LAN"
 }
 
+$timeSamples = & "$env:SystemRoot\System32\w32tm.exe" `
+    /stripchart /computer:time.google.com /dataonly /samples:3 2>$null
+$timeOffsets = @(
+    $timeSamples |
+        ForEach-Object { [regex]::Match($_.ToString(), "(?<offset>[+-]\d+[\.,]\d+)s") } |
+        Where-Object { $_.Success } |
+        ForEach-Object {
+            [double]::Parse(
+                $_.Groups["offset"].Value.TrimEnd("s").Replace(",", "."),
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        }
+)
+$timeOffsetSec = if ($timeOffsets.Count -gt 0) { [double]$timeOffsets[-1] } else { $null }
+if ($null -ne $timeOffsetSec -and [Math]::Abs($timeOffsetSec) -le 0.2) {
+    Write-Pass "Windows Time offset $timeOffsetSec seconds"
+}
+elseif ($RequireRobot) {
+    Write-Fail "Windows Time offset is unavailable or exceeds 0.2 seconds; run configure_windows_time.ps1 as administrator"
+}
+else {
+    Write-Warn "Windows Time offset is unavailable or exceeds 0.2 seconds; synchronize before live TB1 control"
+}
+
 $keepAliveProcess = $null
 if (Test-Path -LiteralPath $runtimeMarker) {
     $processIdLine = Get-Content -LiteralPath $runtimeMarker |

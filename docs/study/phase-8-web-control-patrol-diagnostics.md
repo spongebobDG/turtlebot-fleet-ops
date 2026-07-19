@@ -188,7 +188,28 @@ shim과 DWB가 빠르게 교대하는 현상을 줄이는 hysteresis다. shim도
 controller부터 최종 `/cmd_vel`까지 기록해 판정하고, 실제 동작 안전성은 odometry peak와 정지 후
 quiet 속도를 별도로 기록한다. 둘 중 하나를 숨기거나 같은 값이라고 가정하면 안 된다.
 
-## 10. 실차 검증 전에 설명할 수 있어야 하는 것
+## 10. Deadman과 분산 시각 동기화는 서로 다른 안전 경계다
+
+manual deadman은 TB1이 마지막으로 수신한 authorization의 로컬 monotonic age를 계산한다.
+그래서 Gateway나 Zenoh 프로세스가 죽어 새 갱신이 사라지면 벽시계가 틀려도 0.35초 뒤 로컬에서
+정지할 수 있다. 실차에서 단일 갱신 중단, Gateway 종료, Zenoh bridge 종료의 최종 non-zero가
+0.301~0.305초에 끝난 것은 이 경계가 중앙 복구시간과 독립적이라는 증거다.
+
+반면 Zenoh timestamp는 서로 다른 호스트의 벽시계를 비교한다. Windows와 TB1 시각이 500ms보다
+크게 어긋나면 정상 메시지도 오래됐거나 미래에서 온 것으로 거부될 수 있다. WSL2는 Windows
+호스트 시각을 다시 따르므로 WSL 안에서만 `ntpdate`를 실행하는 것은 영구 해법이 아니다.
+Windows Time을 외부 NTP에 연결하고 실제 offset을 확인해야 한다.
+
+```text
+통신 허용: Windows/WSL/TB1 wall clock offset < Zenoh timestamp tolerance
+로컬 정지: 마지막 authorization 이후 TB1 monotonic age > 0.35s
+```
+
+두 기준을 섞으면 timestamp 허용치를 크게 늘려 잘못된 시각을 숨기거나, 반대로 벽시계 보정만
+믿고 로컬 deadman을 약화시키는 문제가 생긴다. 시간 동기화는 정상 전달을 위한 조건이고,
+authorization timeout은 전달이 사라졌을 때 정지시키는 조건이다.
+
+## 11. 실차 검증 전에 설명할 수 있어야 하는 것
 
 - 화면 드래그 방향이 `base_link +X` yaw로 바뀌는 과정
 - smoother, arbiter, watchdog의 책임 차이

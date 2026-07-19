@@ -33,18 +33,27 @@ fail-closed 동작이다.
 
 관제 bridge에 `incoming timestamp ... exceeding delta 500ms`가 보이면 Windows·WSL·TB1의
 NTP 상태와 시각 차이를 먼저 확인한다. 이 PC에서는 Windows가 `Local CMOS Clock` 미동기화
-상태여서 WSL이 약 0.57초 늦었다. 현재 WSL은 `ntpdate`로 보정되어 NTP offset 0.013초 이하와
-새 bridge PID의 timestamp 오류 0건을 확인했다. Windows 또는 WSL 재부팅 뒤에는 다음을 먼저
-실행하고 bridge와 Gateway를 재시작한다.
+상태여서 WSL이 약 0.64초 늦었다. 관리자 PowerShell에서 저장소 소유 스크립트로 Windows Time을
+인터넷 NTP에 고정한다. 최초 offset이 0.2초를 넘으면 스크립트는 한 번 즉시 보정하고 Windows의
+원래 점진 보정 정책을 복구한다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File `
+  "C:\projects\turtlebot-fleet-ops\scripts\control-pc\configure_windows_time.ps1"
+```
+
+설정 뒤 일반 PowerShell과 WSL에서 offset을 확인하고 bridge와 Gateway를 재시작한다.
 
 ```bash
 ntpdate -q ntp.ubuntu.com
-sudo ntpdate -u ntp.ubuntu.com
 systemctl --user restart fleet-control-zenoh.service fleet-gateway.service
 ```
 
-Windows Time의 영구 동기화는 관리자 권한으로 별도 설정한다. offset이 0.5초 이상인 상태에서는
-실차 이동 검증을 시작하지 않는다.
+`test_tb1_connection.ps1 -RequireRobot`도 외부 NTP 표본이 ±0.2초를 넘으면 실패한다. offset이
+0.2초를 넘거나 bridge 오류가 계속되면 실차 이동 검증을 시작하지 않는다.
+
+2026-07-20 이 PC에서는 보정 전 `+0.6038752초`, 보정 후 `+0.0032821초`였고, 서비스 재시작 뒤
+새 Zenoh invocation을 70초 감시해 timestamp rejection과 ERROR 0건을 확인했다.
 
 ## 2. TB1 배포
 
@@ -159,6 +168,10 @@ odometry 순간값은 별도 관측치로 남기고, 시험 후 quiet 속도가 
 TB1의 manual authorization은 마지막 갱신 후 0.35초에 만료되어야 한다. 최종 `/cmd_vel=0`과
 arbiter `IDLE`을 로그로 남긴다. 수동 조종 중에는 navigation 목표나 순찰을 동시에 시작하지
 않는다.
+
+2026-07-20 실차 측정에서 단일 갱신 중단, Gateway `SIGKILL`, control Zenoh bridge `SIGKILL`의
+최종 non-zero 지속시간은 각각 0.301초, 0.304초, 0.305초였다. 세 시험 모두 이전 manual session은
+복구 뒤 재개되지 않았고 시험 직후 e-stop을 다시 활성화했다.
 
 ## 5. 새 환경 지도 만들기
 
