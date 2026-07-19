@@ -92,6 +92,16 @@ def test_mapping_supports_simulation_without_changing_real_default() -> None:
     )
 
 
+def test_robotless_fixture_emulates_tb1_raw_scan_axis() -> None:
+    fixture = (
+        REPOSITORY_ROOT / "infra" / "navigation" / "robotless_fixture.py"
+    ).read_text()
+
+    assert "TB1_RAW_SCAN_YAW_OFFSET_RAD = math.pi" in fixture
+    assert "sensor_yaw_rad: float = TB1_RAW_SCAN_YAW_OFFSET_RAD" in fixture
+    assert "index * increment + sensor_yaw_rad" in fixture
+
+
 def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive(
 ) -> None:
     units = REPOSITORY_ROOT / "infra" / "systemd" / "user"

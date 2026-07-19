@@ -20,6 +20,9 @@ from sensor_msgs.msg import LaserScan
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
 
+TB1_RAW_SCAN_YAW_OFFSET_RAD = math.pi
+
+
 def _yaw_from_quaternion(z_value: float, w_value: float) -> float:
     """Return planar yaw from a normalized-or-normalizable quaternion."""
     norm = math.hypot(z_value, w_value)
@@ -39,12 +42,13 @@ def _square_room_scan_ranges(
     yaw: float,
     sample_count: int = 360,
     wall_coordinate: float = 1.975,
+    sensor_yaw_rad: float = TB1_RAW_SCAN_YAW_OFFSET_RAD,
 ) -> list:
-    """Ray-cast an ideal scan against the fixture's square map boundary."""
+    """Ray-cast raw TB1 scan angles against the fixture map boundary."""
     ranges = []
     increment = 2.0 * math.pi / max(1, sample_count - 1)
     for index in range(sample_count):
-        angle = yaw - math.pi + index * increment
+        angle = yaw - math.pi + index * increment + sensor_yaw_rad
         direction_x = math.cos(angle)
         direction_y = math.sin(angle)
         candidates = []
