@@ -82,6 +82,27 @@ def generate_launch_description() -> LaunchDescription:
                         "progress_checker.required_movement_radius": 0.1,
                         "progress_checker.required_movement_angle": 0.1,
                         "progress_checker.movement_time_allowance": 20.0,
+                        # DWB can alternate between equally scored clockwise
+                        # and counter-clockwise trajectories when a new path
+                        # begins almost exactly behind the robot.  Humble's
+                        # rotation shim gives that large initial alignment a
+                        # deterministic controller phase, then hands the path
+                        # back to the repository-tuned DWB controller.
+                        "FollowPath.plugin": (
+                            "nav2_rotation_shim_controller::"
+                            "RotationShimController"
+                        ),
+                        "FollowPath.primary_controller": (
+                            "dwb_core::DWBLocalPlanner"
+                        ),
+                        "FollowPath.angular_dist_threshold": 0.6,
+                        "FollowPath.angular_disengage_threshold": 0.35,
+                        "FollowPath.forward_sampling_distance": 0.15,
+                        "FollowPath.rotate_to_heading_angular_vel": 0.2,
+                        "FollowPath.max_angular_accel": 0.6,
+                        "FollowPath.simulate_ahead_time": 1.0,
+                        "FollowPath.rotate_to_goal_heading": False,
+                        "FollowPath.closed_loop": True,
                     },
                 ],
             ),

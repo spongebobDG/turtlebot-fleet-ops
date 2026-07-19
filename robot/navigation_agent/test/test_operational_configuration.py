@@ -69,6 +69,18 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"rotational_acc_lim": 0.6' in nav2_launch
     assert '"nav2_controller::PoseProgressChecker"' in nav2_launch
     assert '"progress_checker.required_movement_angle": 0.1' in nav2_launch
+    assert (
+        '"nav2_rotation_shim_controller::"' in nav2_launch
+        and '"RotationShimController"' in nav2_launch
+    )
+    assert '"FollowPath.primary_controller": (' in nav2_launch
+    assert '"dwb_core::DWBLocalPlanner"' in nav2_launch
+    assert '"FollowPath.angular_dist_threshold": 0.6' in nav2_launch
+    assert '"FollowPath.angular_disengage_threshold": 0.35' in nav2_launch
+    assert '"FollowPath.forward_sampling_distance": 0.15' in nav2_launch
+    assert '"FollowPath.rotate_to_heading_angular_vel": 0.2' in nav2_launch
+    assert '"FollowPath.max_angular_accel": 0.6' in nav2_launch
+    assert '"FollowPath.rotate_to_goal_heading": False' in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
