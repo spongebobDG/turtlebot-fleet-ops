@@ -347,6 +347,12 @@ ray-cast한 360개 LaserScan range를 발행하도록 수정했다. 격리 domai
 `0.05m/s`·`0.3rad/s`, 최종 0 입력을 모두 통과했다. 따라서 CI는 정합 검사를 우회하지 않고
 지도와 LiDAR가 일치하는 정상 경로를 계속 회귀 검증한다.
 
+별도의 task/fault mock도 RobotStatus에 scan 정상 플래그만 넣고 실제 `/scan`은 발행하지 않아
+초기 pose가 `503 LiDAR scan unavailable`로 거부됐다. 이 mock에도 같은 점유 경계 지도와
+pose 연동 LaserScan을 추가하고 smoke client가 40개 이상의 fresh point를 확인한 뒤 초기
+pose를 전송하게 했다. Gateway 77개 테스트와 task 성공·취소·재시도·실패·fault/audit E2E가
+통과했으며 마지막 상태는 의도대로 e-stop이었다.
+
 ## 배운 점
 
 1. ROS graph에서 Publisher가 사라지는 것과 0을 계속 발행하는 것은 다르다.
