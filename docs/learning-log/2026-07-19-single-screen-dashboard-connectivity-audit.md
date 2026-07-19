@@ -42,7 +42,7 @@
 - 관제 통신 중단 뒤 `ROBOT_OFFLINE` ERROR 이벤트 확인
 - 통신 복구 뒤 `ROBOT_ONLINE` INFO 이벤트 확인
 - 반복 snapshot으로 같은 상태 이벤트가 증폭되지 않는 단위 테스트 추가
-- Gateway 전체 pytest: 48 passed, 기존 pytest plugin 경고 2건, 실패 0
+- Gateway 전체 pytest: 49 passed, 기존 pytest plugin 경고 2건, 실패 0
 - 지도 JavaScript 테스트: 3 passed, 실패 0
 
 실제 화면 메시지는 다음과 같다.
@@ -62,6 +62,26 @@ ROBOT_ONLINE   로봇 heartbeat가 복구되었습니다
   Gateway가 살아 있으면 목표는 계속되므로, 감독 종료는 명시적 취소나 e-stop이어야 한다.
 - 관제 PC가 갑자기 꺼지면 꺼진 Gateway는 마지막 중앙 로그를 쓸 수 없다. 로봇 로컬의
   lease 만료와 재기동 뒤 durable task 실패 처리가 이 공백을 보완한다.
+
+## 발생한 문제와 해결
+
+첫 GitHub CI에서 robotless operations smoke의 실패 목표가 `FAILED` 대신 `CANCELED`로
+끝났다. 재현 과정에서는 반대로 새 실패 작업이 `ACTIVE`에 남는 경우도 확인했다.
+
+NavigationStatus terminal 상태는 `active_command_id`를 비운다. 이전 취소 상태가 늦게
+도착하면 기존 구현은 robot ID만으로 가장 최신 ACTIVE 작업을 찾아 다음 작업을 취소할 수
+있었다. 반대로 빠르게 실패하는 목표는 Action 승인과 DB command ID 저장 사이에 ACTIVE와
+FAILED 상태를 모두 발행해 terminal 상태를 연결할 command ID를 놓칠 수 있었다.
+
+해결은 두 조건을 함께 적용했다.
+
+1. TaskManager가 Action 승인 command ID를 저장한 직후 OperationsStore에도 현재 관측
+   command로 등록한다.
+2. command ID가 비어 있는 terminal 상태는 등록된 command뿐 아니라 target pose가 현재
+   작업의 target과 일치할 때만 반영한다.
+
+회귀 단위 테스트를 추가한 뒤 전체 pytest 49개와 동일 robotless operations smoke 3회
+연속 실행이 통과했다.
 
 ## 완료 체크리스트
 
