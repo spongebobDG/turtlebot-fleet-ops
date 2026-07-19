@@ -35,8 +35,8 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "mode_service: /tb1/navigation/set_motion_mode" in agent_config
     assert "max_vel_x: 0.05" in nav2_rewrites
     assert "max_speed_xy: 0.05" in nav2_rewrites
-    assert "max_vel_theta: 0.27" in nav2_rewrites
-    assert "max_rotational_vel: 0.27" in nav2_rewrites
+    assert "max_vel_theta: 0.22" in nav2_rewrites
+    assert "max_rotational_vel: 0.22" in nav2_rewrites
     assert "min_rotational_vel: 0.05" in nav2_rewrites
     assert "min_speed_xy: 0.02" in nav2_rewrites
     assert "min_speed_theta: 0.05" in nav2_rewrites
@@ -61,10 +61,10 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "xy_goal_tolerance: 0.10" in nav2_rewrites
     assert "yaw_goal_tolerance: 0.15" in nav2_rewrites
     assert '"smoothing_frequency": 20.0' in nav2_launch
-    assert '"max_velocity": [0.05, 0.0, 0.27]' in nav2_launch
+    assert '"max_velocity": [0.05, 0.0, 0.22]' in nav2_launch
     assert '"max_accel": [0.08, 0.0, 0.6]' in nav2_launch
     assert '"max_decel": [-0.12, 0.0, -0.8]' in nav2_launch
-    assert '"max_rotational_vel": 0.27' in nav2_launch
+    assert '"max_rotational_vel": 0.22' in nav2_launch
     assert '"min_rotational_vel": 0.05' in nav2_launch
     assert '"rotational_acc_lim": 0.6' in nav2_launch
     assert '"nav2_controller::PoseProgressChecker"' in nav2_launch
@@ -78,9 +78,11 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"FollowPath.angular_dist_threshold": 0.6' in nav2_launch
     assert '"FollowPath.angular_disengage_threshold": 0.35' in nav2_launch
     assert '"FollowPath.forward_sampling_distance": 0.15' in nav2_launch
-    assert '"FollowPath.rotate_to_heading_angular_vel": 0.2' in nav2_launch
+    assert '"FollowPath.rotate_to_heading_angular_vel": 0.18' in nav2_launch
     assert '"FollowPath.max_angular_accel": 0.6' in nav2_launch
     assert '"FollowPath.rotate_to_goal_heading": True' in nav2_launch
+    assert '"FollowPath.critics": [' in nav2_launch
+    assert '"RotateToGoal"' not in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch

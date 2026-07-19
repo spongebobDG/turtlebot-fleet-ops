@@ -25,11 +25,12 @@ vtheta_samples: 20
 sim_time: 1.0
 max_vel_x: 0.05
 max_speed_xy: 0.05
-# Leave ten percent command headroom below the verified 0.3 rad/s watchdog
-# ceiling.  TB1's wheel/odometry response briefly peaked at 0.322 rad/s when
-# Nav2 commanded the full 0.3 rad/s during an opposite-heading alignment.
-max_vel_theta: 0.27
-max_rotational_vel: 0.27
+# Leave measured response headroom below the verified 0.3 rad/s watchdog
+# ceiling.  TB1 odometry briefly peaked at 0.335 rad/s from a 0.27 rad/s DWB
+# command during a goal-heading transition, so keep every Nav2 rotation source
+# at or below 0.22 rad/s.
+max_vel_theta: 0.22
+max_rotational_vel: 0.22
 min_rotational_vel: 0.05
 # DWB uses min_speed_xy/min_speed_theta rather than the behavior-server
 # min_rotational_vel parameter. Commands below these measured TB1 drive
