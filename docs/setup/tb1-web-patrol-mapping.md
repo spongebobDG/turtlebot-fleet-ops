@@ -70,6 +70,18 @@ powershell -ExecutionPolicy Bypass -File `
 12 px 미만 드래그처럼 방향이 불명확한 목표는 전송하지 않는다. WARN이 있으면 fault 내용을
 확인하고 필요한 경우에만 경고 확인 후 다시 보낸다.
 
+초기 위치 적용에서 `Profile status is stale`가 나오면 Gateway의 `mapping` 상태와 TB1 profile
+manager를 확인한다.
+
+```bash
+systemctl --user status tb1-profile-manager.service
+ros2 topic echo /fleet/mapping_status --once
+```
+
+TB1 Phase 8 배포 전에는 이 서비스와 토픽이 없어 요청이 fail-closed한다. 배포 후에는 먼저 웹에서
+`주행 모드`를 선택해 fresh한 `NAVIGATION` profile을 확인하고 초기 위치를 다시 적용한다. 초기
+위치 적용 전 navigation `UNAVAILABLE`과 AMCL의 initial-pose 대기 로그는 정상이다.
+
 ## 4. Deadman 수동 조종
 
 수동 버튼은 누르고 있는 동안만 사용한다. 전진·후진·좌회전·우회전 버튼을 놓았을 때 즉시
