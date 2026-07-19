@@ -27,6 +27,7 @@ class OperationsStore:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._connectivity_states: Dict[str, bool] = {}
+        self._observed_navigation_commands: Dict[str, str] = {}
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -409,6 +410,8 @@ class OperationsStore:
         state = str(status.get("state", "")).upper()
         command_id = str(status.get("active_command_id", "")).strip()
         if robot_id and state == "UNAVAILABLE" and not command_id:
+            with self._lock:
+                self._observed_navigation_commands.pop(robot_id, None)
             self._fail_task_after_agent_restart(robot_id, status)
             return
         if not robot_id or state not in {
@@ -419,6 +422,7 @@ class OperationsStore:
             "LEASE_EXPIRED",
         }:
             return
+        expected_command_id = command_id
         with self._lock, closing(self._connect()) as connection:
             if command_id:
                 row = connection.execute(
@@ -429,14 +433,23 @@ class OperationsStore:
                     """,
                     (robot_id, command_id),
                 ).fetchone()
+                if row is not None:
+                    self._observed_navigation_commands[robot_id] = command_id
             else:
+                expected_command_id = self._observed_navigation_commands.get(
+                    robot_id,
+                    "",
+                )
+                if not expected_command_id:
+                    return
                 row = connection.execute(
                     """
                     SELECT task_id FROM tasks
-                    WHERE robot_id = ? AND state IN ('STARTING', 'ACTIVE')
+                    WHERE robot_id = ? AND command_id = ?
+                        AND state IN ('STARTING', 'ACTIVE')
                     ORDER BY updated_at DESC LIMIT 1
                     """,
-                    (robot_id,),
+                    (robot_id, expected_command_id),
                 ).fetchone()
         if row is None:
             return
@@ -450,6 +463,13 @@ class OperationsStore:
             message,
             command_id,
         )
+        if state != "ACTIVE":
+            with self._lock:
+                if (
+                    self._observed_navigation_commands.get(robot_id)
+                    == expected_command_id
+                ):
+                    self._observed_navigation_commands.pop(robot_id, None)
 
     def _fail_task_after_agent_restart(
         self,

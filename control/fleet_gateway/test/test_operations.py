@@ -105,6 +105,14 @@ def test_lease_expiration_maps_to_failed_task(tmp_path) -> None:
     store = OperationsStore(tmp_path / "operations.sqlite3")
     task = store.create_task("tb1", 1.0, 0.0, 0.0, True)
     store.update_task(task["task_id"], "ACTIVE", "accepted", "lease-1")
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "ACTIVE",
+            "active_command_id": "lease-1",
+            "message": "navigating",
+        }
+    )
 
     store.sync_navigation(
         {
@@ -119,6 +127,56 @@ def test_lease_expiration_maps_to_failed_task(tmp_path) -> None:
     assert failed is not None
     assert failed["state"] == "FAILED"
     assert failed["message"] == "Gateway lease expired"
+
+
+def test_stale_terminal_status_cannot_close_the_next_task(tmp_path) -> None:
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    first = store.create_task("tb1", 1.0, 0.0, 0.0, False)
+    store.update_task(first["task_id"], "ACTIVE", "accepted", "goal-1")
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "ACTIVE",
+            "active_command_id": "goal-1",
+        }
+    )
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "CANCELED",
+            "active_command_id": "",
+            "message": "first goal canceled",
+        }
+    )
+
+    second = store.create_task("tb1", -0.5, 0.0, 0.0, False)
+    store.update_task(second["task_id"], "ACTIVE", "accepted", "goal-2")
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "CANCELED",
+            "active_command_id": "",
+            "message": "late first-goal status",
+        }
+    )
+    assert store.get_task(second["task_id"])["state"] == "ACTIVE"
+
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "ACTIVE",
+            "active_command_id": "goal-2",
+        }
+    )
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "FAILED",
+            "active_command_id": "",
+            "message": "second goal failed",
+        }
+    )
+    assert store.get_task(second["task_id"])["state"] == "FAILED"
 
 
 def test_agent_restart_fails_persisted_active_task(tmp_path) -> None:
