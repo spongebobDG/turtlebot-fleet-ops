@@ -250,7 +250,8 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
     executor.add_node(agent)
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
-    lease_renew_timer = None
+    lease_renew_stop = None
+    lease_renew_thread = None
 
     def publish_readiness() -> None:
         robot = RobotStatus()
@@ -411,16 +412,26 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         stalled_handle = send_goal("stalled-progress")
         assert stalled_handle.accepted
         lease.command_id = "stalled-progress"
-        lease_renew_timer = probe.create_timer(
-            0.05,
-            lambda: lease_publisher.publish(lease),
+        lease_publisher.publish(lease)
+        lease_renew_stop = threading.Event()
+
+        def renew_stalled_lease() -> None:
+            while not lease_renew_stop.wait(0.05):
+                lease_publisher.publish(lease)
+
+        lease_renew_thread = threading.Thread(
+            target=renew_stalled_lease,
+            daemon=True,
         )
+        lease_renew_thread.start()
         stalled = _future_result(
             stalled_handle.get_result_async(),
             timeout_sec=2.0,
         )
-        probe.destroy_timer(lease_renew_timer)
-        lease_renew_timer = None
+        lease_renew_stop.set()
+        lease_renew_thread.join(timeout=1.0)
+        lease_renew_stop = None
+        lease_renew_thread = None
         assert stalled.status == GoalStatus.STATUS_ABORTED
         assert stalled.result.outcome == NavigateRobot.Result.OUTCOME_ABORTED
         assert "Failed to make progress" in stalled.result.message
@@ -446,8 +457,10 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         agent._nav_client.server_is_ready = original_server_is_ready
         fake_nav2.release_ignored_goal.set()
     finally:
-        if lease_renew_timer is not None:
-            probe.destroy_timer(lease_renew_timer)
+        if lease_renew_stop is not None:
+            lease_renew_stop.set()
+        if lease_renew_thread is not None:
+            lease_renew_thread.join(timeout=1.0)
         fake_nav2.release_ignored_goal.set()
         agent.shutdown()
         executor.shutdown(timeout_sec=2.0)
