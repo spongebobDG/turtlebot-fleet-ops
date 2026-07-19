@@ -10,6 +10,11 @@ odom_topic: /odom
 # 10 Hz tree is still faster than the low-speed controller needs and leaves
 # CPU headroom for AMCL, costmaps, the safety path, and Zenoh.
 bt_loop_duration: 100
+# The Burger baseline's 20 ms BT action/service acknowledgement timeout is
+# shorter than the response jitter measured on TB1 under costmap load. Keep
+# lease and watchdog deadlines unchanged, but allow Nav2 servers two seconds
+# to acknowledge before the tree starts a recovery behavior.
+default_server_timeout: 2000
 # The DWB controller remains at the proven 10 Hz CPU budget.  The dedicated
 # velocity smoother below interpolates each command at 20 Hz with bounded
 # acceleration, so the watchdog receives a continuous low-speed stream.

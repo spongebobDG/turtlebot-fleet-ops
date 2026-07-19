@@ -137,6 +137,17 @@ odometry를 같은 시간 창에서 비교한다. 최소 속도는 실측 deadba
 속도 상한과 watchdog은 그대로 유지한다. 제자리 회전이 필요하다면 `min_vel_x`는 0으로 두고
 속도 벡터의 최소 크기인 `min_speed_xy`만 설정한다.
 
+Humble처럼 배포판 전환기에 노드 이름이 바뀐 설정은 실제 parameter dump로 확인해야 한다.
+TurtleBot3 기준 파일의 `recoveries_server` 섹션을 현재 `behavior_server` 실행 파일에 넘기면 노드
+이름이 일치하지 않아 기본 회전 속도가 남을 수 있다. 이때 downstream smoother가 최종 상한은
+지켜도 raw recovery가 급격히 상승하고, authorization이 늦게 열리면 이미 상승한 값을 arbiter가
+받아 체감상 갑작스러운 회전이 될 수 있다.
+
+BT action acknowledgement timeout과 fleet lease timeout도 구분해야 한다. 전자는 같은 로봇 안의
+Nav2 서버가 부하 중 요청을 받았는지 기다리는 시간이고, 후자는 관제가 계속 운전을 허가하는지
+판단하는 안전 시간이다. 전자만 2초로 늘리면 느린 planner를 불필요한 recovery로 바꾸지 않으면서
+통신 단절 시 lease 취소와 watchdog 정지는 그대로 유지할 수 있다.
+
 ## 9. 실차 검증 전에 설명할 수 있어야 하는 것
 
 - 화면 드래그 방향이 `base_link +X` yaw로 바뀌는 과정

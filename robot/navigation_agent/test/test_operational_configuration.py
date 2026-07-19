@@ -45,6 +45,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "scan_topic: /scan_normalized" in nav2_rewrites
     assert "odom_topic: /odom" in nav2_rewrites
     assert "bt_loop_duration: 100" in nav2_rewrites
+    assert "default_server_timeout: 2000" in nav2_rewrites
     assert "update_min_d: 0.05" in nav2_rewrites
     assert "update_min_a: 0.05" in nav2_rewrites
     assert "robot_radius: 0.14" in nav2_rewrites
@@ -54,6 +55,9 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"max_velocity": [0.05, 0.0, 0.3]' in nav2_launch
     assert '"max_accel": [0.08, 0.0, 0.6]' in nav2_launch
     assert '"max_decel": [-0.12, 0.0, -0.8]' in nav2_launch
+    assert '"max_rotational_vel": 0.3' in nav2_launch
+    assert '"min_rotational_vel": 0.05' in nav2_launch
+    assert '"rotational_acc_lim": 0.6' in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch

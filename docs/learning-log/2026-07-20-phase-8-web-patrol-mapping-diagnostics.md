@@ -173,6 +173,19 @@ odometry를 동시에 기록했다.
 수정 후 `navigation_agent` 전체 110개 테스트가 통과했으며, 실차 재배포·짧은 회전 검증 전까지
 e-stop을 유지한다.
 
+첫 재배포 시험에서는 실제 odometry yaw가 약 `0.239 rad` 변해 motor deadband 수정 효과가
+확인됐다. 그러나 recorder가 `/cmd_vel_nav=1.0 rad/s`와 최종 명령 상한 `0.3 rad/s`, 순간
+odometry `0.351 rad/s`를 함께 포착해 모니터가 시험을 즉시 중단하고 e-stop을 재활성화했다.
+로그에는 planner action 응답이 약 1초 늦자 BT가 이를 실패로 판정하고 1.57 rad spin recovery를
+시작한 기록이 있었다.
+
+TurtleBot3 Humble 기준 파일은 회복 파라미터를 예전 `recoveries_server` 키 아래 두지만 현재
+실행 파일은 `behavior_server` 이름으로 기동된다. 따라서 rewrite 값이 이 노드에 적용되지 않아
+기본 `max_rotational_vel=1.0`, `min_rotational_vel=0.4`, `rotational_acc_lim=3.2`가 남았다.
+launch에서 behavior node에 `0.3`, `0.05`, `0.6`을 직접 적용하고, TB1 costmap 부하에서 확인된
+응답 지연을 회복 실패로 오판하지 않도록 BT server acknowledgement timeout을 20 ms에서 2초로
+늘렸다. 이 변경은 2초 fleet lease, 0.5초 arbiter authorization, watchdog 정지 경계를 바꾸지 않는다.
+
 ## 배운 점
 
 “부드럽게 움직인다”는 요구는 단순히 timeout을 늘리는 문제가 아니었다. command 보간과

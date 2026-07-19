@@ -89,7 +89,21 @@ def generate_launch_description() -> LaunchDescription:
                 name="behavior_server",
                 remappings=common_remaps
                 + [("cmd_vel", "cmd_vel_nav")],
-                **common,
+                output=common["output"],
+                respawn=common["respawn"],
+                respawn_delay=common["respawn_delay"],
+                arguments=common["arguments"],
+                parameters=[
+                    configured_params,
+                    {
+                        # TurtleBot3 Humble stores these under the legacy
+                        # recoveries_server key, so the behavior_server node
+                        # otherwise falls back to 1.0 rad/s and 3.2 rad/s^2.
+                        "max_rotational_vel": 0.3,
+                        "min_rotational_vel": 0.05,
+                        "rotational_acc_lim": 0.6,
+                    },
+                ],
             ),
             Node(
                 package="nav2_bt_navigator",
