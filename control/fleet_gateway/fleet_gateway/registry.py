@@ -7,6 +7,9 @@ import time
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 
+RegistryListener = Callable[[str, Mapping[str, Any]], None]
+
+
 @dataclass(frozen=True)
 class _RobotRecord:
     """A last-known status and the local monotonic receipt time."""
@@ -28,6 +31,9 @@ class StatusRegistry:
         self._online_timeout_sec = float(online_timeout_sec)
         self._clock = clock
         self._records: Dict[str, _RobotRecord] = {}
+        self._navigation_records: Dict[str, _RobotRecord] = {}
+        self._safety_records: Dict[str, _RobotRecord] = {}
+        self._listeners: List[RegistryListener] = []
         self._lock = threading.RLock()
 
     @property
@@ -48,6 +54,30 @@ class StatusRegistry:
         record = _RobotRecord(deepcopy(dict(status)), received)
         with self._lock:
             self._records[robot_id] = record
+        self._notify("robot", record.status)
+
+    def update_navigation(
+        self,
+        status: Mapping[str, Any],
+        now: Optional[float] = None,
+    ) -> None:
+        """Store one robot's navigation status by local receipt time."""
+        self._update_auxiliary(self._navigation_records, status, now)
+        self._notify("navigation", status)
+
+    def update_safety(
+        self,
+        status: Mapping[str, Any],
+        now: Optional[float] = None,
+    ) -> None:
+        """Store one robot's safety status by local receipt time."""
+        self._update_auxiliary(self._safety_records, status, now)
+        self._notify("safety", status)
+
+    def add_listener(self, listener: RegistryListener) -> None:
+        """Register a best-effort observer for status transition recording."""
+        with self._lock:
+            self._listeners.append(listener)
 
     def get(
         self,
@@ -83,4 +113,52 @@ class StatusRegistry:
         result = deepcopy(record.status)
         result["online"] = age <= self._online_timeout_sec
         result["heartbeat_age_sec"] = round(age, 3)
+        robot_id = str(result.get("robot_id", ""))
+        result["navigation"] = self._auxiliary_snapshot(
+            self._navigation_records.get(robot_id),
+            now,
+        )
+        result["safety"] = self._auxiliary_snapshot(
+            self._safety_records.get(robot_id),
+            now,
+        )
         return result
+
+    def _update_auxiliary(
+        self,
+        target: Dict[str, _RobotRecord],
+        status: Mapping[str, Any],
+        now: Optional[float],
+    ) -> None:
+        robot_id = str(status.get("robot_id", "")).strip()
+        if not robot_id:
+            raise ValueError("status must contain a non-empty robot_id")
+        received = self._clock() if now is None else float(now)
+        with self._lock:
+            target[robot_id] = _RobotRecord(
+                deepcopy(dict(status)),
+                received,
+            )
+
+    def _auxiliary_snapshot(
+        self,
+        record: Optional[_RobotRecord],
+        now: float,
+    ) -> Optional[Dict[str, Any]]:
+        if record is None:
+            return None
+        result = deepcopy(record.status)
+        age = max(0.0, now - record.received_monotonic)
+        result["status_age_sec"] = round(age, 3)
+        result["fresh"] = age <= self._online_timeout_sec
+        return result
+
+    def _notify(self, kind: str, status: Mapping[str, Any]) -> None:
+        with self._lock:
+            listeners = list(self._listeners)
+        for listener in listeners:
+            try:
+                listener(kind, deepcopy(dict(status)))
+            except Exception:
+                # Audit persistence must not break status or safety callbacks.
+                continue

@@ -13,6 +13,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file://${repo_root}/infra/zenoh/cyclonedds-localhost.xml}"
 
 bridge="${ZENOH_BRIDGE_BIN:-${HOME}/.local/bin/zenoh-bridge-ros2dds}"
+config="${ZENOH_CONFIG:-${repo_root}/infra/zenoh/control-bridge.json5}"
 
 if [[ ! -x "${bridge}" ]]; then
   echo "Zenoh bridge is not installed: ${bridge}" >&2
@@ -20,4 +21,4 @@ if [[ ! -x "${bridge}" ]]; then
   exit 1
 fi
 
-exec "${bridge}" -e "tcp/${ROBOT_ADDRESS}:7447"
+exec "${bridge}" -c "${config}" -e "tcp/${ROBOT_ADDRESS}:7447"

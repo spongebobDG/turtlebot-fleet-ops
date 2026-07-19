@@ -1,0 +1,11 @@
+[Unit]
+Description=Wait for the TB1 operating network before starting ROS 2
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/scripts/tb1/wait_network_ready.sh
+RemainAfterExit=yes
+TimeoutStartSec=0
+
+[Install]
+WantedBy=default.target

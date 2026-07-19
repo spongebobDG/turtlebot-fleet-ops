@@ -38,3 +38,38 @@ def test_registry_returns_sorted_defensive_snapshots():
 
     assert [robot["robot_id"] for robot in first] == ["tb1", "tb2"]
     assert second[0]["fault_codes"] == []
+
+
+def test_registry_merges_navigation_and_safety_status():
+    registry = StatusRegistry(clock=lambda: 12.0)
+    registry.update({"robot_id": "tb1", "level": 0}, now=10.0)
+    registry.update_navigation(
+        {"robot_id": "tb1", "state": "READY", "nav2_ready": True},
+        now=11.0,
+    )
+    registry.update_safety(
+        {"robot_id": "tb1", "motion_armed": True},
+        now=11.5,
+    )
+
+    robot = registry.get("tb1", now=12.0)
+
+    assert robot["navigation"]["state"] == "READY"
+    assert robot["navigation"]["status_age_sec"] == 1.0
+    assert robot["navigation"]["fresh"] is True
+    assert robot["safety"]["motion_armed"] is True
+    assert robot["safety"]["status_age_sec"] == 0.5
+    assert robot["safety"]["fresh"] is True
+
+
+def test_registry_marks_auxiliary_status_stale_independently():
+    registry = StatusRegistry(online_timeout_sec=3.0)
+    registry.update({"robot_id": "tb1", "level": 0}, now=10.0)
+    registry.update_navigation({"robot_id": "tb1"}, now=7.0)
+    registry.update_safety({"robot_id": "tb1"}, now=8.0)
+
+    robot = registry.get("tb1", now=10.1)
+
+    assert robot["online"] is True
+    assert robot["navigation"]["fresh"] is False
+    assert robot["safety"]["fresh"] is True

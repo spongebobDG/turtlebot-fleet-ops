@@ -1,6 +1,7 @@
 """Process entry point that runs ROS and FastAPI together."""
 
 from pathlib import Path
+import os
 import threading
 from typing import List, Optional
 
@@ -10,13 +11,30 @@ from rclpy.executors import MultiThreadedExecutor
 import uvicorn
 
 from fleet_gateway.api import create_app
+from fleet_gateway.operations import OperationsStore
 from fleet_gateway.ros_node import FleetGatewayNode
+from fleet_gateway.task_manager import NavigationTaskManager
 
 
 def main(args: Optional[List[str]] = None) -> None:
     """Start the ROS executor and serve the dashboard until shutdown."""
     rclpy.init(args=args)
     node = FleetGatewayNode()
+    database_path = Path(
+        os.environ.get(
+            "FLEET_OPERATIONS_DB",
+            "~/.local/share/turtlebot-fleet-ops/operations.sqlite3",
+        )
+    ).expanduser()
+    operations_store = OperationsStore(database_path)
+    recovered_tasks = operations_store.reconcile_gateway_restart()
+    if recovered_tasks:
+        node.get_logger().warning(
+            f"Failed {recovered_tasks} nonterminal task(s) "
+            "after Gateway restart"
+        )
+    node.registry.add_listener(operations_store.observe)
+    task_manager = NavigationTaskManager(operations_store, node)
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
     ros_thread = threading.Thread(
@@ -30,6 +48,10 @@ def main(args: Optional[List[str]] = None) -> None:
     app = create_app(
         registry=node.registry,
         estop_controller=node,
+        navigation_controller=node,
+        map_registry=node.map_registry,
+        operations_store=operations_store,
+        task_manager=task_manager,
         static_dir=share_dir / "web",
     )
     try:

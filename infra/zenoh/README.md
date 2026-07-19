@@ -42,6 +42,20 @@ bash infra/zenoh/install-standalone.sh
 새 버전으로 올릴 때는 두 아키텍처 파일의 해시를 다시 검증하고 스크립트의 버전과
 해시를 함께 변경한다.
 
+## 로봇 없는 action 전달 검증
+
+workspace를 Humble로 빌드한 뒤 다음 smoke를 실행한다.
+
+```bash
+bash infra/navigation/run-robotless-zenoh-action-smoke.sh
+```
+
+script는 robot domain 160과 control domain 161을 분리하고 두 Zenoh bridge를 loopback
+TCP로만 연결한다. `NavigateRobot`의 goal·feedback·성공 result·cancel과
+`NavigationLease`·`NavigationStatus`가 모두 bridge를 통과해야 성공한다. 이 검증은
+실제 LAN 단절 시간과 모터 정지시간을 측정하지 않으므로 실차 lease 장애 주입을
+대체하지 않는다.
+
 ## 로봇 측 실행
 
 TB1의 ROS 노드와 브리지는 같은 `ROS_DOMAIN_ID`를 사용한다. 서비스까지 안정적으로
@@ -111,6 +125,14 @@ systemctl --user enable --now \
   tb1-zenoh-bridge.service
 ```
 
+Phase 5에서는 매핑과 주행 프로필 중 하나만 추가로 실행한다. 두 unit은 상호
+`Conflicts=`이므로 동시에 active가 되면 안 된다.
+
+```bash
+systemctl --user enable --now tb1-navigation.service
+systemctl --user is-active tb1-mapping.service
+```
+
 WSL 관제 서비스:
 
 ```bash
@@ -130,6 +152,7 @@ systemctl --user --no-pager status tb1-zenoh-bridge.service
 systemctl --user --no-pager status fleet-control-zenoh.service
 curl http://127.0.0.1:8000/api/health
 curl http://127.0.0.1:8000/api/robots
+curl http://127.0.0.1:8000/api/robots/tb1/map
 ```
 
 `active`만 보고 복구 완료로 판단하지 않는다. ROS 2 discovery와 Zenoh endpoint
@@ -143,7 +166,9 @@ curl http://127.0.0.1:8000/api/robots
 2. 양쪽 Zenoh 브리지 프로세스와 TCP 7447 연결을 확인한다.
 3. 양쪽 시스템 시각 차이가 500ms를 넘지 않는지 확인한다.
 4. 모든 ROS 노드와 브리지의 `ROS_DISTRO`, `ROS_DOMAIN_ID`, RMW를 확인한다.
-5. Gateway REST 상태와 systemd journal을 확인한다.
+5. Gateway REST 상태, navigation/safety freshness와 systemd journal을 확인한다.
+6. 활성 목표가 있었다면 `/fleet/navigation_lease`와
+   `/fleet/navigation_status`의 `LEASE_EXPIRED`를 확인한다.
 
 ```bash
 journalctl --user -u tb1-zenoh-bridge.service -n 100 --no-pager

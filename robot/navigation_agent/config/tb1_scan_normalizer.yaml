@@ -1,0 +1,5 @@
+scan_normalizer:
+  ros__parameters:
+    input_topic: /scan
+    output_topic: /scan_normalized
+    bin_count: 360

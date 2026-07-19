@@ -5,10 +5,23 @@
 > Phase 2 절차: [TB1 안전 수동주행 및 Watchdog 검증](setup/tb1-safe-teleoperation.md)
 >
 > Phase 3 절차: [TB1 Robot Agent 배포 및 검증](setup/tb1-robot-agent.md)
+>
+> Phase 4 절차: [TB1 웹 관제 대시보드 운영](setup/tb1-web-dashboard.md)
+>
+> Phase 5 절차: [TB1 매핑·Nav2·웹 목적지 운영 및 검증](setup/tb1-navigation.md)
+>
+> Phase 6 절차: [TB1 작업·감사·재부팅 복구 운영 및 검증](setup/tb1-operations.md)
 
 조사일: 2026-07-15
 
-상태: 진행 중
+상태: 초기 조사 기록(2026-07-18 최신 PC 준비 결과로 갱신됨)
+
+> 참고: 아래 표와 Phase 0 미완료 체크박스는 2026-07-15 당시의 역사적 기준선이다.
+> 현재 관제 PC의 WSL2·ROS 2·Zenoh·Gateway와 로봇 없는 통합 검증 결과는
+> [현재 PC 기준선](learning-log/2026-07-18-current-pc-baseline.md)과
+> [관제 PC 준비 일지](learning-log/2026-07-18-control-pc-readiness.md)에 기록했다.
+> 지금 남은 항목은 이 문서의 초기 조사 항목이 아니라
+> [TB1 실차 acceptance 절차](setup/tb1-navigation.md)의 측정 항목이다.
 
 이 문서는 설치나 설정을 변경하기 전에 확인한 초기 환경을 기록한다. 비밀번호, Wi-Fi 정보, 정확한 IP 주소와 같은 민감한 값은 저장소에 기록하지 않는다.
 

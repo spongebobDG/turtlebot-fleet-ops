@@ -1,0 +1,55 @@
+{
+  "plugins": {
+    "ros2dds": {
+      "nodename": "tb1_zenoh_bridge",
+      "allow": {
+        "publishers": [
+          "^/fleet/robot_status$",
+          "^/fleet/navigation_status$",
+          "^/fleet/safety_status$",
+          "^/scan$",
+          "^/scan_normalized$",
+          "^/odom$",
+          "^/tf$",
+          "^/tf_static$",
+          "^/robot_description$",
+          "^/joint_states$",
+          "^/map$",
+          "^/map_metadata$",
+          "^/amcl_pose$",
+          "^/particle_cloud$",
+          "^/plan$",
+          "^/local_plan$",
+          "^/local_costmap/.*",
+          "^/global_costmap/.*"
+        ],
+        "subscribers": [
+          "^/fleet/navigation_lease$"
+        ],
+        "service_servers": [
+          "^/safety_watchdog/set_estop$",
+          "^/tb1/navigation/set_initial_pose$",
+          "^/tb1/navigation/set_motion_mode$"
+        ],
+        "service_clients": [],
+        "action_servers": [
+          "^/tb1/navigation/navigate$"
+        ],
+        "action_clients": []
+      },
+      "pub_max_frequencies": [
+        "^/scan$=10",
+        "^/scan_normalized$=10",
+        "^/tf$=30"
+      ],
+      "pub_priorities": [
+        "^/fleet/robot_status$=1:express",
+        "^/fleet/navigation_status$=1:express",
+        "^/fleet/safety_status$=1:express",
+        "^/tf$=2",
+        "^/scan_normalized$=3",
+        "^/scan$=4"
+      ]
+    }
+  }
+}

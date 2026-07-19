@@ -17,26 +17,48 @@ jobs:
   build-and-test:
     name: Humble build and test
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Test web map coordinate transforms
+        run: node --test control/fleet_gateway/test/test_map_math.js
 
       - name: Set up ROS 2 Humble
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
 
+      - name: Install Jammy navigation runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libunwind-15-dev \
+            ros-humble-rmw-cyclonedds-cpp \
+            shellcheck
+
       - name: Install package dependencies
         run: |
-          rosdep update
+          for attempt in 1 2 3; do
+            if rosdep update; then
+              break
+            fi
+            if [[ "${attempt}" == "3" ]]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
           rosdep install \
             --from-paths robot control \
             --ignore-src \
             --rosdistro humble \
             --skip-keys ament_python \
             -y
+
+      - name: Install pinned Zenoh ROS 2 bridge
+        run: bash infra/zenoh/install-standalone.sh
 
       - name: Build workspace packages
         shell: bash
@@ -45,6 +67,42 @@ jobs:
           colcon build \
             --base-paths robot control \
             --event-handlers console_direct+
+
+      - name: Validate operational files
+        shell: bash
+        run: |
+          shellcheck --exclude=SC1090,SC1091 \
+            infra/navigation/*.sh infra/zenoh/*.sh scripts/tb1/*.sh
+          bash scripts/tb1/deploy_acceptance.sh --dry-run
+          python3 -m py_compile \
+            infra/navigation/robotless_operations_smoke_client.py \
+            infra/navigation/robotless_web_preview.py
+          bash infra/systemd/validate-units.sh
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          ros2 launch navigation_agent tb1_mapping.launch.py --show-args
+          ros2 launch navigation_agent tb1_navigation.launch.py --show-args
+          ros2 launch fleet_gateway weekend_mock.launch.py --show-args
+
+      - name: Validate Windows control scripts
+        shell: pwsh
+        run: scripts/control-pc/validate_scripts.ps1
+
+      - name: Run robotless navigation smoke test
+        shell: bash
+        env:
+          ROS_DOMAIN_ID: "142"
+        run: bash infra/navigation/run-robotless-navigation-smoke.sh
+
+      - name: Run robotless Zenoh action smoke test
+        shell: bash
+        run: bash infra/navigation/run-robotless-zenoh-action-smoke.sh
+
+      - name: Run robotless task and fault smoke test
+        shell: bash
+        env:
+          ROS_DOMAIN_ID: "142"
+        run: bash infra/navigation/run-robotless-operations-smoke.sh
 
       - name: Run workspace tests
         shell: bash
@@ -56,8 +114,10 @@ jobs:
           colcon test \
             --packages-select \
               fleet_interfaces \
+              safety_watchdog_guard \
               safety_watchdog \
               robot_agent \
+              navigation_agent \
               fleet_gateway \
             --event-handlers console_direct+
           colcon test-result --verbose

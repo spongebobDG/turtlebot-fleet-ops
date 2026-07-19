@@ -48,9 +48,100 @@
           <p>Gateway가 ROS 2 heartbeat를 받으면 여기에 표시됩니다.</p>
         </article>
       </section>
+
+      <section class="section-heading navigation-heading">
+        <div>
+          <p class="eyebrow">MAP NAVIGATION</p>
+          <h2>지도 목적지 제어</h2>
+        </div>
+        <button class="secondary compact" id="refresh-map" type="button">지도 새로고침</button>
+      </section>
+
+      <section class="navigation-panel">
+        <div class="map-column">
+          <div class="map-toolbar">
+            <label>
+              로봇
+              <select id="navigation-robot" aria-label="지도 제어 로봇"></select>
+            </label>
+            <div class="mode-switch" role="group" aria-label="지도 클릭 모드">
+              <button class="mode active" data-map-mode="goal" type="button">목적지</button>
+              <button class="mode" data-map-mode="initial" type="button">초기 위치</button>
+            </div>
+          </div>
+          <div class="map-frame" id="map-frame">
+            <canvas id="map-canvas" width="640" height="420"></canvas>
+            <p class="map-placeholder" id="map-placeholder">로봇 지도를 기다리는 중입니다.</p>
+          </div>
+          <p class="map-help">지도를 누른 뒤 드래그해 로봇이 바라볼 방향을 지정합니다.</p>
+        </div>
+
+        <aside class="navigation-controls">
+          <div class="navigation-state">
+            <span class="summary-label">NAVIGATION</span>
+            <strong id="navigation-state">UNAVAILABLE</strong>
+            <p id="navigation-message">상태를 기다리는 중입니다.</p>
+          </div>
+          <div class="pose-fields">
+            <label>X (m)<input id="pose-x" type="number" step="0.01" value="0"></label>
+            <label>Y (m)<input id="pose-y" type="number" step="0.01" value="0"></label>
+            <label>Yaw (rad)<input id="pose-yaw" type="number" step="0.01" value="0"></label>
+          </div>
+          <div class="navigation-metrics">
+            <div><span>남은 거리</span><strong id="distance-remaining">—</strong></div>
+            <div><span>진행 시간</span><strong id="navigation-time">—</strong></div>
+            <div><span>Lease age</span><strong id="lease-age">—</strong></div>
+            <div><span>복구 횟수</span><strong id="recovery-count">—</strong></div>
+          </div>
+          <div class="navigation-actions">
+            <button class="primary" id="apply-map-command" type="button" disabled>목적지 전송</button>
+            <button class="secondary" id="cancel-navigation" type="button" disabled>현재 목표 취소</button>
+            <button class="secondary task-create" id="create-task" type="button" disabled>선택 위치를 작업으로 저장</button>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section-heading operations-heading">
+        <div>
+          <p class="eyebrow">TB1 OPERATIONS</p>
+          <h2>작업·고장·감사 기록</h2>
+        </div>
+        <button class="secondary compact" id="refresh-operations" type="button">기록 새로고침</button>
+      </section>
+
+      <section class="operations-grid">
+        <article class="operations-card tasks-card">
+          <div class="card-title">
+            <h3>Navigation Tasks</h3>
+            <span id="task-count">0</span>
+          </div>
+          <div class="record-list" id="task-list">
+            <p class="record-empty">저장된 작업이 없습니다.</p>
+          </div>
+        </article>
+        <article class="operations-card">
+          <div class="card-title">
+            <h3>Active Faults</h3>
+            <span id="active-fault-count">0</span>
+          </div>
+          <div class="record-list" id="fault-list">
+            <p class="record-empty">활성 고장이 없습니다.</p>
+          </div>
+        </article>
+        <article class="operations-card audit-card">
+          <div class="card-title">
+            <h3>Audit Events</h3>
+            <span id="event-count">0</span>
+          </div>
+          <div class="record-list" id="event-list">
+            <p class="record-empty">기록된 이벤트가 없습니다.</p>
+          </div>
+        </article>
+      </section>
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/static/map_math.js" defer></script>
     <script src="/static/app.js" defer></script>
   </body>
 </html>

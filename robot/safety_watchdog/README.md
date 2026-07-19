@@ -28,8 +28,10 @@ teleop / fleet command
 - 새 명령이 `0.5초` 동안 없으면 0 속도를 발행한다.
 - 비상정지가 활성화되면 입력 명령을 무시하고 0 속도를 발행한다.
 - 비상정지를 해제한 뒤 중립(0 속도) 명령을 받아야 다시 움직인다.
+- 프로세스 시작·재시작도 `WAITING_NEUTRAL`에서 시작한다.
 - `NaN`과 무한대 입력은 0으로 바꾼다.
 - 차동구동에 필요한 `linear.x`와 `angular.z`만 전달한다.
+- `/fleet/safety_status`로 watchdog mode, e-stop과 motion-armed 상태를 발행한다.
 
 이 노드는 물리적인 비상정지 장치를 대체하지 않는다. 실차 시험 중에는 항상
 로봇 전원 스위치에 접근할 수 있어야 한다.
@@ -60,6 +62,10 @@ ros2 run turtlebot3_teleop teleop_keyboard \
   --ros-args \
   -r cmd_vel:=/safety/cmd_vel_in
 ```
+
+Phase 5의 motion arbiter가 실행 중이면 teleop을 `/safety/cmd_vel_in`에 직접 연결하지
+않고 `/motion/manual/cmd_vel`에 연결한다. arbiter의 MANUAL mode가 선택한 입력만
+watchdog으로 전달한다.
 
 비상정지 활성화:
 

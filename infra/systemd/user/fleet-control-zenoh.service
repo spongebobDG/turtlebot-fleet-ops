@@ -1,6 +1,5 @@
 [Unit]
 Description=Fleet control Zenoh ROS 2 DDS bridge
-After=default.target
 
 [Service]
 Type=simple

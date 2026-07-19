@@ -5,5 +5,8 @@
 
 ## 현재 문서
 
+- [현재 TB1 단일 로봇 MVP 범위와 완료 조건](project-scope.md)
 - [Phase 3 Robot Agent와 RobotStatus 계약](phase-3-robot-agent.md)
 - [Phase 4 Fleet Gateway와 TB1 웹 관제](phase-4-tb1-web-dashboard.md)
+- [Phase 5 TB1 로컬 Nav2와 웹 목적지 제어](phase-5-tb1-navigation.md)
+- [Phase 6 TB1 작업·고장·감사 기록](phase-6-tb1-operations.md)

@@ -13,6 +13,11 @@ TB1에 전달되는 모든 수동 속도 명령을 로봇 내부의 `safety_watc
 
 현재 자동 검증까지 완료됐으며 실차 결과는 아직 기록하지 않았다.
 
+> Phase 5 매핑·주행 프로필에서 `motion_arbiter`가 실행 중일 때는 아래의 직접
+> `/safety/cmd_vel_in` remap을 사용하지 않는다. teleop을
+> `/motion/manual/cmd_vel`로 remap하고 arbiter의 MANUAL mode를 거쳐야 한다.
+> 직접 watchdog 입력을 쓰는 절차는 arbiter가 없는 Phase 2 단독 검증에만 해당한다.
+
 ## 왜 이 구조를 사용하는가
 
 조작기, 웹 서버와 미래의 Fleet Manager가 실제 `/cmd_vel`에 직접 명령을
@@ -172,10 +177,11 @@ ros2 launch safety_watchdog safety_watchdog.launch.py
 ```text
 Safety watchdog ready: ... timeout=0.500s,
 max_linear_x=0.050m/s, max_angular_z=0.300rad/s
-Command timeout; publishing zero velocity
+Motion disarmed; waiting for neutral command
 ```
 
-시작 직후 명령이 없으므로 `TIMEOUT` 상태에서 0 속도를 발행하는 것이 정상이다.
+시작·재시작 직후에는 `WAITING_NEUTRAL`에서 0 속도를 발행하는 것이 정상이다. arbiter가
+없는 이 단독 절차에서는 첫 이동 명령 전에 0 속도 메시지를 한 번 보내 재무장한다.
 
 ### 터미널 C: 연결 구조 확인
 
@@ -237,6 +243,11 @@ ros2 topic echo /cmd_vel
 source /opt/ros/humble/setup.bash
 source ~/turtlebot-fleet-ops/install/setup.bash
 export ROS_DOMAIN_ID=42
+
+ros2 topic pub --once \
+  /safety/cmd_vel_in \
+  geometry_msgs/msg/Twist \
+  "{linear: {x: 0.0}, angular: {z: 0.0}}"
 
 timeout 1 ros2 topic pub -r 10 \
   /safety/cmd_vel_in \

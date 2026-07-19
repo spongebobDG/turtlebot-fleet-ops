@@ -1,0 +1,15 @@
+# Repository-owned overlay applied to the TurtleBot3 Humble Burger baseline.
+base_frame_id: base_footprint
+odom_frame_id: odom
+global_frame_id: map
+robot_base_frame: base_link
+scan_topic: /scan_normalized
+odom_topic: /odom
+max_vel_x: 0.05
+max_speed_xy: 0.05
+max_vel_theta: 0.3
+max_rotational_vel: 0.3
+min_rotational_vel: 0.05
+trans_stopped_velocity: 0.01
+required_movement_radius: 0.1
+movement_time_allowance: 20.0

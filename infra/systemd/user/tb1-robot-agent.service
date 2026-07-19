@@ -1,7 +1,7 @@
 [Unit]
 Description=TB1 fleet robot status agent
-After=tb1-bringup.service
-Wants=tb1-bringup.service
+After=tb1-network-ready.service tb1-bringup.service
+Wants=tb1-network-ready.service tb1-bringup.service
 
 [Service]
 Type=simple
