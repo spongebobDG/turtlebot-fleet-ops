@@ -365,6 +365,19 @@ Nav2·localization ready와 motion unarmed를 확인했다.
 따라서 navigation agent의 scan 차단값은 `0.14m + 0.05m = 0.19m`로 설정했다. e-stop은 새 설정
 배포와 정적 재검증이 끝날 때까지 유지한다.
 
+커밋 `2ab6405`를 TB1에 fast-forward하고 navigation agent 102개 테스트를 통과시켰다. 실행 중
+PID 23538의 명령행은 설치된 `config/tb1.yaml`을 직접 참조했고 해당 파일의 값은
+`navigation_min_clearance_m: 0.19`였다. 서비스 재시작 직후에는 이전 목표를 복원하지 않고
+AMCL 초기 pose를 다시 요구하며 `UNAVAILABLE`에 머무는 fail-closed 전이를 확인했다. e-stop
+상태에서 다시 자동 정렬한 결과 match 88.8%, 지도 내부 99.4%, score 0.892였고 초기 pose 적용
+후 `IDLE`, Nav2·localization ready, motion unarmed로 돌아왔다.
+
+e-stop 해제 뒤 3초 정지 감시에서는 선속도 0, 각속도 노이즈 최대 0.00026rad/s로 자동 재출발이
+없었다. 이어 현재 방향 0.15m 앞 목표 `eb262a3027434a73a00d8345935a8855`를 전송했다. Nav2의
+0.10m goal tolerance를 포함한 실제 관측 이동은 0.071m였고 `SUCCEEDED`, recovery 0이었다.
+최대 선속도 0.0342m/s, 최대 각속도 0.1558rad/s, 주행 중 최소 scan 0.225m로 모든 제한을
+지켰다. 시험 종료 즉시 e-stop을 다시 걸었으며 motion unarmed, active command 없음이었다.
+
 ## 배운 점
 
 1. ROS graph에서 Publisher가 사라지는 것과 0을 계속 발행하는 것은 다르다.
