@@ -30,6 +30,7 @@
 - Phase 5 실차: [TB1 acceptance 배포와 정지 상태 사전검증](2026-07-18-tb1-acceptance-deployment.md)
 - Phase 5 실차: [TB1 로컬 Nav2 실차 수용 시험 완료](2026-07-19-phase-5-tb1-navigation-acceptance.md)
 - Phase 6 실차: [TB1 작업·복구 실차 수용 시험 완료](2026-07-19-phase-6-tb1-operations-acceptance.md)
+- 관제 UX: [한 화면 관제와 heartbeat 단절 감사 로그](2026-07-19-single-screen-dashboard-connectivity-audit.md)
 
 ## 공부와 면접용 문서
 

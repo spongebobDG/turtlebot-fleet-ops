@@ -32,6 +32,37 @@ def test_fault_transitions_are_deduplicated_and_persisted(tmp_path) -> None:
     ]
 
 
+def test_connectivity_transitions_record_loss_and_recovery_once(tmp_path) -> None:
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    online = {
+        "robot_id": "tb1",
+        "online": True,
+        "heartbeat_age_sec": 0.2,
+    }
+    offline = {
+        "robot_id": "tb1",
+        "online": False,
+        "heartbeat_age_sec": 3.1,
+    }
+
+    store.sync_connectivity(online)
+    store.sync_connectivity(online)
+    assert store.list_events("tb1") == []
+
+    store.sync_connectivity(offline)
+    store.sync_connectivity(offline)
+    store.sync_connectivity(online)
+
+    events = store.list_events("tb1")
+    assert [event["event_type"] for event in events] == [
+        "ROBOT_ONLINE",
+        "ROBOT_OFFLINE",
+    ]
+    assert events[0]["severity"] == "INFO"
+    assert events[1]["severity"] == "ERROR"
+    assert "전원·네트워크·Agent" in events[1]["message"]
+
+
 def test_task_retry_and_navigation_reconciliation_survive_reopen(
     tmp_path,
 ) -> None:
@@ -74,6 +105,14 @@ def test_lease_expiration_maps_to_failed_task(tmp_path) -> None:
     store = OperationsStore(tmp_path / "operations.sqlite3")
     task = store.create_task("tb1", 1.0, 0.0, 0.0, True)
     store.update_task(task["task_id"], "ACTIVE", "accepted", "lease-1")
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "ACTIVE",
+            "active_command_id": "lease-1",
+            "message": "navigating",
+        }
+    )
 
     store.sync_navigation(
         {
@@ -88,6 +127,75 @@ def test_lease_expiration_maps_to_failed_task(tmp_path) -> None:
     assert failed is not None
     assert failed["state"] == "FAILED"
     assert failed["message"] == "Gateway lease expired"
+
+
+def test_stale_terminal_status_cannot_close_the_next_task(tmp_path) -> None:
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    first = store.create_task("tb1", 1.0, 0.0, 0.0, False)
+    store.update_task(first["task_id"], "ACTIVE", "accepted", "goal-1")
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "ACTIVE",
+            "active_command_id": "goal-1",
+        }
+    )
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "CANCELED",
+            "active_command_id": "",
+            "message": "first goal canceled",
+            "target": {
+                "frame_id": "map",
+                "x": 1.0,
+                "y": 0.0,
+                "yaw": 0.0,
+            },
+        }
+    )
+
+    second = store.create_task("tb1", -0.5, 0.0, 0.0, False)
+    store.update_task(second["task_id"], "ACTIVE", "accepted", "goal-2")
+    store.register_navigation_command("tb1", "goal-2")
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "CANCELED",
+            "active_command_id": "",
+            "message": "late first-goal status",
+            "target": {
+                "frame_id": "map",
+                "x": 1.0,
+                "y": 0.0,
+                "yaw": 0.0,
+            },
+        }
+    )
+    assert store.get_task(second["task_id"])["state"] == "ACTIVE"
+
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "ACTIVE",
+            "active_command_id": "goal-2",
+        }
+    )
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "FAILED",
+            "active_command_id": "",
+            "message": "second goal failed",
+            "target": {
+                "frame_id": "map",
+                "x": -0.5,
+                "y": 0.0,
+                "yaw": 0.0,
+            },
+        }
+    )
+    assert store.get_task(second["task_id"])["state"] == "FAILED"
 
 
 def test_agent_restart_fails_persisted_active_task(tmp_path) -> None:

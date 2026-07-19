@@ -91,12 +91,14 @@ class NavigationTaskManager:
             )
             failed["status_code"] = 503
             return failed
-        return self.store.update_task(
+        active = self.store.update_task(
             task_id,
             "ACTIVE",
             result.get("message", "Navigation goal accepted"),
             command_id,
         )
+        self.store.register_navigation_command(task["robot_id"], command_id)
+        return active
 
     def cancel(self, task_id: str) -> Dict[str, Any]:
         """Cancel a task locally or stop its active robot lease."""

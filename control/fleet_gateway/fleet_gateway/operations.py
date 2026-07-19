@@ -3,6 +3,7 @@
 from contextlib import closing
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 import sqlite3
 import threading
@@ -26,6 +27,8 @@ class OperationsStore:
         self.database_path = Path(database_path).expanduser().resolve()
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._connectivity_states: Dict[str, bool] = {}
+        self._observed_navigation_commands: Dict[str, str] = {}
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -150,6 +153,46 @@ class OperationsStore:
             self.sync_faults(status)
         elif kind == "navigation":
             self.sync_navigation(status)
+
+    def sync_connectivity(self, status: Mapping[str, Any]) -> None:
+        """Record heartbeat-derived offline and recovery transitions once."""
+        robot_id = str(status.get("robot_id", "")).strip()
+        if not robot_id or "online" not in status:
+            return
+        online = bool(status["online"])
+        with self._lock:
+            previous = self._connectivity_states.get(robot_id)
+            self._connectivity_states[robot_id] = online
+        if previous is None or previous == online:
+            return
+        if online:
+            self.record_event(
+                robot_id,
+                "CONNECTIVITY",
+                "ROBOT_ONLINE",
+                "로봇 heartbeat가 복구되었습니다",
+                details={"heartbeat_age_sec": status.get("heartbeat_age_sec")},
+            )
+            return
+        self.record_event(
+            robot_id,
+            "CONNECTIVITY",
+            "ROBOT_OFFLINE",
+            "로봇 heartbeat가 끊겼습니다 (전원·네트워크·Agent 중단 가능)",
+            severity="ERROR",
+            details={"heartbeat_age_sec": status.get("heartbeat_age_sec")},
+        )
+
+    def register_navigation_command(
+        self,
+        robot_id: str,
+        command_id: str,
+    ) -> None:
+        """Correlate a newly accepted task before its next status update."""
+        if not robot_id or not command_id:
+            return
+        with self._lock:
+            self._observed_navigation_commands[robot_id] = command_id
 
     def sync_faults(self, status: Mapping[str, Any]) -> None:
         """Persist activation, severity change and clear transitions."""
@@ -379,6 +422,8 @@ class OperationsStore:
         state = str(status.get("state", "")).upper()
         command_id = str(status.get("active_command_id", "")).strip()
         if robot_id and state == "UNAVAILABLE" and not command_id:
+            with self._lock:
+                self._observed_navigation_commands.pop(robot_id, None)
             self._fail_task_after_agent_restart(robot_id, status)
             return
         if not robot_id or state not in {
@@ -389,6 +434,7 @@ class OperationsStore:
             "LEASE_EXPIRED",
         }:
             return
+        expected_command_id = command_id
         with self._lock, closing(self._connect()) as connection:
             if command_id:
                 row = connection.execute(
@@ -399,16 +445,33 @@ class OperationsStore:
                     """,
                     (robot_id, command_id),
                 ).fetchone()
+                if row is not None:
+                    self._observed_navigation_commands[robot_id] = command_id
             else:
+                expected_command_id = self._observed_navigation_commands.get(
+                    robot_id,
+                    "",
+                )
+                if not expected_command_id:
+                    return
                 row = connection.execute(
                     """
                     SELECT task_id FROM tasks
-                    WHERE robot_id = ? AND state IN ('STARTING', 'ACTIVE')
+                    WHERE robot_id = ? AND command_id = ?
+                        AND state IN ('STARTING', 'ACTIVE')
                     ORDER BY updated_at DESC LIMIT 1
                     """,
-                    (robot_id,),
+                    (robot_id, expected_command_id),
                 ).fetchone()
         if row is None:
+            return
+        task = self.get_task(str(row["task_id"]))
+        if task is None:
+            return
+        if not command_id and not self._status_target_matches_task(
+            status,
+            task,
+        ):
             return
         mapped_state = "FAILED" if state == "LEASE_EXPIRED" else state
         message = str(status.get("message", "")) or (
@@ -419,6 +482,49 @@ class OperationsStore:
             mapped_state,
             message,
             command_id,
+        )
+        if state != "ACTIVE":
+            with self._lock:
+                if (
+                    self._observed_navigation_commands.get(robot_id)
+                    == expected_command_id
+                ):
+                    self._observed_navigation_commands.pop(robot_id, None)
+
+    @staticmethod
+    def _status_target_matches_task(
+        status: Mapping[str, Any],
+        task: Mapping[str, Any],
+    ) -> bool:
+        """Reject a late terminal status for a different target pose."""
+        status_target = status.get("target")
+        task_target = task.get("target")
+        if not isinstance(status_target, Mapping) or not isinstance(
+            task_target,
+            Mapping,
+        ):
+            return True
+        if status_target.get("frame_id") not in {None, "", "map"}:
+            return False
+        try:
+            x_delta = abs(
+                float(status_target["x"]) - float(task_target["x"])
+            )
+            y_delta = abs(
+                float(status_target["y"]) - float(task_target["y"])
+            )
+            yaw_delta = float(status_target["yaw"]) - float(
+                task_target["yaw"]
+            )
+        except (KeyError, TypeError, ValueError):
+            return True
+        wrapped_yaw_delta = abs(
+            math.atan2(math.sin(yaw_delta), math.cos(yaw_delta))
+        )
+        return (
+            x_delta <= 1.0e-4
+            and y_delta <= 1.0e-4
+            and wrapped_yaw_delta <= 1.0e-4
         )
 
     def _fail_task_after_agent_restart(

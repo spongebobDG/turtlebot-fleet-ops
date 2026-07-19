@@ -1,6 +1,7 @@
 """FastAPI application for fleet status and safety commands."""
 
 import asyncio
+from contextlib import suppress
 import math
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
@@ -89,6 +90,30 @@ def create_app(
         version="0.1.0",
         description="ROS 2 fleet status and safety command gateway.",
     )
+
+    async def monitor_connectivity() -> None:
+        """Persist heartbeat timeout and recovery transitions without a UI client."""
+        interval = max(0.1, min(float(websocket_interval_sec), 1.0))
+        while True:
+            for robot in registry.snapshot():
+                operations_store.sync_connectivity(robot)
+            await asyncio.sleep(interval)
+
+    if operations_store is not None:
+        @app.on_event("startup")
+        async def start_connectivity_monitor() -> None:
+            app.state.connectivity_monitor = asyncio.create_task(
+                monitor_connectivity()
+            )
+
+        @app.on_event("shutdown")
+        async def stop_connectivity_monitor() -> None:
+            task = getattr(app.state, "connectivity_monitor", None)
+            if task is None:
+                return
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
     @app.get("/api/health")
     def health() -> Dict[str, Any]:
