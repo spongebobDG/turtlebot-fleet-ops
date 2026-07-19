@@ -175,7 +175,8 @@ ros2 topic echo /fleet/navigation_status
    `Localization ready; waiting for motion safety rearm`이 정상이다. e-stop을 해제하고 안전 재무장한
    경우에만 `READY`가 된다.
 6. `목적지` 모드에서 가까운 자유 셀을 클릭·드래그한다.
-7. 최소 LiDAR 거리가 0.20m 이상이고 현재 pose가 known free cell인지 확인한다.
+7. 최소 LiDAR 거리가 0.19m 이상인지 확인한다. 이는 TB1 반경 0.14m에 요청한 외곽 여유
+   0.05m를 더한 값이다. 현재 pose도 known free cell이어야 한다.
 8. `목적지 전송` 후 거리, 경과시간, 예상시간, recovery와 lease age를 관찰한다.
 
 WARN 로봇은 첫 요청이 409로 거부되고 fault 목록 확인 dialog가 나온다. 작업자가

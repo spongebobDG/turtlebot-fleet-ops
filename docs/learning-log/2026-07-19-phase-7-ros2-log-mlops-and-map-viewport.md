@@ -154,8 +154,9 @@ OccupancyGrid 전체 자유 셀·yaw를 탐색한 후보는 `(약 0.12,-0.51,-0.
   제안한다. 실차 응답시간은 약 5.2초였다.
 - 최소 40 endpoint, match 35%, 지도 내부 70%, score 0.20을 만족해야 적용할 수 있다. 잘못된
   yaw의 직접 `PUT initial-pose`는 `422`와 match 8%·inside 51% 설명으로 거부됐다.
-- navigation agent는 목표 전·실행 중에 신선한 scan, 최소 거리 0.20m와 현재 AMCL pose의 known
-  free cell을 확인한다. 위반 시 목표와 authorization을 취소한다.
+- navigation agent는 목표 전·실행 중에 신선한 scan, 최소 거리 0.19m와 현재 AMCL pose의 known
+  free cell을 확인한다. 0.19m는 반경 0.14m + 외곽 여유 0.05m이며, 위반 시 목표와
+  authorization을 취소한다.
 - Nav2 `robot_radius`를 0.10m에서 0.14m로 바꿨다. 저속 상한 0.05m/s·0.3rad/s와 watchdog의
   유일한 실제 `/cmd_vel` 소유 구조는 바꾸지 않았다.
 - e-stop 상태에서 localization이 이미 확인됐는데 `LOCALIZING`으로 표시되던 조건도 분리했다.

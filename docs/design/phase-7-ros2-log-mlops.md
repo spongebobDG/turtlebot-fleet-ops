@@ -133,9 +133,10 @@ Gateway는 `PUT initial-pose`에서도 같은 점수를 다시 계산하므로 U
 벽과 맞지 않는 pose도 `422`로 거부한다. 2026-07-19 실측에서는 잘못된 yaw 후보가 match 8%,
 inside 51%로 거부됐고, 전역 보정 후보는 match 92~93%, inside 99~100%였다.
 
-Navigation agent는 별도로 신선하고 유효한 scan의 최소 거리가 0.20m 이상인지, 현재 AMCL pose가
-known free cell인지 목표 접수 전과 목표 실행 중 모두 검사한다. 이 조건이 깨지면 Nav2 목표를
-취소하고 arbiter authorization을 닫는다. Nav2 footprint 반경도 0.10m에서 0.14m로 현실화했다.
+Navigation agent는 별도로 신선하고 유효한 scan의 최소 거리가 0.19m 이상인지, 현재 AMCL pose가
+known free cell인지 목표 접수 전과 목표 실행 중 모두 검사한다. 0.19m는 Nav2 footprint 반경
+0.14m에 로봇 외곽 여유 0.05m를 더한 값이다. 이 조건이 깨지면 Nav2 목표를 취소하고 arbiter
+authorization을 닫는다. LiDAR 중심 기준 0.05m는 footprint 안쪽이므로 안전 기준으로 사용하지 않는다.
 이 보호는 LiDAR 평면 아래의 낮은 장애물을 볼 수 있게 만들지는 않으므로 현장 육안 점검은 남는다.
 
 클라이언트 검증은 사용성을 높이는 보조 검증이다. 안전·정합의 권위는 계속 Gateway의

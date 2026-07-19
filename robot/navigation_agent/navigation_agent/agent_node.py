@@ -249,7 +249,7 @@ class NavigationAgent(Node):
             "goal_max_duration_sec": 180.0,
             "goal_distance_progress_m": 0.05,
             "goal_yaw_progress_rad": 0.1,
-            "navigation_min_clearance_m": 0.20,
+            "navigation_min_clearance_m": 0.19,
             "robot_status_timeout_sec": 3.0,
             "safety_status_timeout_sec": 1.5,
             "authorization_rate_hz": 10.0,

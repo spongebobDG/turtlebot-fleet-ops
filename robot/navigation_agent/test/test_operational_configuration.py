@@ -24,7 +24,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "goal_max_duration_sec: 180.0" in agent_config
     assert "goal_distance_progress_m: 0.05" in agent_config
     assert "goal_yaw_progress_rad: 0.1" in agent_config
-    assert "navigation_min_clearance_m: 0.20" in agent_config
+    assert "navigation_min_clearance_m: 0.19" in agent_config
     assert "nav2_lifecycle_service: /bt_navigator/get_state" in agent_config
     assert "authorization_timeout_sec: 0.5" in agent_config
     assert "navigation_input_topic: /motion/navigation/cmd_vel" in agent_config

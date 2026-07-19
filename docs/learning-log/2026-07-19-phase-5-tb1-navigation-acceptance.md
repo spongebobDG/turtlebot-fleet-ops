@@ -353,6 +353,18 @@ pose 연동 LaserScan을 추가하고 smoke client가 40개 이상의 fresh poin
 pose를 전송하게 했다. Gateway 77개 테스트와 task 성공·취소·재시도·실패·fault/audit E2E가
 통과했으며 마지막 상태는 의도대로 e-stop이었다.
 
+## 실차 재개: 5cm 외곽 여유의 안전한 해석
+
+TB1을 다시 배치한 뒤 e-stop 상태에서 6개 scan을 확인했다. 최소 거리는 0.215~0.224m였고
+가장 가까운 반사는 로봇 기준 오른쪽 약 -90°였다. 전역 자동 정렬은 match 90.6%, 지도 내부
+99.4%, score 0.900으로 `(0.125, -0.490, -0.035rad)` 후보를 제안했고 초기 pose 적용 뒤
+Nav2·localization ready와 motion unarmed를 확인했다.
+
+사용자가 요청한 “안전기준 5cm”는 로봇 외곽에서 장애물까지의 여유로 해석했다. LiDAR 중심
+기준 0.05m는 TB1 footprint 반경 0.14m보다 작아 충돌 뒤에도 허용되는 값이므로 사용할 수 없다.
+따라서 navigation agent의 scan 차단값은 `0.14m + 0.05m = 0.19m`로 설정했다. e-stop은 새 설정
+배포와 정적 재검증이 끝날 때까지 유지한다.
+
 ## 배운 점
 
 1. ROS graph에서 Publisher가 사라지는 것과 0을 계속 발행하는 것은 다르다.
