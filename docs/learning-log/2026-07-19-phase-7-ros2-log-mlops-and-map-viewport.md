@@ -181,6 +181,12 @@ dataset builder에 `since_timestamp`와 `until_timestamp`, CLI·스크립트의 
 지우지 않으면서 검증된 정상 주행 구간만 새 baseline으로 만들 수 있다. 현재는 안전한 대표 주행
 구간이 아직 없으므로 Production 모델을 승격하지 않았고 `MODEL_NOT_READY`가 올바른 상태다.
 
+실제 collector root에 최근 10분 범위 `1784460943..1784461543`을 지정해 end-to-end candidate도
+생성했다. `ros2-log-mad-2026-07-19T114545.088973+0000-253de624`는 범위 안 123건·60초 창 2개,
+범위 밖 제외 10,324건, 잘못된 timestamp 제외 10건을 기록했다. 최소 5개 창 gate를 통과하지
+못해 `gate_passed=false`였고 Production registry는 계속 존재하지 않았다. 이는 시간 필터가 실제
+raw에서 작동하고 부족·비대표 구간을 자동 승격하지 않는다는 수용 증거다.
+
 이 사건 뒤 e-stop을 해제한 동적 회귀는 물리 주변과 LiDAR overlay를 사람이 확인한 뒤 수행해야
 한다. 따라서 Phase 7은 여전히 완료로 표시하지 않는다.
 
