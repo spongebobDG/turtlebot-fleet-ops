@@ -101,7 +101,10 @@ def generate_launch_description() -> LaunchDescription:
                         "FollowPath.rotate_to_heading_angular_vel": 0.2,
                         "FollowPath.max_angular_accel": 0.6,
                         "FollowPath.simulate_ahead_time": 1.0,
-                        "FollowPath.rotate_to_goal_heading": False,
+                        # Once inside XY tolerance, take control back from DWB
+                        # and finish the requested final yaw explicitly.  This
+                        # avoids a low-speed DWB stall between patrol points.
+                        "FollowPath.rotate_to_goal_heading": True,
                         "FollowPath.closed_loop": True,
                     },
                 ],

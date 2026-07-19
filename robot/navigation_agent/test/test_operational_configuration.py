@@ -80,7 +80,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"FollowPath.forward_sampling_distance": 0.15' in nav2_launch
     assert '"FollowPath.rotate_to_heading_angular_vel": 0.2' in nav2_launch
     assert '"FollowPath.max_angular_accel": 0.6' in nav2_launch
-    assert '"FollowPath.rotate_to_goal_heading": False' in nav2_launch
+    assert '"FollowPath.rotate_to_goal_heading": True' in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
