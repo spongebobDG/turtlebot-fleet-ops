@@ -3,7 +3,7 @@
 import math
 import threading
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import uuid
 
 from fleet_interfaces.action import NavigateRobot
@@ -175,6 +175,23 @@ def mapping_status_to_dict(message: MappingStatus) -> Dict[str, Any]:
         "map_available": bool(message.map_available),
         "message": message.message,
     }
+
+
+def _map_save_completed_after_response_loss(
+    previous_message: str,
+    observed: Optional[Dict[str, Any]],
+) -> bool:
+    """Accept only a newly observed robot-local validated save result."""
+    mapping = (observed or {}).get("mapping") or {}
+    message = str(mapping.get("message") or "")
+    return bool(
+        mapping.get("fresh")
+        and mapping.get("profile") == "MAPPING"
+        and message != previous_message
+        and message.startswith(
+            "Map and pose graph saved and validated; completion_ns="
+        )
+    )
 
 
 def _pose_to_dict(message: Any) -> Dict[str, Any]:
@@ -825,6 +842,11 @@ class FleetGatewayNode(Node):
                 "estop_engaged": True,
                 "message": "Map-save service is unavailable",
             }
+        observed_before = self.registry.get(robot_id)
+        previous_message = str(
+            ((observed_before or {}).get("mapping") or {}).get("message")
+            or ""
+        )
         request = SaveMap.Request()
         request.overwrite = bool(overwrite)
         try:
@@ -832,6 +854,21 @@ class FleetGatewayNode(Node):
         except Exception:  # noqa: B902
             response = None
         if response is None:
+            observed = self.registry.get(robot_id)
+            if _map_save_completed_after_response_loss(
+                previous_message,
+                observed,
+            ):
+                return {
+                    "success": True,
+                    "status_code": 202,
+                    "robot_id": robot_id,
+                    "estop_engaged": True,
+                    "message": (
+                        "Map save confirmed by validated robot status after "
+                        "the Zenoh service response was lost"
+                    ),
+                }
             return {
                 "success": False,
                 "status_code": 503,

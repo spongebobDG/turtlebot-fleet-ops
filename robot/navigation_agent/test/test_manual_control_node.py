@@ -100,3 +100,17 @@ def test_manual_session_clamps_and_expires_to_idle_zero():
             node.destroy_node()
         executor.shutdown()
         rclpy.shutdown()
+
+
+def test_destroy_after_context_shutdown_does_not_publish():
+    rclpy.init()
+    manual = ManualControlNode(
+        parameter_overrides=[
+            Parameter("command_service", value="/test/shutdown/command"),
+            Parameter("manual_output_topic", value="/test/shutdown/input"),
+            Parameter("motion_mode_service", value="/test/shutdown/mode"),
+        ]
+    )
+    rclpy.shutdown()
+
+    manual.destroy_node()

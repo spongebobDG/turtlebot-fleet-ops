@@ -140,10 +140,13 @@ class ManualControlNode(Node):
         self._session_id = ""
         self._last_command_at = None
         self._command = Twist()
-        self._publisher.publish(Twist())
+        context_ok = self.context.ok()
+        if context_ok:
+            self._publisher.publish(Twist())
         if had_session:
             self.get_logger().warning(reason)
-            self._request_mode(SetMotionMode.Request.MODE_IDLE)
+            if context_ok:
+                self._request_mode(SetMotionMode.Request.MODE_IDLE)
 
     def _request_mode(self, mode: int) -> None:
         self._desired_mode = int(mode)

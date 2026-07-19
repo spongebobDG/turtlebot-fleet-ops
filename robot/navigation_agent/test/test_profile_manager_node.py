@@ -1,6 +1,7 @@
 """Robot-local operating-profile manager tests without systemd mutation."""
 
 from types import SimpleNamespace
+import subprocess
 
 from fleet_interfaces.msg import MappingStatus
 from fleet_interfaces.srv import SaveMap, SetOperatingProfile
@@ -97,8 +98,44 @@ def test_map_save_requires_mapping_and_calls_fixed_script(
 
         assert response.success
         assert response.message == "Map and pose graph saved and validated"
+        assert node._message.startswith(
+            "Map and pose graph saved and validated; completion_ns="
+        )
         assert completed_calls[0][0] == ["/usr/bin/bash", str(script)]
         assert completed_calls[0][1]["timeout"] == 90
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+def test_map_save_timeout_is_reported_in_status(monkeypatch, tmp_path):
+    script = tmp_path / "save-map.sh"
+    script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    monkeypatch.setattr(
+        ProfileManagerNode,
+        "_is_active",
+        staticmethod(lambda unit: unit == "tb1-mapping.service"),
+    )
+
+    def time_out(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("save-map.sh", 90)
+
+    monkeypatch.setattr(
+        "navigation_agent.profile_manager_node.subprocess.run",
+        time_out,
+    )
+    rclpy.init()
+    node = ProfileManagerNode(
+        parameter_overrides=[
+            Parameter("map_file", value=str(tmp_path / "map.yaml")),
+            Parameter("save_map_script", value=str(script)),
+        ]
+    )
+    try:
+        response = node._save_map(SaveMap.Request(), SaveMap.Response())
+        assert not response.success
+        assert response.message == "Map save failed: save script timed out"
+        assert node._message == response.message
     finally:
         node.destroy_node()
         rclpy.shutdown()

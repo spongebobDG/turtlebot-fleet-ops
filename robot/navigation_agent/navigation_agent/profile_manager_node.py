@@ -3,6 +3,7 @@
 from pathlib import Path
 import subprocess
 import threading
+import time
 from typing import List, Optional, Tuple
 
 from fleet_interfaces.msg import MappingStatus
@@ -140,23 +141,39 @@ class ProfileManagerNode(Node):
         if not script.is_file():
             response.message = f"Map-save script is missing: {script}"
             return response
-        completed = subprocess.run(
-            ["/usr/bin/bash", str(script)],
-            capture_output=True,
-            text=True,
-            timeout=90,
-            check=False,
-        )
+        self._set_status_message("Saving map and pose graph")
+        try:
+            completed = subprocess.run(
+                ["/usr/bin/bash", str(script)],
+                capture_output=True,
+                text=True,
+                timeout=90,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            response.message = "Map save failed: save script timed out"
+            self._set_status_message(response.message)
+            return response
+        except OSError as error:
+            response.message = f"Map save failed: {error}"
+            self._set_status_message(response.message)
+            return response
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout).strip()
             response.message = f"Map save failed: {detail[-500:]}"
+            self._set_status_message(response.message)
             return response
         response.success = True
         response.message = "Map and pose graph saved and validated"
-        with self._lock:
-            self._message = response.message
-        self._publish_status()
+        self._set_status_message(
+            f"{response.message}; completion_ns={time.time_ns()}"
+        )
         return response
+
+    def _set_status_message(self, message: str) -> None:
+        with self._lock:
+            self._message = message
+        self._publish_status()
 
     def _active_profile(self) -> int:
         mapping = self._is_active(str(self.get_parameter("mapping_unit").value))

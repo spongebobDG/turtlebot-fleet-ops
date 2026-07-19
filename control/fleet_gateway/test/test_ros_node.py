@@ -7,10 +7,30 @@ from nav_msgs.msg import OccupancyGrid
 
 from fleet_gateway.map_registry import map_message_to_dict
 from fleet_gateway.ros_node import (
+    _map_save_completed_after_response_loss,
     navigation_status_to_dict,
     safety_status_to_dict,
     status_message_to_dict,
 )
+
+
+def test_map_save_response_loss_requires_a_new_validated_status():
+    previous = "Map and pose graph saved and validated; completion_ns=100"
+    observed = {
+        "mapping": {
+            "fresh": True,
+            "profile": "MAPPING",
+            "message": (
+                "Map and pose graph saved and validated; completion_ns=200"
+            ),
+        }
+    }
+
+    assert _map_save_completed_after_response_loss(previous, observed)
+    observed["mapping"]["message"] = previous
+    assert not _map_save_completed_after_response_loss(previous, observed)
+    observed["mapping"]["message"] = "Map save failed: validation failed"
+    assert not _map_save_completed_after_response_loss(previous, observed)
 
 
 def test_status_message_to_dict_builds_json_contract():
