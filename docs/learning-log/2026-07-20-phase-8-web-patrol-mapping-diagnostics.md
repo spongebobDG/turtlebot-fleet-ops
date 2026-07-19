@@ -89,6 +89,16 @@ screen angle이 아니라 map 좌표 벡터로 계산해 그 기준을 유지했
 Gateway 재시작 후 ACTIVE 순찰을 그대로 이어가면 사용자가 예상하지 못한 출발이 된다. durable
 정의는 보존하지만 실행 상태는 실패로 정리하고 명시적 재실행만 허용했다.
 
+### 관제 PC systemd runtime 갱신을 보류한 이유
+
+커밋과 GitHub CI 완료 후 실제 `fleet-gateway.service`가 읽는
+`/home/fleetops/turtlebot-fleet-ops`를 확인했다. 이 복사본은 오래된 commit 위에 대량의
+미커밋·미추적 파일이 있는 상태였다. 현재 TB1은 e-stop 활성, motion 미재무장, 활성 목표 없음이
+확인됐지만 이 작업 트리를 자동 checkout하면 기존 운영 자료를 덮어쓸 수 있으므로 Gateway를
+재시작하지 않았다. 현재 `localhost:8000` runtime은 Phase 8 배포 증거가 아니다. 실차 수용을
+시작할 때 먼저 이 복사본의 변경 출처를 보존·정리하고 clean commit을 checkout한 뒤 build와
+Gateway 재시작을 수행한다.
+
 ## 배운 점
 
 “부드럽게 움직인다”는 요구는 단순히 timeout을 늘리는 문제가 아니었다. command 보간과
