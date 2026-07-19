@@ -1064,10 +1064,15 @@ class NavigationAgent(Node):
         # executor.spin() returns.  The independent watchdog guard has already
         # closed motion when authorization stops, so do not publish through
         # invalid ROS entities merely to repeat the fail-closed transition.
-        if not rclpy.ok():
+        if not self.context.ok():
             return
-        self._publish_authorization(force=False)
-        self._set_motion_mode_nowait(MODE_IDLE)
+        try:
+            self._publish_authorization(force=False)
+            self._set_motion_mode_nowait(MODE_IDLE)
+        except RuntimeError:
+            # The context can close between the check and the publish when a
+            # launch process is stopping all children concurrently.
+            return
 
 
 def main(args=None) -> None:

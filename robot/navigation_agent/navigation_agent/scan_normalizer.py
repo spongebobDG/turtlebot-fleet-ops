@@ -119,4 +119,9 @@ def main(args=None) -> None:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            try:
+                rclpy.shutdown()
+            except RuntimeError:
+                # A launch-wide signal may close the context after the check.
+                pass
