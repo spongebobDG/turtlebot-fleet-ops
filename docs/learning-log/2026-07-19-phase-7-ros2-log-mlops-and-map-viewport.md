@@ -82,6 +82,11 @@ MLOps 추론은 검토된 정상 baseline이 없어 계속 `MODEL_NOT_READY`로 
 부분 기록됐을 때는 그 줄만 건너뛰도록 변경했다. 따라서 “갑자기 껐다 켠 경우 무엇이 로그에
 남는가”를 서비스 메모리가 아니라 append-only raw artifact로 설명할 수 있다.
 
+첫 TB1 재배포는 원격 Git 갱신용 PowerShell here-string의 CRLF 때문에 Bash가 `pipefail\r`을
+잘못된 옵션으로 읽어 코드 동기화 전에 중단됐다. 기존 streamed script는 CR 제거 경로가 있었지만
+Git 갱신 블록은 직접 ssh 인수로 전달해 누락된 것이 원인이었다. 원격 명령 블록도 CR을 제거한 뒤
+전송하도록 수정했다.
+
 수량 gate 통과는 승격의 필요조건이지 충분조건이 아니다. 정상 Nav2·AMCL 주행 데이터를 15~30분
 더 수집해 logger·작업 상태의 대표성과 timestamp 경고가 없는 후보를 다시 검토해야 한다. 따라서
 현재 `MODEL_NOT_READY`는 수집 장애가 아니라 편향된 기준 모델의 승격을 막은 정상 상태이며
