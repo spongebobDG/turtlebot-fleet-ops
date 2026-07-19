@@ -15,6 +15,37 @@ bash scripts/weekend/verify_workspace.sh
 성공 조건은 전체 colcon test, operations smoke, 실제 Nav2 robotless smoke, 분리 domain Zenoh
 action smoke가 모두 통과하는 것이다.
 
+현재 관제 PC는 기존 dirty WSL 작업 트리를 보존하고
+`~/turtlebot-fleet-ops-phase8`의 clean build를 사용하도록 control bridge와 Gateway에 systemd
+drop-in을 적용했다. 실차 수용 전 다음 결과가 모두 나와야 한다.
+
+```bash
+systemctl --user show fleet-control-zenoh.service fleet-gateway.service \
+  -p ActiveState -p SubState -p ExecStart
+curl -fsS http://127.0.0.1:8000/api/health
+curl -fsS http://127.0.0.1:8000/api/patrols
+curl -fsS http://127.0.0.1:8000/api/mlops/ros2-logs/incidents
+```
+
+두 `ExecStart`가 `turtlebot-fleet-ops-phase8`을 가리키고 두 서비스가 active/running이며 세 API가
+HTTP 200이어야 한다. TB1 배포 전 manual/profile/map-save가 준비되지 않은 상태로 거부되는 것은
+fail-closed 동작이다.
+
+관제 bridge에 `incoming timestamp ... exceeding delta 500ms`가 보이면 Windows·WSL·TB1의
+NTP 상태와 시각 차이를 먼저 확인한다. 이 PC에서는 Windows가 `Local CMOS Clock` 미동기화
+상태여서 WSL이 약 0.57초 늦었다. 현재 WSL은 `ntpdate`로 보정되어 NTP offset 0.013초 이하와
+새 bridge PID의 timestamp 오류 0건을 확인했다. Windows 또는 WSL 재부팅 뒤에는 다음을 먼저
+실행하고 bridge와 Gateway를 재시작한다.
+
+```bash
+ntpdate -q ntp.ubuntu.com
+sudo ntpdate -u ntp.ubuntu.com
+systemctl --user restart fleet-control-zenoh.service fleet-gateway.service
+```
+
+Windows Time의 영구 동기화는 관리자 권한으로 별도 설정한다. offset이 0.5초 이상인 상태에서는
+실차 이동 검증을 시작하지 않는다.
+
 ## 2. TB1 배포
 
 e-stop이 활성화되어 있고 바퀴가 지면에서 움직이지 않는지 먼저 확인한다.

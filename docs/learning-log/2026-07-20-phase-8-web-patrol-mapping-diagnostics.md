@@ -89,15 +89,44 @@ screen angle이 아니라 map 좌표 벡터로 계산해 그 기준을 유지했
 Gateway 재시작 후 ACTIVE 순찰을 그대로 이어가면 사용자가 예상하지 못한 출발이 된다. durable
 정의는 보존하지만 실행 상태는 실패로 정리하고 명시적 재실행만 허용했다.
 
-### 관제 PC systemd runtime 갱신을 보류한 이유
+### 기존 관제 runtime을 보존하면서 Phase 8로 전환
 
-커밋과 GitHub CI 완료 후 실제 `fleet-gateway.service`가 읽는
+커밋과 GitHub CI 완료 후 실제 `fleet-gateway.service`가 읽던
 `/home/fleetops/turtlebot-fleet-ops`를 확인했다. 이 복사본은 오래된 commit 위에 대량의
-미커밋·미추적 파일이 있는 상태였다. 현재 TB1은 e-stop 활성, motion 미재무장, 활성 목표 없음이
-확인됐지만 이 작업 트리를 자동 checkout하면 기존 운영 자료를 덮어쓸 수 있으므로 Gateway를
-재시작하지 않았다. 현재 `localhost:8000` runtime은 Phase 8 배포 증거가 아니다. 실차 수용을
-시작할 때 먼저 이 복사본의 변경 출처를 보존·정리하고 clean commit을 checkout한 뒤 build와
-Gateway 재시작을 수행한다.
+미커밋·미추적 파일이 있는 상태였으므로 자동 checkout이나 reset을 하지 않았다. 대신 원격의
+검증된 브랜치를 `/home/fleetops/turtlebot-fleet-ops-phase8`에 별도로 clone하고 build했다.
+WSL에서 새 overlay의 `fleet_gateway` 92개 테스트가 통과한 뒤 다음 조건을 모두 확인했다.
+
+- TB1 online
+- e-stop 활성
+- motion 미재무장
+- 활성 navigation command 없음
+
+그 상태에서 systemd drop-in으로 관제 PC의 `fleet-control-zenoh.service`와
+`fleet-gateway.service`만 새 경로로 전환했다. TB1 서비스와 로봇 motion 경로는 변경하지 않았다.
+전환 후 두 서비스는 active였고 process command line도 새 clone과 install 경로를 가리켰다.
+`/api/health`, `/api/patrols`, `/api/mlops/ros2-logs/incidents`는 모두 HTTP 200이었으며 TB1의
+`estop_active=true`, `motion_armed=false`도 유지됐다. 1280×720 실제 runtime 화면은 가로·세로
+overflow 없이 순찰·deadman·프로필·로그 MLOps 영역을 한 화면에 표시했고, e-stop 중 deadman은
+잠금 상태였다.
+
+기존 dirty 작업 트리와 기존 log MLOps service는 보존했다. 로봇에 새 interface와 Phase 8
+서비스를 배포하기 전에는 새 manual/profile/map-save 요청이 fail-closed하는 것이 정상이다.
+
+### Zenoh timestamp 교체 로그와 시각 보정
+
+전환 전 관제 bridge 로그에서 TB1 수신 timestamp가 WSL 현재 시각보다 약 0.57초 앞서 500 ms
+허용치를 넘고, Zenoh이 timestamp를 교체한 기록을 확인했다. TB1의 `systemd-timesyncd`는
+`ntp.ubuntu.com`에 동기화되어 offset 약 1.5 ms였지만 Windows는 `Local CMOS Clock`, 미동기화
+상태였고 WSL이 Windows 시각을 따르고 있었다.
+
+WSL에 `ntpdate`를 설치해 네 NTP 서버를 조회하자 offset은 +0.574~+0.586초로 재현됐다. TB1이
+e-stop 활성, motion 미재무장, 활성 목표 없음인 것을 다시 확인한 뒤 WSL 시각을 NTP에 맞추고
+control bridge와 Gateway를 재시작했다. 재조회 offset은 +0.001~+0.013초였고 새 bridge PID에는
+timestamp rejection이 더 이상 기록되지 않았다. TB1 online과 e-stop 상태도 유지됐다.
+
+Windows Time 자체는 관리자 권한이 필요한 별도 호스트 설정이다. 현재 WSL runtime은 보정됐지만
+Windows 또는 WSL을 재부팅한 뒤에는 실차 이동 전에 NTP offset과 bridge 오류를 다시 확인한다.
 
 ## 배운 점
 
@@ -119,7 +148,10 @@ logger·message 근거, 확인 순서를 연결해야 작업자가 판단에 사
 - [x] 매핑·주행 프로필과 지도·pose graph 저장 서비스
 - [x] ROS 2 로그 원인·증거·권장 조치 API와 UI
 - [x] 로봇 없는 단위·통합·smoke·화면 검증
+- [x] 기존 WSL 작업 트리를 보존한 clean Phase 8 관제 runtime 전환
 - [ ] TB1 배포와 실제 목표 yaw·평활화 확인
+- [x] 현재 WSL·TB1 시각 차이 500 ms 미만 및 새 bridge 오류 없음 확인
+- [ ] Windows Time 영구 동기화 또는 재부팅 후 WSL NTP 재확인
 - [ ] deadman·Gateway·Zenoh 단절 정지 시간 측정
 - [ ] 새 환경 매핑·저장·AMCL 재기동
 - [ ] 실차 순찰·취소·비재개와 incident 확인

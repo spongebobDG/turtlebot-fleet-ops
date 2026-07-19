@@ -2,7 +2,7 @@
 
 결정일: 2026-07-16
 
-상태: TB1 단일 로봇 MVP와 Phase 7 MLOps 실차 수용 완료, Phase 8 로봇 없는 구현 완료·실차 수용 대기(2026-07-20)
+상태: TB1 단일 로봇 MVP와 Phase 7 MLOps 실차 수용 완료, Phase 8 관제 PC clean runtime·로봇 없는 검증 완료, TB1 배포·실차 수용 대기(2026-07-20)
 
 ## 결정
 
