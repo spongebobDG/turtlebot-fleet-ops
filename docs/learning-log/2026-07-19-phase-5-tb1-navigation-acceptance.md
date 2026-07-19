@@ -290,6 +290,37 @@ Phase 5 완료 시점에는 Phase 6가 robotless 상태여서 TB1 전체 MVP를 
 [Phase 6 TB1 작업·복구 수용 시험](2026-07-19-phase-6-tb1-operations-acceptance.md)에 기록했고,
 그 후 TB1 단일 로봇 MVP를 완료로 판정했다.
 
+## 로컬 진척 감시 배포 뒤 웹 주행 재수용
+
+보강 커밋을 `main`에 배포하고 navigation profile을 새로 시작한 뒤에는 이전 AMCL pose를 복원하지
+않았다. 웹에서 실제 로봇 위치 `(-0.435, -0.485, -0.015rad)`를 다시 지정했고, Gateway는
+2026-07-19 18:34:12 KST에 초기 위치 요청을 `202 Accepted`로 기록했다. AMCL의 새 pose와
+`map → odom` 변환이 생긴 뒤 `nav2_ready=true`, `localization_ready=true`가 됐다.
+
+이어 웹에서 목표 `(-0.035, 0.115, 1.601rad)`를 보냈다. Gateway command ID는
+`23bdde9fa4c5402b86cfcac55fbf42d6`이며 18:34:26에 `202 Accepted`, TB1 Nav2는 18:34:27에
+현재 위치 `(-0.44, -0.45)`에서 주행을 시작했다. controller는 recovery 없이 목표에 도달했고
+18:34:48에 `Reached the goal!`, navigator는 `Goal succeeded`를 기록했다. 최종 fleet 상태는
+다음과 같았다.
+
+| 항목 | 결과 |
+| --- | --- |
+| 상태 전이 | `READY → ACTIVE → SUCCEEDED` |
+| navigation time | 21.6006초 |
+| recovery / Nav2 error | 0회 / 0 |
+| 종료 뒤 active command | 빈 값 |
+| 종료 뒤 motion mode | `IDLE` |
+| 최종 map pose | `(-0.171, 0.134, 1.336rad)` |
+| 종료 뒤 odom 속도 | 선속도 0, 각속도 약 0 |
+| 종료 뒤 LiDAR 최소 거리 | 0.50~0.51m |
+| `/cmd_vel` Publisher | `safety_watchdog` 1개 |
+
+이번 재수용은 이전 비수렴 사건 뒤 AMCL을 다시 설정하고 로컬 진척 감시가 설치된 상태에서 웹
+초기 위치·목표 경로가 실제 이동까지 이어지는지 확인한 회귀다. 성공한 목표에 20초 무진척
+timeout을 억지로 발생시키지 않았으며, stalled fake Nav2 통합 테스트가 그 실패 경로를 담당한다.
+목표 종료 뒤 0.5초 간격 6개 snapshot에서도 active command와 fault는 없고 선속도는 사실상 0을
+유지했다. 추가 왕복 이동은 새 증거를 만들기 위해 불필요한 물리 위험을 늘리므로 수행하지 않았다.
+
 ## 배운 점
 
 1. ROS graph에서 Publisher가 사라지는 것과 0을 계속 발행하는 것은 다르다.
