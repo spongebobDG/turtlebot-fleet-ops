@@ -26,6 +26,7 @@ class OperationsStore:
         self.database_path = Path(database_path).expanduser().resolve()
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._connectivity_states: Dict[str, bool] = {}
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -150,6 +151,35 @@ class OperationsStore:
             self.sync_faults(status)
         elif kind == "navigation":
             self.sync_navigation(status)
+
+    def sync_connectivity(self, status: Mapping[str, Any]) -> None:
+        """Record heartbeat-derived offline and recovery transitions once."""
+        robot_id = str(status.get("robot_id", "")).strip()
+        if not robot_id or "online" not in status:
+            return
+        online = bool(status["online"])
+        with self._lock:
+            previous = self._connectivity_states.get(robot_id)
+            self._connectivity_states[robot_id] = online
+        if previous is None or previous == online:
+            return
+        if online:
+            self.record_event(
+                robot_id,
+                "CONNECTIVITY",
+                "ROBOT_ONLINE",
+                "로봇 heartbeat가 복구되었습니다",
+                details={"heartbeat_age_sec": status.get("heartbeat_age_sec")},
+            )
+            return
+        self.record_event(
+            robot_id,
+            "CONNECTIVITY",
+            "ROBOT_OFFLINE",
+            "로봇 heartbeat가 끊겼습니다 (전원·네트워크·Agent 중단 가능)",
+            severity="ERROR",
+            details={"heartbeat_age_sec": status.get("heartbeat_age_sec")},
+        )
 
     def sync_faults(self, status: Mapping[str, Any]) -> None:
         """Persist activation, severity change and clear transitions."""

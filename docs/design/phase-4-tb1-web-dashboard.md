@@ -37,6 +37,10 @@ Browser -- POST estop --> fleet_gateway -- Zenoh service route --> TB1 safety_wa
 웹이나 Gateway가 최종 모터 안전장치가 아니다. 네트워크가 끊겨도 로봇 내부
 Watchdog가 0 속도를 계속 출력하는 구조를 유지한다.
 
+브라우저는 안전 lease의 소유자가 아니다. 탭을 닫아도 Gateway가 살아 있으면 로봇에 보내는
+Gateway lease는 계속된다. 감독을 끝낼 때는 탭을 닫는 대신 목표 취소 또는 비상정지를
+명시적으로 적용해야 한다.
+
 ## 온라인 판정
 
 Robot Agent가 죽거나 로봇 전원이 꺼지면 `online=false` 메시지를 보낼 수 없다.
@@ -49,6 +53,18 @@ Robot Agent가 죽거나 로봇 전원이 꺼지면 `online=false` 메시지를 
 - `age > 3초`: offline
 
 이 판정은 로봇 시계와 관제 PC 시계가 달라도 영향을 받지 않는다.
+
+OperationsStore는 첫 snapshot을 기준선으로 잡고 이후 online 전이만 저장한다. 3초 timeout
+뒤에는 `ROBOT_OFFLINE`, heartbeat 복구 뒤에는 `ROBOT_ONLINE`을 한 번씩 기록한다. 침묵의
+원인이 전원, 네트워크, Agent 중 무엇인지는 Gateway만으로 확정하지 않는다. 반복 snapshot은
+새 event를 만들지 않는다.
+
+## 한 화면 관제 레이아웃
+
+1280×720 이상에서는 상단 요약 아래를 로봇 상태, 지도 제어, 운영 기록의 3열로 고정한다.
+문서 높이를 viewport 높이에 맞춰 페이지 스크롤을 없애고, 오래된 작업·감사 이벤트만 각
+목록 안에서 스크롤한다. 작은 화면에서는 2열 또는 1열로 순차 전환해 기능 접근성을
+유지한다.
 
 ## API 계약
 

@@ -90,6 +90,8 @@ curl http://127.0.0.1:8000/api/robots
 - 상단 연결 상태가 실시간 연결이다.
 - TB1 상태가 `OK` 또는 실제 fault 상태와 일치한다.
 - 카드의 heartbeat와 센서 값이 갱신된다.
+- 1280×720 이상의 화면에서는 로봇 상태, 지도 제어, 작업·고장·감사 로그가 페이지
+  스크롤 없이 한 화면에 표시된다. 긴 기록만 각 카드 안에서 스크롤한다.
 - 개발자 도구에 정적 파일 404나 WebSocket 오류가 없다.
 
 ## 4. 비상정지 검증
@@ -139,7 +141,34 @@ systemctl --user start tb1-zenoh-bridge.service
 
 `online=true`로 돌아온 후 비상정지를 해제하고 중립 명령을 보내 재무장한다.
 
-## 6. systemd 운영
+감사 로그에는 단절과 복구가 한 번씩 기록돼야 한다.
+
+```text
+ROBOT_OFFLINE  로봇 heartbeat가 끊겼습니다 (전원·네트워크·Agent 중단 가능)
+ROBOT_ONLINE   로봇 heartbeat가 복구되었습니다
+```
+
+Gateway는 heartbeat 침묵만 볼 수 있으므로 전원 차단, 네트워크 단절, Robot Agent 중단을
+서로 확정해서 구분하지 않는다. 원인은 TB1의 `journalctl`과 네트워크 상태를 함께 확인한다.
+
+## 6. 갑작스러운 종료와 기록 해석
+
+| 종료한 대상 | 동작과 웹 기록 |
+| --- | --- |
+| 브라우저 탭 또는 새로고침 | 감사 이벤트를 만들지 않는다. Gateway가 살아 있으면 활성 목표와 lease는 계속된다. 종료 전 목표 취소 또는 비상정지를 사용한다. |
+| TB1 전원·Agent·통신 경로 | 마지막 heartbeat가 3초를 넘으면 `ROBOT_OFFLINE`, 복구되면 `ROBOT_ONLINE`이 기록된다. 원인 자체는 메시지만으로 구분하지 못한다. |
+| Zenoh 또는 Gateway | TB1에서 2초 lease가 만료돼 목표를 취소하고 정지한다. Gateway 재시작 뒤 비종료 작업은 `TASK_FAILED`와 `Fleet Gateway restarted; prior task will not resume`으로 닫힌다. |
+| 관제 PC 전원 | 꺼진 프로세스는 그 순간 중앙 로그를 쓸 수 없다. TB1 로컬 로그에는 lease 만료가 남고, 관제 복구 뒤 남은 작업은 실패 처리되며 자동 재개되지 않는다. |
+
+웹의 Audit Events는 작업과 상태 전이 기록이다. ROS 2와 systemd의 원시 로그는 다음처럼
+별도로 확인한다.
+
+```bash
+journalctl --user -u fleet-gateway.service -n 100 --no-pager
+ssh tb1 'journalctl --user -u tb1-navigation.service -n 100 --no-pager'
+```
+
+## 7. systemd 운영
 
 자세한 설치는 [Zenoh 브리지 운영 문서](../../infra/zenoh/README.md)를 따른다.
 

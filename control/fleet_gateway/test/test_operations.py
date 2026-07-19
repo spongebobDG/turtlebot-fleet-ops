@@ -32,6 +32,37 @@ def test_fault_transitions_are_deduplicated_and_persisted(tmp_path) -> None:
     ]
 
 
+def test_connectivity_transitions_record_loss_and_recovery_once(tmp_path) -> None:
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    online = {
+        "robot_id": "tb1",
+        "online": True,
+        "heartbeat_age_sec": 0.2,
+    }
+    offline = {
+        "robot_id": "tb1",
+        "online": False,
+        "heartbeat_age_sec": 3.1,
+    }
+
+    store.sync_connectivity(online)
+    store.sync_connectivity(online)
+    assert store.list_events("tb1") == []
+
+    store.sync_connectivity(offline)
+    store.sync_connectivity(offline)
+    store.sync_connectivity(online)
+
+    events = store.list_events("tb1")
+    assert [event["event_type"] for event in events] == [
+        "ROBOT_ONLINE",
+        "ROBOT_OFFLINE",
+    ]
+    assert events[0]["severity"] == "INFO"
+    assert events[1]["severity"] == "ERROR"
+    assert "전원·네트워크·Agent" in events[1]["message"]
+
+
 def test_task_retry_and_navigation_reconciliation_survive_reopen(
     tmp_path,
 ) -> None:
