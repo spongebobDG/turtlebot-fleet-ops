@@ -3,6 +3,7 @@
 from contextlib import closing
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 import sqlite3
 import threading
@@ -181,6 +182,17 @@ class OperationsStore:
             severity="ERROR",
             details={"heartbeat_age_sec": status.get("heartbeat_age_sec")},
         )
+
+    def register_navigation_command(
+        self,
+        robot_id: str,
+        command_id: str,
+    ) -> None:
+        """Correlate a newly accepted task before its next status update."""
+        if not robot_id or not command_id:
+            return
+        with self._lock:
+            self._observed_navigation_commands[robot_id] = command_id
 
     def sync_faults(self, status: Mapping[str, Any]) -> None:
         """Persist activation, severity change and clear transitions."""
@@ -453,6 +465,14 @@ class OperationsStore:
                 ).fetchone()
         if row is None:
             return
+        task = self.get_task(str(row["task_id"]))
+        if task is None:
+            return
+        if not command_id and not self._status_target_matches_task(
+            status,
+            task,
+        ):
+            return
         mapped_state = "FAILED" if state == "LEASE_EXPIRED" else state
         message = str(status.get("message", "")) or (
             f"Navigation {state.lower()}"
@@ -470,6 +490,42 @@ class OperationsStore:
                     == expected_command_id
                 ):
                     self._observed_navigation_commands.pop(robot_id, None)
+
+    @staticmethod
+    def _status_target_matches_task(
+        status: Mapping[str, Any],
+        task: Mapping[str, Any],
+    ) -> bool:
+        """Reject a late terminal status for a different target pose."""
+        status_target = status.get("target")
+        task_target = task.get("target")
+        if not isinstance(status_target, Mapping) or not isinstance(
+            task_target,
+            Mapping,
+        ):
+            return True
+        if status_target.get("frame_id") not in {None, "", "map"}:
+            return False
+        try:
+            x_delta = abs(
+                float(status_target["x"]) - float(task_target["x"])
+            )
+            y_delta = abs(
+                float(status_target["y"]) - float(task_target["y"])
+            )
+            yaw_delta = float(status_target["yaw"]) - float(
+                task_target["yaw"]
+            )
+        except (KeyError, TypeError, ValueError):
+            return True
+        wrapped_yaw_delta = abs(
+            math.atan2(math.sin(yaw_delta), math.cos(yaw_delta))
+        )
+        return (
+            x_delta <= 1.0e-4
+            and y_delta <= 1.0e-4
+            and wrapped_yaw_delta <= 1.0e-4
+        )
 
     def _fail_task_after_agent_restart(
         self,

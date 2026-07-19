@@ -146,17 +146,30 @@ def test_stale_terminal_status_cannot_close_the_next_task(tmp_path) -> None:
             "state": "CANCELED",
             "active_command_id": "",
             "message": "first goal canceled",
+            "target": {
+                "frame_id": "map",
+                "x": 1.0,
+                "y": 0.0,
+                "yaw": 0.0,
+            },
         }
     )
 
     second = store.create_task("tb1", -0.5, 0.0, 0.0, False)
     store.update_task(second["task_id"], "ACTIVE", "accepted", "goal-2")
+    store.register_navigation_command("tb1", "goal-2")
     store.sync_navigation(
         {
             "robot_id": "tb1",
             "state": "CANCELED",
             "active_command_id": "",
             "message": "late first-goal status",
+            "target": {
+                "frame_id": "map",
+                "x": 1.0,
+                "y": 0.0,
+                "yaw": 0.0,
+            },
         }
     )
     assert store.get_task(second["task_id"])["state"] == "ACTIVE"
@@ -174,6 +187,12 @@ def test_stale_terminal_status_cannot_close_the_next_task(tmp_path) -> None:
             "state": "FAILED",
             "active_command_id": "",
             "message": "second goal failed",
+            "target": {
+                "frame_id": "map",
+                "x": -0.5,
+                "y": 0.0,
+                "yaw": 0.0,
+            },
         }
     )
     assert store.get_task(second["task_id"])["state"] == "FAILED"
