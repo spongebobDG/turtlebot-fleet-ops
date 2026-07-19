@@ -19,6 +19,11 @@ max_speed_xy: 0.05
 max_vel_theta: 0.3
 max_rotational_vel: 0.3
 min_rotational_vel: 0.05
+# DWB uses min_speed_xy/min_speed_theta rather than the behavior-server
+# min_rotational_vel parameter. Commands below these measured TB1 drive
+# deadbands reached /cmd_vel but did not turn the wheels.
+min_speed_xy: 0.02
+min_speed_theta: 0.05
 trans_stopped_velocity: 0.01
 required_movement_radius: 0.1
 movement_time_allowance: 20.0

@@ -82,6 +82,23 @@ TB1 Phase 8 배포 전에는 이 서비스와 토픽이 없어 요청이 fail-cl
 `주행 모드`를 선택해 fresh한 `NAVIGATION` profile을 확인하고 초기 위치를 다시 적용한다. 초기
 위치 적용 전 navigation `UNAVAILABLE`과 AMCL의 initial-pose 대기 로그는 정상이다.
 
+### 목표가 접수됐지만 바퀴가 돌지 않을 때
+
+path와 progress timeout 로그만으로 localization 실패라고 결론 내리지 않는다. 짧고 통제된 시험에서
+controller부터 odometry까지 같은 구간을 기록한다.
+
+```bash
+ros2 param get /controller_server FollowPath.min_speed_theta
+ros2 param get /controller_server FollowPath.min_speed_xy
+ros2 topic info /cmd_vel --verbose
+```
+
+TB1 기준 DWB 최소값은 `min_speed_theta=0.05`, `min_speed_xy=0.02`이고 상한은 계속
+`0.3 rad/s`, `0.05 m/s`이다. `/cmd_vel`이 non-zero인데 odometry가 변하지 않으면 motor deadband를
+의심한다. 먼저 실제 적용 파라미터와 raw controller/smoother/arbiter/watchdog 출력을 비교하며,
+최대 속도를 올리거나 watchdog을 우회해서 해결하지 않는다. 시험이 끝나면 목표를 취소하고
+e-stop을 다시 활성화한다.
+
 ## 4. Deadman 수동 조종
 
 수동 버튼은 누르고 있는 동안만 사용한다. 전진·후진·좌회전·우회전 버튼을 놓았을 때 즉시

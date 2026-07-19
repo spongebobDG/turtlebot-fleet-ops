@@ -37,6 +37,9 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "max_speed_xy: 0.05" in nav2_rewrites
     assert "max_vel_theta: 0.3" in nav2_rewrites
     assert "max_rotational_vel: 0.3" in nav2_rewrites
+    assert "min_rotational_vel: 0.05" in nav2_rewrites
+    assert "min_speed_xy: 0.02" in nav2_rewrites
+    assert "min_speed_theta: 0.05" in nav2_rewrites
     assert "base_frame_id: base_footprint" in nav2_rewrites
     assert "robot_base_frame: base_link" in nav2_rewrites
     assert "scan_topic: /scan_normalized" in nav2_rewrites

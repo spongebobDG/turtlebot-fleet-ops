@@ -117,7 +117,27 @@ systemd, 원본 로그와 현장 관찰이다.
 지도는 현장 정보이고 자주 바뀌며 binary 산출물도 포함한다. Git에는 생성·검증 절차와 설정만
 두고 실제 지도와 pose graph는 로봇의 운영 데이터 경로에 보관한다.
 
-## 8. 실차 검증 전에 설명할 수 있어야 하는 것
+## 8. Nav2가 non-zero 속도를 내도 로봇이 움직이지 않을 수 있는 이유
+
+계획 경로가 존재하고 `/cmd_vel`에 0이 아닌 값이 보인다는 사실만으로 바퀴가 실제로 움직였다고
+판단할 수 없다. 모터·감속기·바닥 마찰에는 구동 임계값이 있고, 그보다 작은 명령은 소프트웨어
+계층을 모두 통과해도 실제 pose 변화를 만들지 못한다.
+
+DWB의 최소 속도는 controller plugin의 `min_speed_xy`, `min_speed_theta`가 결정한다.
+`min_rotational_vel`은 behavior server에서 사용하는 이름이므로 이를 설정했다고 DWB의 가장 작은
+회전 샘플이 커지는 것은 아니다. 이 둘을 혼동하면 다음과 같은 현상이 생긴다.
+
+```text
+path 생성 -> DWB의 아주 작은 회전 명령 -> smoother/arbiter/watchdog 통과
+          -> 바퀴 정지 -> progress checker timeout
+```
+
+진단할 때는 한 토픽만 보지 않고 raw controller, smoother, arbiter, watchdog, 최종 `/cmd_vel`,
+odometry를 같은 시간 창에서 비교한다. 최소 속도는 실측 deadband보다 작지 않게 정하되 최대
+속도 상한과 watchdog은 그대로 유지한다. 제자리 회전이 필요하다면 `min_vel_x`는 0으로 두고
+속도 벡터의 최소 크기인 `min_speed_xy`만 설정한다.
+
+## 9. 실차 검증 전에 설명할 수 있어야 하는 것
 
 - 화면 드래그 방향이 `base_link +X` yaw로 바뀌는 과정
 - smoother, arbiter, watchdog의 책임 차이
@@ -125,3 +145,4 @@ systemd, 원본 로그와 현장 관찰이다.
 - 순찰 재시작 시 자동 재개하지 않는 이유
 - MAPPING과 NAVIGATION의 상호 배타성
 - MLOps 모델 상태와 원인 규칙이 안전 제어와 분리된 이유
+- `/cmd_vel` non-zero와 실제 odometry 변화를 함께 봐야 하는 이유
