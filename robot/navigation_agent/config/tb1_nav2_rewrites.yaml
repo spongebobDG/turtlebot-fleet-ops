@@ -5,6 +5,11 @@ global_frame_id: map
 robot_base_frame: base_link
 scan_topic: /scan_normalized
 odom_topic: /odom
+# The TurtleBot3 Humble baseline ticks the behavior tree every 10 ms.  On TB1
+# this causes log storms and controller deadline misses during recovery.  A
+# 10 Hz tree is still faster than the low-speed controller needs and leaves
+# CPU headroom for AMCL, costmaps, the safety path, and Zenoh.
+bt_loop_duration: 100
 max_vel_x: 0.05
 max_speed_xy: 0.05
 max_vel_theta: 0.3

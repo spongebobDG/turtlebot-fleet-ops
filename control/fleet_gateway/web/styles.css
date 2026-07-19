@@ -299,8 +299,26 @@ input {
 
 .map-frame.loaded #map-canvas { display: block; }
 .map-frame.loaded .map-placeholder { display: none; }
-.map-placeholder, .map-help { color: var(--muted); font-size: 0.64rem; }
-.map-help { margin-top: 5px; }
+.map-placeholder, .map-help, .map-meta { color: var(--muted); font-size: 0.6rem; }
+.map-help-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+}
+.map-meta { color: #bed1cb; white-space: nowrap; }
+.map-legend {
+  display: flex;
+  gap: 10px;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.56rem;
+}
+.map-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.map-legend i { width: 7px; height: 7px; border-radius: 50%; }
+.map-legend .current { background: #44b9ff; }
+.map-legend .active-target { background: #ffd166; }
+.map-legend .candidate { background: #58e0ae; }
 .map-readout {
   position: absolute;
   left: 7px;

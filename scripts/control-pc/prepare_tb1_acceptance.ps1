@@ -204,7 +204,9 @@ else
 fi
 git -C "$repo" rev-parse HEAD
 '@
-    $remoteUpdate = $remoteUpdate.Replace('__BRANCH__', $Branch)
+    # PowerShell 5.1 here-strings use CRLF.  Passing the block directly as an
+    # ssh command makes Bash parse `pipefail\r` as the option name.
+    $remoteUpdate = $remoteUpdate.Replace('__BRANCH__', $Branch).Replace("`r", "")
     $remoteCommitOutput = & $sshExe @sshArgs $target $remoteUpdate
     if ($LASTEXITCODE -ne 0) {
         throw "Could not synchronize the TB1 repository."

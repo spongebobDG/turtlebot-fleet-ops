@@ -8,6 +8,7 @@ const mapFrame = document.querySelector("#map-frame");
 const mapCanvas = document.querySelector("#map-canvas");
 const mapPlaceholder = document.querySelector("#map-placeholder");
 const mapReadout = document.querySelector("#map-readout");
+const mapMeta = document.querySelector("#map-meta");
 const mapZoomOut = document.querySelector("#map-zoom-out");
 const mapZoomIn = document.querySelector("#map-zoom-in");
 const mapZoomLabel = document.querySelector("#map-zoom-label");
@@ -165,6 +166,11 @@ const renderNavigation = () => {
   recoveryCount.textContent = navigation.number_of_recoveries ?? "—";
 
   const activeGoal = Boolean(navigation.active_command_id);
+  const validCandidate = Boolean(
+    selectedPose
+    && currentMap
+    && mapMath.isFreePose(currentMap, selectedPose.x, selectedPose.y),
+  );
   const commonReady = Boolean(
     robot?.online && robot.level < 2 && currentMap && !activeGoal,
   );
@@ -177,10 +183,38 @@ const renderNavigation = () => {
     && !robot?.safety?.estop_active
     && robot?.safety?.motion_armed;
   applyMapCommand.textContent = mapMode === "initial" ? "초기 위치 적용" : "목적지 전송";
-  applyMapCommand.disabled = mapMode === "initial" ? !commonReady : !goalReady;
+  applyMapCommand.disabled = !validCandidate
+    || (mapMode === "initial" ? !commonReady : !goalReady);
   cancelNavigation.disabled = !activeGoal;
-  createTaskButton.disabled = mapMode !== "goal" || !commonReady;
+  createTaskButton.disabled = mapMode !== "goal" || !commonReady || !validCandidate;
   drawMap();
+};
+
+const resetPoseSelection = () => {
+  selectedPose = null;
+  dragStart = null;
+  poseX.value = "";
+  poseY.value = "";
+  poseYaw.value = "";
+};
+
+const syncPoseSelectionFromFields = () => {
+  const raw = [poseX.value, poseY.value, poseYaw.value];
+  if (raw.some((value) => value.trim() === "")) {
+    selectedPose = null;
+  } else {
+    const pose = {
+      x: Number(raw[0]),
+      y: Number(raw[1]),
+      yaw: Number(raw[2]),
+    };
+    selectedPose = Object.values(pose).every(Number.isFinite)
+      && currentMap
+      && mapMath.isFreePose(currentMap, pose.x, pose.y)
+      ? pose
+      : null;
+  }
+  renderNavigation();
 };
 
 const loadMap = async () => {
@@ -188,6 +222,8 @@ const loadMap = async () => {
   currentMap = null;
   mapBitmap = null;
   mapViewport = null;
+  resetPoseSelection();
+  mapMeta.textContent = "지도 정보 없음";
   currentMapRobot = robotId;
   mapFrame.classList.remove("loaded");
   mapPlaceholder.textContent = robotId ? "지도를 불러오는 중입니다." : "로봇 지도를 기다리는 중입니다.";
@@ -201,6 +237,7 @@ const loadMap = async () => {
     if (body.data.length !== body.width * body.height) throw new Error("지도 크기와 데이터가 일치하지 않습니다.");
     currentMap = body;
     mapBitmap = buildMapBitmap(body);
+    mapMeta.textContent = `${body.width}×${body.height} cells · ${number(body.resolution * 100, 1, "cm/cell")}`;
     mapFrame.classList.add("loaded");
     drawMap();
     renderNavigation();
@@ -286,10 +323,20 @@ const drawMap = () => {
   if (robot?.navigation?.current?.frame_id === "map") {
     drawArrow(context, robot.navigation.current, "#44b9ff");
   }
-  if (robot?.navigation?.target?.frame_id === "map") {
-    drawArrow(context, robot.navigation.target, "#ffd166");
+  if (
+    robot?.navigation?.active_command_id
+    && robot.navigation.target?.frame_id === "map"
+  ) {
+    drawArrow(context, robot.navigation.target, "#ffd166", "활성 목표");
   }
-  if (selectedPose) drawArrow(context, selectedPose, "#58e0ae");
+  if (selectedPose) {
+    drawArrow(
+      context,
+      selectedPose,
+      "#58e0ae",
+      mapMode === "initial" ? "초기 위치 후보" : "목적지 후보",
+    );
+  }
 };
 
 const drawCellGrid = (context) => {
@@ -312,7 +359,7 @@ const drawCellGrid = (context) => {
   context.restore();
 };
 
-const drawArrow = (context, pose, color) => {
+const drawArrow = (context, pose, color, label = "") => {
   const start = worldToScreen(pose.x, pose.y);
   const length = Math.max(currentMap.resolution * 5, 0.25);
   const end = worldToScreen(
@@ -330,6 +377,11 @@ const drawArrow = (context, pose, color) => {
   context.moveTo(start.x, start.y);
   context.lineTo(end.x, end.y);
   context.stroke();
+  if (label) {
+    context.font = "700 10px system-ui, sans-serif";
+    context.textBaseline = "bottom";
+    context.fillText(label, start.x + 8, start.y - 5);
+  }
   context.restore();
 };
 
@@ -388,10 +440,12 @@ mapCanvas.addEventListener("pointerdown", (event) => {
   }
   const cell = cellAtScreenPoint(point);
   if (!cell) {
+    mapCanvas.releasePointerCapture(event.pointerId);
     showToast("지도 안의 자유 공간을 선택하세요.", true);
     return;
   }
   if (cell.value !== 0) {
+    mapCanvas.releasePointerCapture(event.pointerId);
     showToast(cell.value < 0 ? "알 수 없는 셀은 선택할 수 없습니다." : "장애물 셀은 선택할 수 없습니다.", true);
     return;
   }
@@ -431,14 +485,17 @@ mapCanvas.addEventListener("pointerup", (event) => {
     if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
     return;
   }
-  if (!dragStart) return;
+  if (!dragStart) {
+    if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
+    return;
+  }
   if (!selectedPose) selectedPose = { ...dragStart, yaw: 0 };
   poseX.value = selectedPose.x.toFixed(3);
   poseY.value = selectedPose.y.toFixed(3);
   poseYaw.value = selectedPose.yaw.toFixed(3);
   dragStart = null;
   mapCanvas.releasePointerCapture(event.pointerId);
-  drawMap();
+  renderNavigation();
 });
 
 mapCanvas.addEventListener("pointercancel", (event) => {
@@ -486,6 +543,7 @@ new ResizeObserver(() => drawMap()).observe(mapFrame);
 document.querySelectorAll("button[data-map-mode]").forEach((button) => {
   button.addEventListener("click", () => {
     mapMode = button.dataset.mapMode;
+    resetPoseSelection();
     document.querySelectorAll("button[data-map-mode]").forEach(
       (candidate) => candidate.classList.toggle("active", candidate === button),
     );
@@ -493,16 +551,16 @@ document.querySelectorAll("button[data-map-mode]").forEach((button) => {
   });
 });
 
+[poseX, poseY, poseYaw].forEach((input) => {
+  input.addEventListener("input", syncPoseSelectionFromFields);
+});
+
 applyMapCommand.addEventListener("click", async () => {
   const robot = selectedRobot();
   if (!robot) return;
-  const pose = {
-    x: Number(poseX.value),
-    y: Number(poseY.value),
-    yaw: Number(poseYaw.value),
-  };
-  if (!Object.values(pose).every(Number.isFinite)) {
-    showToast("유효한 X, Y, Yaw를 입력하세요.", true);
+  const pose = selectedPose ? { ...selectedPose } : null;
+  if (!pose || !currentMap || !mapMath.isFreePose(currentMap, pose.x, pose.y)) {
+    showToast("지도에서 자유 공간의 위치와 방향을 새로 선택하세요.", true);
     return;
   }
   const isInitial = mapMode === "initial";
@@ -524,6 +582,7 @@ applyMapCommand.addEventListener("click", async () => {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "지도 명령 실패");
     showToast(body.message || "지도 명령을 전송했습니다.");
+    resetPoseSelection();
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -617,7 +676,14 @@ const renderLogMlops = () => {
     .filter((item) => Number(item.deviation) >= 1)
     .map((item) => `${item.feature} ${number(item.deviation, 1)}σ`)
     .join(" · ");
-  mlopsReasons.textContent = reasons || status.message || "분석 결과가 없습니다.";
+  const operationalSignals = (status.operational_signals || [])
+    .slice(0, 3)
+    .map((item) => `${item.label} ${item.count}회`)
+    .join(" · ");
+  mlopsReasons.textContent = operationalSignals
+    || reasons
+    || status.message
+    || "분석 결과가 없습니다.";
   mlopsReasons.title = mlopsReasons.textContent;
 };
 
@@ -670,13 +736,9 @@ const loadOperations = async () => {
 createTaskButton.addEventListener("click", async () => {
   const robot = selectedRobot();
   if (!robot) return;
-  const pose = {
-    x: Number(poseX.value),
-    y: Number(poseY.value),
-    yaw: Number(poseYaw.value),
-  };
-  if (!Object.values(pose).every(Number.isFinite)) {
-    showToast("유효한 X, Y, Yaw를 입력하세요.", true);
+  const pose = selectedPose ? { ...selectedPose } : null;
+  if (!pose || !currentMap || !mapMath.isFreePose(currentMap, pose.x, pose.y)) {
+    showToast("지도에서 자유 공간의 위치와 방향을 새로 선택하세요.", true);
     return;
   }
   const warningConfirmed = robot.level === 1

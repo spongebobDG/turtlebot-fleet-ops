@@ -52,5 +52,33 @@
     };
   };
 
-  return { canvasToWorld, worldToCanvas };
+  const worldToCell = (map, x, y) => {
+    const canvas = worldToCanvas(map, x, y);
+    const cellX = Math.floor(canvas.x);
+    const cellY = Math.floor(map.height - canvas.y);
+    if (
+      cellX < 0
+      || cellY < 0
+      || cellX >= map.width
+      || cellY >= map.height
+    ) {
+      return null;
+    }
+    return {
+      x: cellX,
+      y: cellY,
+      index: cellY * map.width + cellX,
+    };
+  };
+
+  const isFreePose = (map, x, y) => {
+    const cell = worldToCell(map, x, y);
+    return Boolean(
+      cell
+      && Array.isArray(map.data)
+      && map.data[cell.index] === 0
+    );
+  };
+
+  return { canvasToWorld, isFreePose, worldToCanvas, worldToCell };
 }));

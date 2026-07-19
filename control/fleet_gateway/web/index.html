@@ -84,7 +84,15 @@
               <p class="map-placeholder" id="map-placeholder">로봇 지도를 기다리는 중입니다.</p>
               <output class="map-readout" id="map-readout">커서를 지도 위에 올리세요.</output>
             </div>
-            <p class="map-help">클릭·드래그: 위치·방향 · 휠: 확대 · Shift+드래그: 이동</p>
+            <div class="map-help-row">
+              <p class="map-help">클릭·드래그: 위치·방향 · 휠: 확대 · Shift+드래그: 이동</p>
+              <p class="map-meta" id="map-meta">지도 정보 없음</p>
+            </div>
+            <div class="map-legend" aria-label="지도 표시 범례">
+              <span><i class="current"></i>현재 위치</span>
+              <span><i class="active-target"></i>활성 목표</span>
+              <span><i class="candidate"></i>전송 후보</span>
+            </div>
           </div>
 
           <aside class="navigation-controls">
@@ -94,9 +102,9 @@
               <p id="navigation-message">상태를 기다리는 중입니다.</p>
             </div>
             <div class="pose-fields">
-              <label>X (m)<input id="pose-x" type="number" step="0.01" value="0"></label>
-              <label>Y (m)<input id="pose-y" type="number" step="0.01" value="0"></label>
-              <label>Yaw<input id="pose-yaw" type="number" step="0.01" value="0"></label>
+              <label>X (m)<input id="pose-x" type="number" step="0.01" placeholder="지도에서 선택"></label>
+              <label>Y (m)<input id="pose-y" type="number" step="0.01" placeholder="지도에서 선택"></label>
+              <label>Yaw<input id="pose-yaw" type="number" step="0.01" placeholder="드래그로 지정"></label>
             </div>
             <div class="navigation-metrics">
               <div><span>남은 거리</span><strong id="distance-remaining">—</strong></div>

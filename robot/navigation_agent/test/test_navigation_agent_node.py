@@ -87,12 +87,14 @@ class FakeNav2Server(Node):
         feedback.number_of_recoveries = 1
         goal_handle.publish_feedback(feedback)
 
-        if self.mode == "hold":
+        if self.mode in {"hold", "stalled"}:
             deadline = time.monotonic() + 5.0
             while time.monotonic() < deadline:
                 if goal_handle.is_cancel_requested:
                     goal_handle.canceled()
                     return NavigateToPose.Result()
+                if self.mode == "stalled":
+                    goal_handle.publish_feedback(feedback)
                 time.sleep(0.01)
             goal_handle.abort()
             return NavigateToPose.Result()
@@ -192,6 +194,11 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
             Parameter("map_topic", value="/test/map"),
             Parameter("lease_timeout_sec", value=0.3),
             Parameter("nav2_unavailable_timeout_sec", value=0.1),
+            Parameter("goal_progress_timeout_sec", value=0.6),
+            Parameter("goal_feedback_timeout_sec", value=1.0),
+            Parameter("goal_max_duration_sec", value=5.0),
+            Parameter("goal_distance_progress_m", value=0.05),
+            Parameter("goal_yaw_progress_rad", value=0.1),
             Parameter("robot_status_timeout_sec", value=1.0),
             Parameter("safety_status_timeout_sec", value=1.0),
             Parameter("authorization_rate_hz", value=50.0),
@@ -243,6 +250,8 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
     executor.add_node(agent)
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
+    lease_renew_stop = None
+    lease_renew_thread = None
 
     def publish_readiness() -> None:
         robot = RobotStatus()
@@ -398,6 +407,37 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
             == NavigateRobot.Result.OUTCOME_LEASE_EXPIRED
         )
 
+        fake_nav2.mode = "stalled"
+        publish_readiness()
+        stalled_handle = send_goal("stalled-progress")
+        assert stalled_handle.accepted
+        lease.command_id = "stalled-progress"
+        lease_publisher.publish(lease)
+        lease_renew_stop = threading.Event()
+
+        def renew_stalled_lease() -> None:
+            while not lease_renew_stop.wait(0.05):
+                lease_publisher.publish(lease)
+
+        lease_renew_thread = threading.Thread(
+            target=renew_stalled_lease,
+            daemon=True,
+        )
+        lease_renew_thread.start()
+        stalled = _future_result(
+            stalled_handle.get_result_async(),
+            timeout_sec=2.0,
+        )
+        lease_renew_stop.set()
+        lease_renew_thread.join(timeout=1.0)
+        lease_renew_stop = None
+        lease_renew_thread = None
+        assert stalled.status == GoalStatus.STATUS_ABORTED
+        assert stalled.result.outcome == NavigateRobot.Result.OUTCOME_ABORTED
+        assert "Failed to make progress" in stalled.result.message
+        _wait_until(lambda: modes[-1] == MODE_IDLE)
+        assert agent._state == NavigationStatus.STATE_FAILED
+
         fake_nav2.mode = "ignore_cancel"
         publish_readiness()
         nav2_lost_handle = send_goal("nav2-lost")
@@ -417,6 +457,10 @@ def test_navigation_agent_success_cancel_failure_and_lease_expiry() -> None:
         agent._nav_client.server_is_ready = original_server_is_ready
         fake_nav2.release_ignored_goal.set()
     finally:
+        if lease_renew_stop is not None:
+            lease_renew_stop.set()
+        if lease_renew_thread is not None:
+            lease_renew_thread.join(timeout=1.0)
         fake_nav2.release_ignored_goal.set()
         agent.shutdown()
         executor.shutdown(timeout_sec=2.0)

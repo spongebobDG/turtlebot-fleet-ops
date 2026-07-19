@@ -239,6 +239,52 @@ Publisher 공백도 구조와 테스트로 보강하고 재배포했다.
 1. LiDAR 평면보다 낮은 장애물은 작업 전 육안 점검이 필요하다.
 2. 큰 방향 전환을 반복하는 왕복 경로는 recovery·stale 재현과 tuning이 필요하다.
 
+## 후속 회귀: 제자리 방향 목표 비수렴과 로컬 감시 보강
+
+Phase 7 재부팅 수정 배포 뒤 웹 경로를 다시 확인했다. 첫 제자리 시계 방향 약 90도 목표
+`ef055833980d4675a79a83a57c0c6cf0`는 `READY → ACTIVE → SUCCEEDED`, recovery 0회,
+Nav2 error 0으로 약 6초 안에 종료됐다. 두 번째 원래 방향 복귀 목표
+`1c074134f54e4431b4319682c5fc86c8`는 같은 위치에서 yaw만 바꾼 요청이었지만 76.4초 동안
+`ACTIVE`로 남았다. controller journal은 약 1.3초마다 `Passing new path to controller`를
+기록했고 map-frame 자세는 목표 yaw로 수렴하지 않았다. odom은 계속 변했기 때문에 설치된 Nav2
+progress checker는 실패를 선언하지 않았다.
+
+운영자 취소 요청은 `ACTIVE → CANCELED`로 수락됐고 active command가 비었으며 최종 odom은
+선속도 0, 각속도 약 0.001rad/s였다. 추가 이동은 하지 않았다. 당시 라이다 최단 거리가 다시
+0.162m까지 줄어 현장 여유도 충분하지 않았다.
+
+동시에 수집한 명령 경로는 다음과 같다.
+
+| 토픽 | 표본 | 비영점 표본 | 최대 선속도 | 최대 각속도 | Publisher |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `/motion/navigation/cmd_vel` | 782 | 782 | 0.05m/s | 0.3rad/s | velocity smoother·behavior server |
+| `/safety/cmd_vel_in` | 908 | 782 | 0.05m/s | 0.3rad/s | motion arbiter |
+| `/cmd_vel` | 909 | 781 | 0.05m/s | 0.3rad/s | safety watchdog 1개 |
+
+속도 clamp와 단일 actuator Publisher는 정상이어도 목표 수렴 실패를 별도로 닫아야 한다는 증거다.
+navigation agent에 map-frame 거리·yaw material progress 20초, feedback 3초, 전체 180초 감시를
+추가했다. 거리 0.05m 또는 yaw 0.1rad가 개선될 때만 진척 창을 갱신하며, 초과 시 downstream을
+취소하고 custom action `FAILED`, motion `IDLE`로 종료한다.
+
+검증 결과는 Windows 지도·뷰포트 10개, 빠른 새 테스트 17개, navigation agent 97개, 전체
+Humble workspace 218개 모두 실패 0이다. domain 142 navigation·Zenoh action·operations smoke와
+ShellCheck·systemd·Windows 스크립트 검증도 통과했다. 별도 계측 노드 시작 순간 CPU 93.7%는
+30초 재측정에서 최소 61.6%, 평균 65.15%, 최대 70.5%, 90% 이상 0회로 일시적이었다.
+
+첫 TB1 배포에서는 새 stalled 통합 테스트가 lease 갱신용 ROS timer를 executor 실행 중 제거하면서
+간헐 race를 만들었다. control PC와 CI에서는 통과했지만 TB1에서 executor thread가
+`InvalidHandle`로 끝나 다음 action 응답이 timeout 됐다. 배포 스크립트는 즉시 실패하고 motion
+서비스를 정지한 채 종료했다. timer entity를 제거하는 대신 별도 갱신 thread를 event로 멈추도록
+바꾸고 격리 domain에서 같은 통합 테스트를 5회 연속 통과시켰다.
+
+실패 배포가 통신 bridge까지 정지해 재시도 preflight가 Zenoh 7447을 거부했으므로, motion profile은
+정지 상태로 유지하고 `tb1-zenoh-bridge.service`만 먼저 복구했다. 두 번째 배포는 TB1 전체 테스트와
+감사 수집을 통과했고 코드 커밋 `cfab5f9`가 설치됐다. 배포 profile은 의도대로 IDLE이어서 저장 지도
+navigation profile을 별도로 시작했다. 이전 비수렴 AMCL 자세는 자동 복원하지 않았다. 따라서
+초기 pose 전 상태는 `UNAVAILABLE`, active command 없음, 선속도 0이며 목표 API는
+`409 Nav2 is not ready`로 거부됐다. 설치 설정에서 20초·3초·180초 supervision 값을 확인했고
+`/cmd_vel` Publisher는 watchdog 하나였다.
+
 Phase 5 완료 시점에는 Phase 6가 robotless 상태여서 TB1 전체 MVP를 완료로 표시하지 않았다.
 같은 날 이어서 실제 task와 복구를 검증한 결과는
 [Phase 6 TB1 작업·복구 수용 시험](2026-07-19-phase-6-tb1-operations-acceptance.md)에 기록했고,

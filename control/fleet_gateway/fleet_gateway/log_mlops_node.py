@@ -19,6 +19,7 @@ from fleet_gateway.log_mlops import (
     analyze_records,
     model_not_ready_status,
     pipeline_paths,
+    read_recent_jsonl,
     read_json,
     write_json,
 )
@@ -76,7 +77,14 @@ class RosoutMlopsNode(Node):
         )
         self.create_subscription(Log, "/fleet/rosout", self._on_log, qos)
         self.create_timer(15.0, self._publish_inference)
-        write_json(self._paths["status"], model_not_ready_status())
+        self._restore_recent_records()
+        self._publish_inference()
+
+    def _restore_recent_records(self) -> None:
+        """Keep the recent analysis window across monitor restarts."""
+        candidates = sorted(self._paths["raw"].glob("live-*.jsonl"))[-2:]
+        cutoff = time.time() - self._lookback_sec
+        self._records.extend(read_recent_jsonl(candidates, cutoff))
 
     def _on_log(self, message: Log) -> None:
         record = rosout_message_to_record(message)

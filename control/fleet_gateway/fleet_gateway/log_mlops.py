@@ -42,7 +42,12 @@ PATTERNS = {
         re.I,
     ),
     "navigation_failure": re.compile(
-        r"nav(?:2|igation).*(?:fail|abort|reject)|goal.*(?:fail|abort|reject)",
+        r"nav(?:2|igation).*(?:fail|abort|reject)"
+        r"|goal.*(?:fail|abort|reject)"
+        r"|planning algorithm.*fail"
+        r"|failed to make progress"
+        r"|collision ahead"
+        r"|(?:spin|backup|follow_path).*fail",
         re.I,
     ),
     "restart": re.compile(
@@ -54,6 +59,43 @@ PATTERNS = {
         re.I,
     ),
 }
+
+OPERATIONAL_SIGNAL_PATTERNS = (
+    (
+        "initial_pose_wait",
+        "초기 위치 대기",
+        re.compile(
+            r"timed out waiting for transform.*(?:base_link|map)"
+            r"|AMCL cannot publish.*set the initial pose",
+            re.I,
+        ),
+    ),
+    (
+        "control_deadline_miss",
+        "제어 주기 지연",
+        re.compile(r"control loop missed|tick rate .* exceeded", re.I),
+    ),
+    (
+        "planning_failure",
+        "경로 생성 실패",
+        re.compile(r"failed to create plan|failed to generate a valid path", re.I),
+    ),
+    (
+        "collision_guard",
+        "충돌 방지 개입",
+        re.compile(r"collision ahead", re.I),
+    ),
+    (
+        "progress_failure",
+        "주행 진척 없음",
+        re.compile(r"failed to make progress", re.I),
+    ),
+    (
+        "message_drop",
+        "센서 메시지 지연·유실",
+        re.compile(r"dropping message|sample.*lost|message.*lost", re.I),
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -184,6 +226,20 @@ def extract_features(records: Sequence[LogRecord]) -> Dict[str, float]:
         "restart_rate": rate("restart"),
         "dropped_message_rate": rate("dropped_message"),
     }
+
+
+def extract_operational_signals(
+    records: Sequence[LogRecord],
+) -> List[Dict[str, Any]]:
+    """Summarize safety-relevant signatures while the model matures."""
+    signals = []
+    messages = [record.message for record in records]
+    for name, label, pattern in OPERATIONAL_SIGNAL_PATTERNS:
+        count = sum(bool(pattern.search(message)) for message in messages)
+        if count:
+            signals.append({"signal": name, "label": label, "count": count})
+    signals.sort(key=lambda item: (-item["count"], item["signal"]))
+    return signals
 
 
 def build_dataset(
@@ -333,13 +389,20 @@ def analyze_records(
 ) -> Dict[str, Any]:
     """Build the API status payload for one live log window."""
     timestamp = observed_at or utc_now()
+    operational_signals = extract_operational_signals(records)
     if model is None:
         status = model_not_ready_status(timestamp)
         status["log_count"] = len(records)
         status["feature_values"] = extract_features(records)
+        status["operational_signals"] = operational_signals
+        signal_summary = ", ".join(
+            f"{item['label']} {item['count']}회"
+            for item in operational_signals[:3]
+        )
         status["message"] = (
             f"최근 로그 {len(records)}건을 수집했습니다. "
             "검토·승격된 Production 모델이 없습니다."
+            + (f" 현재 운영 신호: {signal_summary}." if signal_summary else "")
         )
         return status
     features = extract_features(records)
@@ -357,6 +420,7 @@ def analyze_records(
         "log_count": len(records),
         "feature_values": features,
         "top_features": score["top_features"],
+        "operational_signals": operational_signals,
         "message": "운영 로그 패턴 이상이 감지되었습니다."
         if state == "ANOMALY"
         else "최근 ROS 2 운영 로그 패턴이 기준 범위입니다.",
@@ -376,6 +440,7 @@ def model_not_ready_status(observed_at: Optional[str] = None) -> Dict[str, Any]:
         "log_count": 0,
         "feature_values": {},
         "top_features": [],
+        "operational_signals": [],
         "message": "검토·승격된 Production 로그 모델이 없습니다.",
     }
 
@@ -476,6 +541,31 @@ def read_jsonl(path: Path) -> List[LogRecord]:
             continue
         payload = json.loads(line)
         records.append(LogRecord(**payload))
+    return records
+
+
+def read_recent_jsonl(
+    paths: Iterable[Path],
+    cutoff_timestamp: float,
+) -> List[LogRecord]:
+    """Restore a recent inference window, skipping torn JSONL records."""
+    records = []
+    for path in paths:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+                record = LogRecord(**payload)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if record.timestamp >= cutoff_timestamp:
+                records.append(record)
+    records.sort(key=lambda record: record.timestamp)
     return records
 
 
