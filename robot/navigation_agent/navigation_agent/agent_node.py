@@ -1,6 +1,7 @@
 """Robot-local proxy that owns Nav2 goals and enforces fleet leases."""
 
 import math
+import signal
 import threading
 import time
 from typing import Optional
@@ -1139,7 +1140,18 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        _ignore_repeated_sigint_during_cleanup()
         _cleanup_navigation_agent(node, executor)
+
+
+def _ignore_repeated_sigint_during_cleanup() -> None:
+    """Let the first SIGINT stop spin without aborting bounded cleanup."""
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except (ValueError, OSError):
+        # signal.signal is only valid in the main interpreter thread and may
+        # race with interpreter shutdown in embedded test environments.
+        pass
 
 
 def _cleanup_navigation_agent(node, executor) -> None:

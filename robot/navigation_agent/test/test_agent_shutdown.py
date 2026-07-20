@@ -1,6 +1,12 @@
 """Regression tests for navigation agent process shutdown."""
 
-from navigation_agent.agent_node import NavigationAgent, _cleanup_navigation_agent
+import signal
+
+from navigation_agent.agent_node import (
+    NavigationAgent,
+    _cleanup_navigation_agent,
+    _ignore_repeated_sigint_during_cleanup,
+)
 
 
 def test_shutdown_skips_publish_after_ros_context_is_invalid(monkeypatch):
@@ -93,3 +99,15 @@ def test_process_cleanup_tolerates_launch_interrupts(monkeypatch):
         "destroy",
         "rclpy",
     ]
+
+
+def test_cleanup_ignores_repeated_sigint(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "navigation_agent.agent_node.signal.signal",
+        lambda number, handler: calls.append((number, handler)),
+    )
+
+    _ignore_repeated_sigint_during_cleanup()
+
+    assert calls == [(signal.SIGINT, signal.SIG_IGN)]
