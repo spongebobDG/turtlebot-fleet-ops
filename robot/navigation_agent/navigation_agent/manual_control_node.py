@@ -160,7 +160,8 @@ class ManualControlNode(Node):
         if not self._mode_client.service_is_ready():
             self._mode_client.wait_for_service(timeout_sec=0.05)
         if not self._mode_client.service_is_ready():
-            self.get_logger().error("Motion-mode service is unavailable")
+            if self._session_id:
+                self.get_logger().error("Motion-mode service is unavailable")
             self._next_mode_retry_at = now + 0.25
             return
         request = SetMotionMode.Request()

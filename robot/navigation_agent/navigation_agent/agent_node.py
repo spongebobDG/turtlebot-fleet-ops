@@ -1123,7 +1123,6 @@ class NavigationAgent(Node):
             return
         try:
             self._publish_authorization(force=False)
-            self._set_motion_mode_nowait(MODE_IDLE)
         except RuntimeError:
             # The context can close between the check and the publish when a
             # launch process is stopping all children concurrently.
@@ -1147,7 +1146,7 @@ def _cleanup_navigation_agent(node, executor) -> None:
     """Best-effort cleanup after launch has delivered SIGINT to all children."""
     for cleanup in (
         node.shutdown,
-        executor.shutdown,
+        lambda: executor.shutdown(timeout_sec=1.0),
         lambda: executor.remove_node(node),
         node.destroy_node,
     ):
