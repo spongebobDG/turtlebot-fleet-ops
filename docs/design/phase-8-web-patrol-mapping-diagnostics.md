@@ -156,8 +156,8 @@ Zenoh bridge 실행을 70초 감시하는 동안 timestamp rejection과 ERROR가
 2. 각 웨이포인트의 이동 방향과 최종 yaw를 분리해 한 loop를 완료했고, 명시적 취소와 Gateway
    재시작 뒤 이전 순찰이 재개되지 않음을 확인했다.
 3. 실제 deadman·lease·e-stop 로그가 incident 근거와 연결됨을 확인했다. 성공 경로의 INFO
-   메시지는 root-cause 후보에서 제외해 startup lease 설정과 일시적 Rotation Shim TF 메시지를
-   장애로 과대 표시하지 않는다.
+   메시지는 root-cause 후보에서 제외해 startup lease 설정, 일시적 Rotation Shim TF 메시지와
+   costmap plugin 초기화를 장애로 과대 표시하지 않는다.
 4. 600초 연속 순찰에서 11개 loop를 진행했다. 30초 표본 CPU는 66.1~73.6%, 메모리는
    27.1~27.3%, LiDAR 최소는 0.519m, fault는 0이었다. `/cmd_vel` Publisher는
    `safety_watchdog` 하나였다.

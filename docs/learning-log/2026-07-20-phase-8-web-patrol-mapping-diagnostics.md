@@ -337,10 +337,12 @@ odometry는 선속도 `-0.0005m/s`, 각속도 `0.0002rad/s`로 사실상 0이었
 ### 성공 경로 INFO를 장애로 승격한 MLOps 오탐 보정
 
 최근 raw 로그 incident에서 `Navigation agent ready: ... lease timeout=2.0s`가 `network_lease`로,
-성공 순찰 중 Rotation Shim이 처리한 INFO transform 메시지가 localization/progress 원인으로
-과대 집계됐다. raw JSONL과 anomaly feature는 보존하되 이 세 root-cause 분류는 WARNING 이상만
-incident로 승격하도록 바꿨다. `lease expired`와 실제 transform warning/error는 계속 잡힌다.
-성공 INFO 억제와 실제 warning/error 보존을 포함한 `fleet_gateway` 패키지 테스트 96개가 통과했다.
+성공 순찰 중 Rotation Shim이 처리한 INFO transform 메시지가 localization/progress 원인으로,
+costmap의 `Using plugin obstacle_layer` 초기화 INFO가 collision 원인으로 과대 집계됐다. raw
+JSONL과 anomaly feature는 보존하되 이 네 root-cause 분류는 WARNING 이상만 incident로
+승격하도록 바꿨다. `lease expired`, 실제 transform warning/error와 LiDAR clearance guard 오류는
+계속 잡힌다. 성공 INFO 억제와 실제 warning/error 보존을 포함한 `fleet_gateway` 패키지 전체
+테스트가 통과했다.
 
 ## 배운 점
 

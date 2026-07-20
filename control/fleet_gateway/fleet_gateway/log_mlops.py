@@ -113,7 +113,7 @@ ROOT_CAUSE_RULES = (
         "장애물·여유거리 차단",
         re.compile(
             r"collision ahead|obstacle|costmap.*(?:lethal|collision)"
-            r"|no valid trajector",
+            r"|no valid trajector|(?:lidar )?clearance.*(?:below|limit)",
             re.I,
         ),
         "실물 장애물과 LiDAR 사각지대, local costmap 표시를 함께 확인하세요.",
@@ -182,7 +182,12 @@ ROOT_CAUSE_RULES = (
 # log and anomaly features, but are not strong enough to become a root-cause
 # incident without WARNING/ERROR severity.
 ROOT_CAUSE_REQUIRES_WARNING = frozenset(
-    {"localization_tf", "navigation_progress", "network_lease"}
+    {
+        "collision_clearance",
+        "localization_tf",
+        "navigation_progress",
+        "network_lease",
+    }
 )
 
 

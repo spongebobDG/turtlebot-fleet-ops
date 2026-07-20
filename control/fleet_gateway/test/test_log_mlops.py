@@ -402,6 +402,7 @@ def test_root_cause_diagnosis_ignores_success_path_info_messages():
             "a rotational collision was detected, or TF failed to transform "
             "into base frame! what(): Failed to transform pose to base frame!",
         ),
+        record(102, "INFO", 'Using plugin "obstacle_layer"'),
     ]
 
     assert diagnose_records(records) == []
@@ -416,6 +417,14 @@ def test_root_cause_diagnosis_keeps_warning_level_tf_and_lease_failures():
     causes = {item["cause"] for item in diagnose_records(records)}
 
     assert causes == {"localization_tf", "network_lease"}
+
+
+def test_root_cause_diagnosis_keeps_clearance_guard_errors():
+    diagnoses = diagnose_records(
+        [record(100, "ERROR", "LiDAR clearance fell below navigation limit")]
+    )
+
+    assert [item["cause"] for item in diagnoses] == ["collision_clearance"]
 
 
 def test_incident_artifact_links_raw_evidence_to_model_status(tmp_path):

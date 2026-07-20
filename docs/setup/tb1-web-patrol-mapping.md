@@ -243,6 +243,7 @@ clearance guard가 목표를 취소하는 것이 정상이다. 이 기록은 센
 로봇을 다시 내려놓은 뒤 초기 위치가 실제 위치와 맞는지 확인하고, 물리 개입이 없는 새 600초
 구간만 자원 수용 근거로 사용한다.
 
-MLOps incident에서 startup의 `lease timeout` 설정이나 성공 주행 중 INFO 수준 Rotation Shim
-transform 메시지가 원인 후보로 보이면 현재 runtime과 규칙 버전을 확인한다. 원본 로그는
-보존하지만 localization/progress/network root cause는 WARNING 이상만 운영 incident로 승격한다.
+MLOps incident에서 startup의 `lease timeout` 설정, costmap plugin 초기화나 성공 주행 중 INFO
+수준 Rotation Shim transform 메시지가 원인 후보로 보이면 현재 runtime과 규칙 버전을 확인한다.
+원본 로그는 보존하지만 localization/progress/network/collision root cause는 WARNING 이상만
+운영 incident로 승격한다.
