@@ -176,11 +176,11 @@ ROOT_CAUSE_RULES = (
     ),
 )
 
-# Some Nav2 components report caught, transient transform exceptions at INFO
-# while successfully continuing, and the navigation agent announces its lease
-# timeout configuration at startup.  Those records remain in the immutable raw
-# log and anomaly features, but are not strong enough to become a root-cause
-# incident without WARNING/ERROR severity.
+# Some Nav2 components report caught, transient transform exceptions or plugin
+# initialization at INFO while successfully continuing, and the navigation
+# agent announces its lease timeout configuration at startup.  Those records
+# remain in the immutable raw log and anomaly features, but are not strong
+# enough to become a root-cause incident without WARNING/ERROR severity.
 ROOT_CAUSE_REQUIRES_WARNING = frozenset(
     {
         "collision_clearance",

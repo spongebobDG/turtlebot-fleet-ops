@@ -247,3 +247,15 @@ MLOps incident에서 startup의 `lease timeout` 설정, costmap plugin 초기화
 수준 Rotation Shim transform 메시지가 원인 후보로 보이면 현재 runtime과 규칙 버전을 확인한다.
 원본 로그는 보존하지만 localization/progress/network/collision root cause는 WARNING 이상만
 운영 incident로 승격한다.
+
+계획된 NAVIGATION→IDLE 전환 뒤에는 다음처럼 Python child가 clean exit했는지 확인한다.
+
+```bash
+journalctl --user -u tb1-navigation.service --since '2 minutes ago' --no-pager
+```
+
+`manual_control_node`와 `navigation_agent_node`에는 traceback, `KeyboardInterrupt`, 미회수 coroutine,
+`context is invalid`, `process has died`가 없어야 한다. Nav2 Humble의 planner lifecycle은 전체
+launch context가 동시에 닫히며 transition ERROR를 남길 수 있다. profile `IDLE`, systemd 정상
+stop과 요청 시각이 일치할 때만 알려진 종료 제한사항으로 분류하고, 그 외에는 실제 crash로
+조사한다.
