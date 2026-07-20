@@ -103,7 +103,7 @@ ROOT_CAUSE_RULES = (
         "위치추정·TF 불일치",
         re.compile(
             r"AMCL cannot publish|set the initial pose|transform.*(?:fail|time)"
-            r"|frame ID.*(?:map|odom)|extrapolation",
+            r"|fail(?:ed)? to transform|frame ID.*(?:map|odom)|extrapolation",
             re.I,
         ),
         "초기 위치, map→odom TF 시각, AMCL 센서 정합을 확인하세요.",
@@ -132,7 +132,7 @@ ROOT_CAUSE_RULES = (
         "network_lease",
         "Gateway·Zenoh·lease 단절",
         re.compile(
-            r"lease.*(?:expired|timeout|stale)|disconnect|unreachable"
+            r"lease.*(?:expired|stale)|disconnect|unreachable"
             r"|connection.*(?:lost|closed|refused)|zenoh.*(?:fail|error)",
             re.I,
         ),
@@ -174,6 +174,15 @@ ROOT_CAUSE_RULES = (
         re.compile(r"emergency stop active|e-?stop|watchdog.*timeout", re.I),
         "정지 원인을 해소한 뒤 IDLE·0 입력에서만 수동으로 재무장하세요.",
     ),
+)
+
+# Some Nav2 components report caught, transient transform exceptions at INFO
+# while successfully continuing, and the navigation agent announces its lease
+# timeout configuration at startup.  Those records remain in the immutable raw
+# log and anomaly features, but are not strong enough to become a root-cause
+# incident without WARNING/ERROR severity.
+ROOT_CAUSE_REQUIRES_WARNING = frozenset(
+    {"localization_tf", "navigation_progress", "network_lease"}
 )
 
 
@@ -328,7 +337,15 @@ def diagnose_records(
     """Rank explainable root-cause hypotheses with bounded evidence."""
     diagnoses = []
     for cause, label, pattern, recommendation in ROOT_CAUSE_RULES:
-        matches = [record for record in records if pattern.search(record.message)]
+        matches = [
+            record
+            for record in records
+            if pattern.search(record.message)
+            and (
+                cause not in ROOT_CAUSE_REQUIRES_WARNING
+                or record.severity.upper() in {"WARNING", "WARN", "ERROR", "FATAL"}
+            )
+        ]
         if not matches:
             continue
         loggers = {record.logger for record in matches}

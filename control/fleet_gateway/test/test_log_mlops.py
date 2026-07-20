@@ -388,6 +388,36 @@ def test_root_cause_diagnosis_keeps_evidence_and_recommendation():
     assert progress["evidence"][-1]["logger"] == "fleet_gateway"
 
 
+def test_root_cause_diagnosis_ignores_success_path_info_messages():
+    records = [
+        record(
+            100,
+            "INFO",
+            "Navigation agent ready: robot=tb1, lease timeout=2.0s",
+        ),
+        record(
+            101,
+            "INFO",
+            "Rotation Shim Controller was unable to find a goal point, "
+            "a rotational collision was detected, or TF failed to transform "
+            "into base frame! what(): Failed to transform pose to base frame!",
+        ),
+    ]
+
+    assert diagnose_records(records) == []
+
+
+def test_root_cause_diagnosis_keeps_warning_level_tf_and_lease_failures():
+    records = [
+        record(100, "WARNING", "Failed to transform pose to base frame"),
+        record(101, "ERROR", "Navigation lease expired after timeout"),
+    ]
+
+    causes = {item["cause"] for item in diagnose_records(records)}
+
+    assert causes == {"localization_tf", "network_lease"}
+
+
 def test_incident_artifact_links_raw_evidence_to_model_status(tmp_path):
     root = tmp_path / "ros2-logs"
     status_path = root / "status" / "latest.json"

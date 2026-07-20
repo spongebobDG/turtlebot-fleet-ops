@@ -219,3 +219,38 @@ authorization timeout은 전달이 사라졌을 때 정지시키는 조건이다
 - MLOps 모델 상태와 원인 규칙이 안전 제어와 분리된 이유
 - `/cmd_vel` non-zero와 실제 odometry 변화를 함께 봐야 하는 이유
 - 거의 반대 방향에서 rotation shim이 DWB에 제어를 넘기는 조건
+
+## 12. 순찰 이동 방향과 최종 yaw를 분리하는 이유
+
+웨이포인트의 yaw는 그 지점에 도착한 뒤 바라볼 최종 방향이다. 반면 경로 추종 중 controller가
+필요로 하는 방향은 현재 위치에서 웨이포인트로 향하는 진행 방향이다. 두 방향의 차이가 크면
+하나의 pose 목표 안에서 DWB의 경로 정렬과 goal 정렬이 경쟁해 저속 로봇이 짧게 끊기거나
+회전만 반복할 수 있다.
+
+Phase 8 순찰 worker는 차이가 0.15rad보다 클 때 두 action으로 분리한다.
+
+```text
+현재 위치 -> 웨이포인트 위치 + 진행 heading으로 translation
+translation 성공 -> 실제 도착 위치 + 사용자가 지정한 yaw로 orientation
+```
+
+두 번째 목표는 미리 저장한 좌표가 아니라 첫 목표가 끝난 실제 map pose를 사용한다. 취소,
+e-stop, lease 만료 또는 Gateway 재시작이 두 단계 사이에 발생하면 다음 목표를 보내지 않으며
+자동 재개하지 않는다. 실차 한 loop는 64.11초에 완료됐고 translation과 orientation 상태가
+각각 관찰됐다.
+
+## 13. MLOps 원인 규칙은 로그 문구뿐 아니라 심각도를 봐야 한다
+
+`lease timeout=2.0s`는 장애가 아니라 navigation agent의 시작 설정이다. Rotation Shim도
+새 path 전환 중 잡아서 처리한 transform 예외를 INFO로 남길 수 있다. 단순 문자열 규칙은 이를
+각각 network lease 단절과 localization 실패로 과대 집계한다.
+
+원본 로그와 anomaly feature는 삭제하지 않되 localization/TF, navigation progress,
+network lease root-cause 후보는 WARNING 이상에서만 생성한다. 실제 `lease expired`, transform
+warning/error는 계속 진단한다. 즉 데이터 보존과 운영 경보 승격을 분리한다. 이 필터는 제어에
+영향을 주지 않으며 테스트에서 성공 경로 INFO는 0건, 실제 warning/error 원인은 유지됨을
+검증했다.
+
+600초 순찰의 CPU 표본이 66.1~73.6%, 메모리가 27.1~27.3%였고 fault가 없었다고 해서 모든
+load average spike를 숨기지는 않는다. 단발 `Control loop missed`는 raw evidence로 보존하고,
+90% CPU·메모리 경고가 지속되지 않았다는 수용 판정과 별도로 기록한다.

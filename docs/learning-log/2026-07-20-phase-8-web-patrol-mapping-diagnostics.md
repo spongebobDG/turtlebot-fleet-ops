@@ -4,7 +4,7 @@
 
 단계: Phase 8
 
-진행 상태: 실차 목적지 yaw·평활화 검증 완료, 나머지 Phase 8 실차 검증 진행 중
+진행 상태: Phase 8 구현·자동 검증·TB1 실차 수용 시험 완료
 
 ## 오늘의 목표
 
@@ -275,6 +275,73 @@ smoother, arbiter, watchdog, 최종 `/cmd_vel`까지 기록한 최대 명령 각
 활성 command는 없는 상태다. Draft PR #14의 `Humble build and test`도 커밋 `be9cfe4`에서
 통과했다.
 
+### 지도 저장·운영 원본 복원과 AMCL 재기동
+
+MAPPING 프로필에서 안전 deadman 수동 조종으로 새 scan을 수집하고 map yaml/pgm과 pose graph를
+저장했다. Zenoh 응답이 저장 도중 끊겨 HTTP 요청은 오래 대기했지만, profile manager의 저장 완료
+상태와 네 파일을 다시 읽어 검증한 경우에만 Gateway가 성공으로 처리하도록 보강했다. 수정 후
+저장 API는 95.251초 뒤 HTTP 202를 반환했다.
+
+별도 acceptance 디렉터리의 생성 지도 validator 결과는 다음과 같다.
+
+| 항목 | 값 |
+| --- | ---: |
+| 크기 | 53 × 112 cell |
+| known cell | 561 |
+| known 비율 | 0.0945 |
+| occupied / free | 63 / 498 |
+| pose graph | 파일과 data 모두 존재 |
+
+운영 지도는 시험 전 backup에서 복원했고 yaml, pgm, posegraph, posegraph.data 네 파일의 SHA-256이
+시험 전과 정확히 같았다. NAVIGATION 프로필 재기동 뒤 웹 초기 위치를 적용해 AMCL과 Nav2가
+ready가 됐고 production map이 바뀌지 않았음을 확인했다. 실제 공간 지도는 Git에 넣지 않았다.
+
+### 순찰 translation과 최종 yaw 분리
+
+경로 진행 heading과 사용자가 요청한 최종 yaw 차이가 0.15rad보다 크면 하나의 pose에서 두 제어
+목표가 경쟁했다. 순찰 worker를 다음처럼 바꿨다.
+
+1. 현재 pose에서 웨이포인트까지의 진행 heading으로 translation goal 실행
+2. 성공한 실제 도착 x/y에서 사용자가 지정한 yaw로 orientation-only goal 실행
+3. 두 단계 사이 취소·e-stop·lease·재시작이 있으면 다음 목표를 보내지 않음
+
+웨이포인트 `(-0.203470388, -0.111203484, 0.814565380)`과
+`(0.002384995, 0.107024747, -2.327027273)`의 한 loop는 64.11초에 `COMPLETED`됐다.
+LiDAR 최소는 약 0.508m, odometry 최대 선속도는 0.04758m/s, 최대 각속도는 0.25711rad/s였다.
+명시적 취소는 남은 웨이포인트를 시작하지 않았고 Gateway 종료 뒤 systemd가 복구돼도 이전
+순찰은 재개되지 않았다.
+
+### 600초 순찰과 `/cmd_vel` 단일 소유권
+
+첫 장시간 시험은 216.4초에 `0.176m < 0.190m` clearance로 안전 취소됐다. 이 값을 단발 센서
+노이즈로 보고 필터를 완화하려 했으나, 작업자가 전원선을 정리하려 로봇을 잠시 들었다는 물리
+개입이 확인됐다. 따라서 guard 동작은 정상이며 기준을 변경하지 않았다. 배터리로 전환하고
+로봇을 바닥에 내려놓은 뒤 물리 개입 없는 새 시험을 수행했다.
+
+600초 시험은 20 loop 순찰을 실행한 뒤 정확히 600초에 명시적으로 취소하고 e-stop을 적용했다.
+11번째 loop까지 진행했으며 30초 표본은 다음 범위였다.
+
+| 측정 | 결과 |
+| --- | ---: |
+| CPU | 66.1~73.6% |
+| 메모리 | 27.1~27.3% |
+| load average | 4.96~9.04 |
+| LiDAR 최소 | 0.519m |
+| 배터리 | 12.19V → 12.00V |
+| robot fault | 0건 |
+
+종료 결과는 patrol `CANCELED`, navigation `CANCELED`, e-stop active, motion-armed false였고
+odometry는 선속도 `-0.0005m/s`, 각속도 `0.0002rad/s`로 사실상 0이었다. ROS graph에서
+`/cmd_vel` Publisher는 `safety_watchdog` 하나, subscriber는 `turtlebot3_node` 하나였다.
+
+### 성공 경로 INFO를 장애로 승격한 MLOps 오탐 보정
+
+최근 raw 로그 incident에서 `Navigation agent ready: ... lease timeout=2.0s`가 `network_lease`로,
+성공 순찰 중 Rotation Shim이 처리한 INFO transform 메시지가 localization/progress 원인으로
+과대 집계됐다. raw JSONL과 anomaly feature는 보존하되 이 세 root-cause 분류는 WARNING 이상만
+incident로 승격하도록 바꿨다. `lease expired`와 실제 transform warning/error는 계속 잡힌다.
+성공 INFO 억제와 실제 warning/error 보존을 포함한 `fleet_gateway` 패키지 테스트 96개가 통과했다.
+
 ## 배운 점
 
 “부드럽게 움직인다”는 요구는 단순히 timeout을 늘리는 문제가 아니었다. command 보간과
@@ -302,16 +369,15 @@ logger·message 근거, 확인 순서를 연결해야 작업자가 판단에 사
 - [x] 현재 WSL·TB1 시각 차이 500 ms 미만 및 새 bridge 오류 없음 확인
 - [x] Windows Time 외부 NTP 영구 설정과 즉시 보정 (Windows +0.003초, 새 bridge 70초 오류 0건)
 - [x] deadman·Gateway·Zenoh 단절 정지 시간 측정 (최종 0.301~0.305초, 무재개)
-- [ ] 새 환경 매핑·저장·AMCL 재기동
-- [ ] 실차 순찰·취소·비재개와 incident 확인
-- [ ] 10분 주행 CPU·메모리 및 단일 `/cmd_vel` Publisher 기록
+- [x] 새 환경 매핑·저장·AMCL 재기동과 운영 원본 checksum 복원
+- [x] 실차 순찰·취소·비재개와 incident 확인
+- [x] 600초 주행 CPU·메모리 및 단일 `/cmd_vel` Publisher 기록
 
-## 남은 시간
+## 완료 상태
 
-목적지 yaw·평활화와 deadman 단절 검증을 제외한 남은 실차 검증은 새로운 결함이 없다면 약
-2~3시간으로 예상한다. 매핑·재기동 35~50분, 순찰 30~45분, 남은 장애·incident 20~35분,
-10분 주행과 기록 20~30분에 현장 재배치 여유를 포함한 값이다. localization 또는 Zenoh
-재조정이 다시 필요하면 1~2시간을 추가한다.
+Phase 8의 필수 실차 항목과 측정 기록을 모두 완료했다. 이후 작업은 Production 모델의 장기 drift,
+다른 크기의 현장 지도와 저상 장애물 같은 운영 확장 backlog이며 Phase 8 완료 조건은 아니다.
+TB2와 다중 로봇 할당도 현재 TB1 단일 로봇 MVP 범위에 포함하지 않는다.
 
 ## 관련 문서
 

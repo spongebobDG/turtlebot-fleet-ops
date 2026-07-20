@@ -227,3 +227,22 @@ TF, 센서와 systemd 로그를 함께 확인한다.
 
 새 결함이 없으면 총 3~4시간이다. localization이나 Zenoh를 다시 조정하면 1~2시간을 추가로
 잡는다. 모든 로그와 측정값을 학습 일지에 기록한 뒤에만 Phase 8을 완료로 바꾼다.
+
+### 2026-07-20 최종 실차 수용 기록
+
+- map yaml/pgm과 pose graph 저장·검증, 운영 원본 checksum 복원, NAVIGATION·AMCL 재기동 통과
+- 최종 yaw 분리 순찰 한 loop 완료, 명시적 취소와 Gateway 재시작 후 무재개 통과
+- 단일 manual 갱신·Gateway·Zenoh 단절 정지: 각각 0.301초, 0.304초, 0.305초
+- 600초 순찰: 11개 loop 진행, CPU 30초 표본 66.1~73.6%, 메모리 27.1~27.3%,
+  LiDAR 최소 표본 0.519m, fault 0
+- 종료: patrol `CANCELED`, navigation `CANCELED`, e-stop active, motion-armed false
+- `/cmd_vel`: Publisher 1개 `safety_watchdog`, subscriber 1개 `turtlebot3_node`
+
+첫 장시간 시험 중 로봇을 들어 케이블을 정리하면 LiDAR가 바닥이나 주변 물체를 가까이 감지하고
+clearance guard가 목표를 취소하는 것이 정상이다. 이 기록은 센서 노이즈로 필터링하지 않는다.
+로봇을 다시 내려놓은 뒤 초기 위치가 실제 위치와 맞는지 확인하고, 물리 개입이 없는 새 600초
+구간만 자원 수용 근거로 사용한다.
+
+MLOps incident에서 startup의 `lease timeout` 설정이나 성공 주행 중 INFO 수준 Rotation Shim
+transform 메시지가 원인 후보로 보이면 현재 runtime과 규칙 버전을 확인한다. 원본 로그는
+보존하지만 localization/progress/network root cause는 WARNING 이상만 운영 incident로 승격한다.
