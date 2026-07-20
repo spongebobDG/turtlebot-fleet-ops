@@ -823,13 +823,17 @@ def create_app(
                     )
                 except asyncio.TimeoutError:
                     continue
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, KeyError):
+            # Starlette 0.20 can raise KeyError when a browser process exits
+            # abruptly and sends a websocket.disconnect message without code.
             return
 
     resolved_static = Path(static_dir) if static_dir is not None else None
     if resolved_static is not None and resolved_static.is_dir():
         allowed_assets = {
             "app.js",
+            "diagnostics_view.js",
+            "manual_keys.js",
             "map_math.js",
             "map_viewport.js",
             "robot_display.js",

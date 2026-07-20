@@ -9,6 +9,7 @@
           "^/fleet/mapping_status$",
           "^/fleet/safety_status$",
           "^/fleet/rosout$",
+          "^/fleet/web_telemetry$",
           "^/scan$",
           "^/scan_normalized$",
           "^/odom$",
@@ -44,18 +45,19 @@
       },
       "pub_max_frequencies": [
         "^/fleet/rosout$=20",
-        "^/scan$=10",
-        "^/scan_normalized$=10",
+        "^/scan$=5",
+        "^/scan_normalized$=5",
         "^/tf$=30"
       ],
       "pub_priorities": [
         "^/fleet/robot_status$=1:express",
         "^/fleet/navigation_status$=1:express",
         "^/fleet/safety_status$=1:express",
+        "^/fleet/web_telemetry$=1:express",
         "^/fleet/rosout$=5",
         "^/tf$=2",
-        "^/scan_normalized$=3",
-        "^/scan$=4"
+        "^/scan_normalized$=1:express",
+        "^/scan$=1:express"
       ]
     }
   }

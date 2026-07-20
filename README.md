@@ -56,6 +56,22 @@ Publisher는 safety watchdog 하나뿐이며 시험 뒤 e-stop·미재무장 상
 
 정확한 사설 IP, Wi-Fi 정보, 비밀번호와 토큰은 저장소에 기록하지 않는다.
 
+## 웹 관제 실행
+
+관제 PC를 한 번 구성한 뒤에는 PowerShell에서 아래 명령 하나로 실제 TB1용 Gateway를 시작하고
+브라우저를 열 수 있다.
+
+```powershell
+cd C:\project\turtlebot-fleet-ops
+powershell -ExecutionPolicy Bypass -File `
+  .\scripts\control-pc\open_tb1_web_control.ps1
+```
+
+TB1 전원이 나중에 들어와도 bridge가 자동 재연결한다. 웹에서는 deadman 방식의 `W/A/S/D`
+수동 조종, 지도 목적지, 반복 순찰, 매핑과 지도 저장을 사용할 수 있다. 새 PC의 최초 WSL 구성과
+TB1 주소 갱신 방법은 [TB1 웹 수동 조종·순찰·매핑 운영 절차](docs/setup/tb1-web-patrol-mapping.md)를
+따른다.
+
 ## 단계별 진행 상태
 
 | 단계 | 목표 | 상태 |

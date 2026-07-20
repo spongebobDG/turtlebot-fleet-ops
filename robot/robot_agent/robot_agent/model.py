@@ -9,6 +9,8 @@ LEVEL_OK = 0
 LEVEL_WARN = 1
 LEVEL_ERROR = 2
 UNKNOWN_VALUE = -1.0
+CLEARANCE_BLOCKED = "BLOCKED"
+CLEARANCE_CLEARED = "CLEARED"
 
 
 @dataclass(frozen=True)
@@ -145,6 +147,39 @@ def scan_statistics(
     if not valid_ranges:
         return 0, UNKNOWN_VALUE
     return len(valid_ranges), min(valid_ranges)
+
+
+def clearance_transition(
+    warning_active: bool,
+    scan_valid: bool,
+    nearest_range: float,
+    warning_range: float,
+    recovery_hysteresis: float,
+    recovery_count: int = 0,
+    recovery_samples: int = 3,
+) -> Tuple[bool, int, Optional[str]]:
+    """Return a hysteretic clearance state transition for log emission."""
+    if (
+        not math.isfinite(warning_range)
+        or warning_range <= 0.0
+        or not math.isfinite(recovery_hysteresis)
+        or recovery_hysteresis < 0.0
+        or recovery_samples < 1
+        or recovery_count < 0
+    ):
+        raise ValueError("clearance thresholds and sample counts are invalid")
+    if not scan_valid or not math.isfinite(nearest_range) or nearest_range < 0.0:
+        return warning_active, recovery_count, None
+    if warning_active:
+        if nearest_range >= warning_range + recovery_hysteresis:
+            next_count = recovery_count + 1
+            if next_count >= recovery_samples:
+                return False, 0, CLEARANCE_CLEARED
+            return True, next_count, None
+        return True, 0, None
+    if nearest_range < warning_range:
+        return True, 0, CLEARANCE_BLOCKED
+    return False, 0, None
 
 
 def all_finite(values: Sequence[float]) -> bool:

@@ -1,7 +1,9 @@
 """Process entry point that runs ROS and FastAPI together."""
 
 from pathlib import Path
+import multiprocessing
 import os
+from queue import Empty
 import threading
 from typing import List, Optional
 
@@ -13,7 +15,11 @@ import uvicorn
 from fleet_gateway.api import create_app
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.patrol_manager import PatrolManager
-from fleet_gateway.ros_node import FleetGatewayNode
+from fleet_gateway.ros_node import (
+    FleetGatewayNode,
+    run_pose_process,
+    run_scan_process,
+)
 from fleet_gateway.task_manager import NavigationTaskManager
 
 
@@ -21,6 +27,50 @@ def main(args: Optional[List[str]] = None) -> None:
     """Start the ROS executor and serve the dashboard until shutdown."""
     rclpy.init(args=args)
     node = FleetGatewayNode()
+    process_context = multiprocessing.get_context("spawn")
+    telemetry_queue = process_context.Queue(maxsize=32)
+    telemetry_stop = process_context.Event()
+    telemetry_processes = [
+        process_context.Process(
+            target=target,
+            args=(
+                node.telemetry_configuration,
+                telemetry_queue,
+                telemetry_stop,
+            ),
+            name=name,
+            daemon=True,
+        )
+        for target, name in (
+            (run_scan_process, "fleet-gateway-scan"),
+            (run_pose_process, "fleet-gateway-pose"),
+        )
+    ]
+    for telemetry_process in telemetry_processes:
+        telemetry_process.start()
+
+    def receive_telemetry() -> None:
+        while not telemetry_stop.is_set():
+            try:
+                kind, robot_id, snapshot = telemetry_queue.get(timeout=0.2)
+            except Empty:
+                continue
+            try:
+                if kind == "scan":
+                    node.scan_registry.update(robot_id, snapshot)
+                elif kind == "map_pose":
+                    node.registry.update_map_pose(snapshot)
+            except ValueError as error:
+                node.get_logger().error(
+                    f"Rejected {robot_id} {kind} telemetry: {error}"
+                )
+
+    telemetry_thread = threading.Thread(
+        target=receive_telemetry,
+        name="fleet-gateway-telemetry-receiver",
+        daemon=True,
+    )
+    telemetry_thread.start()
     database_path = Path(
         os.environ.get(
             "FLEET_OPERATIONS_DB",
@@ -87,10 +137,19 @@ def main(args: Optional[List[str]] = None) -> None:
         uvicorn.run(app, host=node.web_host, port=node.web_port)
     finally:
         patrol_manager.close()
+        telemetry_stop.set()
+        for telemetry_process in telemetry_processes:
+            telemetry_process.join(timeout=3.0)
+            if telemetry_process.is_alive():
+                telemetry_process.terminate()
+                telemetry_process.join(timeout=2.0)
         executor.shutdown()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+        telemetry_thread.join(timeout=2.0)
+        telemetry_queue.close()
+        telemetry_queue.join_thread()
         ros_thread.join(timeout=2.0)
 
 

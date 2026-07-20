@@ -77,6 +77,8 @@ class NavigationAgent(Node):
         self._active_command_id = ""
         self._reserved_command_id = ""
         self._last_lease_received_at: Optional[float] = None
+        self._lease_receive_count = 0
+        self._max_lease_gap_sec = 0.0
         self._nav_goal_handle = None
         self._nav_result_waiter: Optional[Future] = None
         self._nav2_unavailable_since: Optional[float] = None
@@ -452,7 +454,14 @@ class NavigationAgent(Node):
                 self._active_command_id
                 and message.command_id == self._active_command_id
             ):
-                self._last_lease_received_at = time.monotonic()
+                now = time.monotonic()
+                if self._last_lease_received_at is not None:
+                    self._max_lease_gap_sec = max(
+                        self._max_lease_gap_sec,
+                        now - self._last_lease_received_at,
+                    )
+                self._last_lease_received_at = now
+                self._lease_receive_count += 1
 
     def _on_set_initial_pose(
         self,
@@ -527,6 +536,8 @@ class NavigationAgent(Node):
             self._active_command_id = request.command_id
             self._target_pose = request.target_pose
             self._last_lease_received_at = time.monotonic()
+            self._lease_receive_count = 0
+            self._max_lease_gap_sec = 0.0
             self._state = NavigationStatus.STATE_ACTIVE
             self._message = "Navigation goal accepted"
             self._distance_remaining = -1.0
@@ -774,10 +785,18 @@ class NavigationAgent(Node):
             self._lease_expired = True
             self._state = NavigationStatus.STATE_LEASE_EXPIRED
             self._message = "Fleet navigation lease expired; canceling Nav2"
+            command_id = self._active_command_id
+            lease_age = self._lease_age(now)
+            lease_count = self._lease_receive_count
+            max_gap = self._max_lease_gap_sec
             self._request_downstream_cancel()
         self._publish_authorization(force=False)
         self._set_motion_mode_nowait(MODE_IDLE)
-        self.get_logger().error(self._message)
+        self.get_logger().error(
+            f"{self._message}; robot={self._robot_id} "
+            f"command={command_id} lease_age={lease_age:.3f}s "
+            f"lease_rx_count={lease_count} max_rx_gap={max_gap:.3f}s"
+        )
 
     def _forward_nav_result(self, source: Future, waiter: Future) -> None:
         with self._lock:
@@ -791,9 +810,27 @@ class NavigationAgent(Node):
                 waiter.set_result(result)
 
     def _request_stop(self, reason: str) -> None:
+        if self._cancel_requested:
+            return
         self._cancel_requested = True
         self._cancel_reason = reason
         self._message = reason
+        now = time.monotonic()
+        status = self._robot_status
+        scan_min = (
+            float(status.scan_min_range)
+            if status is not None
+            and math.isfinite(float(status.scan_min_range))
+            else -1.0
+        )
+        self.get_logger().error(
+            "Navigation stop requested "
+            f"robot={self._robot_id} command={self._active_command_id or '-'} "
+            f"reason={reason} lease_age={self._lease_age(now):.3f}s "
+            f"lease_rx_count={self._lease_receive_count} "
+            f"max_rx_gap={self._max_lease_gap_sec:.3f}s "
+            f"scan_min={scan_min:.3f}m"
+        )
         self._request_downstream_cancel()
         self._publish_authorization(force=False)
         self._set_motion_mode_nowait(MODE_IDLE)

@@ -9,6 +9,9 @@ robot_agent:
     battery_timeout_sec: 5.0
     odom_timeout_sec: 1.0
     scan_timeout_sec: 2.0
+    navigation_min_clearance_m: 0.19
+    clearance_log_hysteresis_m: 0.02
+    clearance_recovery_samples: 3
     low_battery_percent: 20.0
     high_cpu_percent: 90.0
     high_memory_percent: 90.0

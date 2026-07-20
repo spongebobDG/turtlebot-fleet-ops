@@ -1,9 +1,13 @@
 """ROS subscriptions and command clients used by the fleet gateway."""
 
+from collections import deque
+from functools import partial
+import json
 import math
+from queue import Full
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 import uuid
 
 from fleet_interfaces.action import NavigateRobot
@@ -22,8 +26,10 @@ from fleet_interfaces.srv import (
 )
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import OccupancyGrid
+import rclpy
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -31,12 +37,33 @@ from rclpy.qos import (
     ReliabilityPolicy,
     qos_profile_sensor_data,
 )
+from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import String
 from std_srvs.srv import SetBool
+from tf2_ros import Buffer, TransformException, TransformListener
 
 from fleet_gateway.map_registry import MapRegistry, map_message_to_dict
 from fleet_gateway.registry import StatusRegistry
 from fleet_gateway.scan_registry import ScanRegistry, scan_message_to_dict
+
+
+def update_clock_offset_estimate(
+    samples: Any,
+    observed_timestamp: float,
+    robot_timestamp: float,
+    observed_monotonic: float,
+    window_sec: float,
+) -> Tuple[float, float, float]:
+    """Separate a clock-offset lower bound from positive transport delay."""
+    raw_delta = float(observed_timestamp) - float(robot_timestamp)
+    samples.append((float(observed_monotonic), raw_delta))
+    cutoff = float(observed_monotonic) - float(window_sec)
+    while samples and samples[0][0] < cutoff:
+        samples.popleft()
+    clock_offset = min(value for _, value in samples)
+    transport_delay = max(0.0, raw_delta - clock_offset)
+    return clock_offset, transport_delay, raw_delta
 
 
 def _stamp_to_dict(stamp: Any) -> Dict[str, int]:
@@ -45,6 +72,53 @@ def _stamp_to_dict(stamp: Any) -> Dict[str, int]:
 
 def _duration_to_seconds(duration: Any) -> float:
     return float(duration.sec) + float(duration.nanosec) / 1_000_000_000.0
+
+
+def transform_message_to_pose_dict(
+    robot_id: str,
+    message: Any,
+) -> Dict[str, Any]:
+    """Convert a map-to-base transform into the web pose contract."""
+    transform = message.transform
+    return {
+        "robot_id": robot_id,
+        "frame_id": str(message.header.frame_id),
+        "stamp": _stamp_to_dict(message.header.stamp),
+        "x": float(transform.translation.x),
+        "y": float(transform.translation.y),
+        "yaw": _quaternion_to_yaw(
+            transform.rotation.z,
+            transform.rotation.w,
+        ),
+    }
+
+
+def web_telemetry_message_to_dict(
+    message: Any,
+    expected_robot_id: str,
+) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    """Parse one reliable robot-side web telemetry envelope."""
+    try:
+        payload = json.loads(str(message.data))
+    except (TypeError, ValueError) as error:
+        raise ValueError("web telemetry must be valid JSON") from error
+    if not isinstance(payload, Mapping) or payload.get("version") != 1:
+        raise ValueError("web telemetry version is unsupported")
+    robot_id = str(payload.get("robot_id", "")).strip()
+    if robot_id != expected_robot_id:
+        raise ValueError("web telemetry robot_id does not match its topic")
+    scan = payload.get("scan")
+    if not isinstance(scan, Mapping):
+        raise ValueError("web telemetry scan is missing")
+    map_pose = payload.get("map_pose")
+    if map_pose is not None and not isinstance(map_pose, Mapping):
+        raise ValueError("web telemetry map_pose must be an object or null")
+    normalized_scan = dict(scan)
+    normalized_scan["robot_id"] = robot_id
+    normalized_pose = None if map_pose is None else dict(map_pose)
+    if normalized_pose is not None:
+        normalized_pose["robot_id"] = robot_id
+    return normalized_scan, normalized_pose
 
 
 def status_message_to_dict(message: RobotStatus) -> Dict[str, Any]:
@@ -223,6 +297,181 @@ def _nonnegative_or_none(value: float) -> Any:
     return number if number is not None and number >= 0.0 else None
 
 
+def _put_telemetry_snapshot(
+    output_queue: Any,
+    kind: str,
+    robot_id: str,
+    snapshot: Dict[str, Any],
+) -> None:
+    try:
+        output_queue.put_nowait((kind, robot_id, snapshot))
+    except Full:
+        # A fresh future sample is preferable to blocking ROS callbacks.
+        pass
+
+
+class _FleetScanProcessNode(Node):
+    """Receive only LiDAR data in an isolated DDS participant."""
+
+    def __init__(
+        self,
+        configuration: Dict[str, List[Any]],
+        output_queue: Any,
+    ) -> None:
+        super().__init__("fleet_gateway_scan")
+        self._output_queue = output_queue
+        self._scan_sent_at: Dict[str, float] = {}
+        robot_ids = configuration["robot_ids"]
+        scan_topics = configuration["scan_topics"]
+        scan_sensor_x = configuration["scan_sensor_x"]
+        scan_sensor_y = configuration["scan_sensor_y"]
+        scan_sensor_yaw = configuration["scan_sensor_yaw"]
+        self._scan_subscriptions = [
+            self.create_subscription(
+                LaserScan,
+                scan_topic,
+                partial(
+                    self._scan_callback,
+                    robot_id,
+                    float(sensor_x),
+                    float(sensor_y),
+                    float(sensor_yaw),
+                ),
+                qos_profile_sensor_data,
+            )
+            for robot_id, scan_topic, sensor_x, sensor_y, sensor_yaw in zip(
+                robot_ids,
+                scan_topics,
+                scan_sensor_x,
+                scan_sensor_y,
+                scan_sensor_yaw,
+            )
+        ]
+
+    def _scan_callback(
+        self,
+        robot_id: str,
+        sensor_x: float,
+        sensor_y: float,
+        sensor_yaw: float,
+        message: LaserScan,
+    ) -> None:
+        now = time.monotonic()
+        if now - self._scan_sent_at.get(robot_id, 0.0) < 0.2:
+            return
+        try:
+            snapshot = scan_message_to_dict(
+                message,
+                sensor_x,
+                sensor_y,
+                sensor_yaw,
+            )
+        except ValueError as error:
+            self.get_logger().error(f"Rejected {robot_id} scan: {error}")
+            return
+        self._scan_sent_at[robot_id] = now
+        _put_telemetry_snapshot(
+            self._output_queue,
+            "scan",
+            robot_id,
+            snapshot,
+        )
+
+
+class _FleetPoseProcessNode(Node):
+    """Resolve map-frame robot poses in an isolated DDS participant."""
+
+    def __init__(
+        self,
+        configuration: Dict[str, List[Any]],
+        output_queue: Any,
+    ) -> None:
+        super().__init__("fleet_gateway_pose")
+        self._output_queue = output_queue
+        robot_ids = configuration["robot_ids"]
+        target_frames = configuration["map_pose_target_frames"]
+        source_frames = configuration["map_pose_source_frames"]
+        self._map_pose_frames = list(zip(
+            robot_ids,
+            target_frames,
+            source_frames,
+        ))
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(
+            self._tf_buffer,
+            self,
+            spin_thread=False,
+        )
+        self._map_pose_timer = self.create_timer(
+            0.2,
+            self._update_map_poses,
+        )
+
+    def _update_map_poses(self) -> None:
+        for robot_id, target_frame, source_frame in self._map_pose_frames:
+            try:
+                transform = self._tf_buffer.lookup_transform(
+                    str(target_frame),
+                    str(source_frame),
+                    Time(),
+                )
+            except TransformException:
+                continue
+            _put_telemetry_snapshot(
+                self._output_queue,
+                "map_pose",
+                robot_id,
+                transform_message_to_pose_dict(robot_id, transform),
+            )
+
+
+def _run_telemetry_node(
+    node_type: Any,
+    configuration: Dict[str, List[Any]],
+    output_queue: Any,
+    stop_event: Any,
+) -> None:
+    rclpy.init(args=[])
+    node = node_type(configuration, output_queue)
+    try:
+        while rclpy.ok() and not stop_event.is_set():
+            rclpy.spin_once(node, timeout_sec=0.2)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def run_scan_process(
+    configuration: Dict[str, List[Any]],
+    output_queue: Any,
+    stop_event: Any,
+) -> None:
+    """Run the LiDAR receiver in its own DDS participant."""
+    _run_telemetry_node(
+        _FleetScanProcessNode,
+        configuration,
+        output_queue,
+        stop_event,
+    )
+
+
+def run_pose_process(
+    configuration: Dict[str, List[Any]],
+    output_queue: Any,
+    stop_event: Any,
+) -> None:
+    """Run the TF pose resolver in its own DDS participant."""
+    _run_telemetry_node(
+        _FleetPoseProcessNode,
+        configuration,
+        output_queue,
+        stop_event,
+    )
+
+
 class FleetGatewayNode(Node):
     """Receive fleet status and expose safety and navigation calls."""
 
@@ -284,11 +533,20 @@ class FleetGatewayNode(Node):
         )
         save_map_names = list(self.get_parameter("save_map_services").value)
         map_topics = list(self.get_parameter("map_topics").value)
+        web_telemetry_topics = list(
+            self.get_parameter("web_telemetry_topics").value
+        )
         scan_topics = list(self.get_parameter("scan_topics").value)
         scan_sensor_x = list(self.get_parameter("scan_sensor_x_m").value)
         scan_sensor_y = list(self.get_parameter("scan_sensor_y_m").value)
         scan_sensor_yaw = list(
             self.get_parameter("scan_sensor_yaw_rad").value
+        )
+        map_pose_target_frames = list(
+            self.get_parameter("map_pose_target_frames").value
+        )
+        map_pose_source_frames = list(
+            self.get_parameter("map_pose_source_frames").value
         )
         self._validate_aligned_lists(
             robot_ids,
@@ -299,10 +557,13 @@ class FleetGatewayNode(Node):
             profile_names,
             save_map_names,
             map_topics,
+            web_telemetry_topics,
             scan_topics,
             scan_sensor_x,
             scan_sensor_y,
             scan_sensor_yaw,
+            map_pose_target_frames,
+            map_pose_source_frames,
         )
         self._estop_clients = {
             robot_id: self.create_client(
@@ -362,38 +623,40 @@ class FleetGatewayNode(Node):
             self.create_subscription(
                 OccupancyGrid,
                 map_topic,
-                lambda message, identifier=robot_id: self._map_callback(
-                    identifier,
-                    message,
-                ),
+                partial(self._map_callback, robot_id),
                 map_qos,
                 callback_group=self._callback_group,
             )
             for robot_id, map_topic in zip(robot_ids, map_topics)
         ]
-        self._scan_subscriptions = [
+        reliable_qos = QoSProfile(
+            depth=5,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self._web_telemetry_subscriptions = [
             self.create_subscription(
-                LaserScan,
-                scan_topic,
-                lambda message, identifier=robot_id, x=sensor_x,
-                y=sensor_y, yaw=sensor_yaw: self._scan_callback(
-                    identifier,
-                    message,
-                    float(x),
-                    float(y),
-                    float(yaw),
-                ),
-                qos_profile_sensor_data,
+                String,
+                telemetry_topic,
+                partial(self._web_telemetry_callback, robot_id),
+                reliable_qos,
                 callback_group=self._callback_group,
             )
-            for robot_id, scan_topic, sensor_x, sensor_y, sensor_yaw in zip(
+            for robot_id, telemetry_topic in zip(
                 robot_ids,
-                scan_topics,
-                scan_sensor_x,
-                scan_sensor_y,
-                scan_sensor_yaw,
+                web_telemetry_topics,
             )
         ]
+        self.telemetry_configuration = {
+            "robot_ids": robot_ids,
+            "map_topics": map_topics,
+            "scan_topics": scan_topics,
+            "scan_sensor_x": scan_sensor_x,
+            "scan_sensor_y": scan_sensor_y,
+            "scan_sensor_yaw": scan_sensor_yaw,
+            "map_pose_target_frames": map_pose_target_frames,
+            "map_pose_source_frames": map_pose_source_frames,
+        }
 
         self._navigation_lock = threading.RLock()
         self._manual_lock = threading.RLock()
@@ -402,13 +665,36 @@ class FleetGatewayNode(Node):
         self._active_navigation: Dict[str, Tuple[str, Any]] = {}
         self._confirmed_navigation: Dict[str, str] = {}
         self._navigation_accepted_at: Dict[str, float] = {}
+        self._lease_publish_counts: Dict[Tuple[str, str], int] = {}
         self._pending_navigation = set()
         self._estop_engaged = {robot_id: False for robot_id in robot_ids}
+        self._clock_skew_log_at: Dict[str, float] = {}
+        self._status_delay_log_at: Dict[str, float] = {}
+        self._clock_offset_samples = {
+            robot_id: deque() for robot_id in robot_ids
+        }
         lease_interval = float(
             self.get_parameter("lease_publish_interval_sec").value
         )
         if not math.isfinite(lease_interval) or lease_interval <= 0.0:
             raise ValueError("lease_publish_interval_sec must be positive")
+        self._lease_publish_interval_sec = lease_interval
+        self._max_clock_skew_sec = float(
+            self.get_parameter("max_clock_skew_sec").value
+        )
+        if (
+            not math.isfinite(self._max_clock_skew_sec)
+            or self._max_clock_skew_sec <= 0.0
+        ):
+            raise ValueError("max_clock_skew_sec must be positive")
+        self._clock_offset_window_sec = float(
+            self.get_parameter("clock_offset_window_sec").value
+        )
+        if (
+            not math.isfinite(self._clock_offset_window_sec)
+            or self._clock_offset_window_sec <= 0.0
+        ):
+            raise ValueError("clock_offset_window_sec must be positive")
         self._navigation_confirmation_timeout_sec = float(
             self.get_parameter(
                 "navigation_confirmation_timeout_sec"
@@ -421,10 +707,13 @@ class FleetGatewayNode(Node):
             raise ValueError(
                 "navigation_confirmation_timeout_sec must be positive"
             )
+        self._lease_clock = Clock(clock_type=ClockType.STEADY_TIME)
+        self._last_lease_timer_tick = time.monotonic()
         self._lease_timer = self.create_timer(
             lease_interval,
             self._publish_navigation_leases,
             callback_group=self._callback_group,
+            clock=self._lease_clock,
         )
         self.get_logger().info(
             f"Listening for fleet status on {topic}; "
@@ -448,6 +737,8 @@ class FleetGatewayNode(Node):
         self.declare_parameter("web_port", 8000)
         self.declare_parameter("lease_publish_interval_sec", 0.5)
         self.declare_parameter("navigation_confirmation_timeout_sec", 2.0)
+        self.declare_parameter("max_clock_skew_sec", 0.35)
+        self.declare_parameter("clock_offset_window_sec", 10.0)
         self.declare_parameter("robot_ids", ["tb1"])
         self.declare_parameter(
             "estop_services",
@@ -474,10 +765,19 @@ class FleetGatewayNode(Node):
             ["/tb1/navigation/save_map"],
         )
         self.declare_parameter("map_topics", ["/map"])
+        self.declare_parameter(
+            "web_telemetry_topics",
+            ["/fleet/web_telemetry"],
+        )
         self.declare_parameter("scan_topics", ["/scan"])
         self.declare_parameter("scan_sensor_x_m", [-0.032])
         self.declare_parameter("scan_sensor_y_m", [0.0])
         self.declare_parameter("scan_sensor_yaw_rad", [0.0])
+        self.declare_parameter("map_pose_target_frames", ["map"])
+        self.declare_parameter(
+            "map_pose_source_frames",
+            ["base_footprint"],
+        )
 
     @staticmethod
     def _validate_aligned_lists(*values: List[Any]) -> None:
@@ -495,7 +795,59 @@ class FleetGatewayNode(Node):
         return int(self.get_parameter("web_port").value)
 
     def _status_callback(self, message: RobotStatus) -> None:
-        self.registry.update(status_message_to_dict(message))
+        status = status_message_to_dict(message)
+        robot_timestamp = (
+            float(message.header.stamp.sec)
+            + float(message.header.stamp.nanosec) / 1_000_000_000.0
+        )
+        if math.isfinite(robot_timestamp) and robot_timestamp > 0.0:
+            observed_timestamp = self.get_clock().now().nanoseconds / 1e9
+            now = time.monotonic()
+            samples = self._clock_offset_samples.setdefault(
+                message.robot_id,
+                deque(),
+            )
+            clock_offset, transport_delay, raw_delta = (
+                update_clock_offset_estimate(
+                    samples,
+                    observed_timestamp,
+                    robot_timestamp,
+                    now,
+                    self._clock_offset_window_sec,
+                )
+            )
+            status["clock_offset_sec"] = round(clock_offset, 6)
+            status["status_transport_delay_sec"] = round(
+                transport_delay,
+                6,
+            )
+            if (
+                abs(clock_offset) > self._max_clock_skew_sec
+                and now - self._clock_skew_log_at.get(message.robot_id, 0.0)
+                >= 30.0
+            ):
+                self._clock_skew_log_at[message.robot_id] = now
+                self.get_logger().error(
+                    "CLOCK_SKEW "
+                    f"robot={message.robot_id} "
+                    f"control_minus_robot={clock_offset:.3f}s "
+                    f"limit={self._max_clock_skew_sec:.3f}s; "
+                    "navigation will be blocked until time sync recovers"
+                )
+            if (
+                transport_delay > self._max_clock_skew_sec
+                and now - self._status_delay_log_at.get(message.robot_id, 0.0)
+                >= 30.0
+            ):
+                self._status_delay_log_at[message.robot_id] = now
+                self.get_logger().warning(
+                    "STATUS_TRANSPORT_DELAY "
+                    f"robot={message.robot_id} raw_delta={raw_delta:.3f}s "
+                    f"clock_estimate={clock_offset:.3f}s "
+                    f"excess_delay={transport_delay:.3f}s; "
+                    "check robot CPU and ROS/Zenoh callback latency"
+                )
+        self.registry.update(status)
 
     def _navigation_status_callback(self, message: NavigationStatus) -> None:
         self.registry.update_navigation(navigation_status_to_dict(message))
@@ -513,9 +865,15 @@ class FleetGatewayNode(Node):
                 self._active_navigation.pop(robot_id, None)
                 self._confirmed_navigation.pop(robot_id, None)
                 self._navigation_accepted_at.pop(robot_id, None)
+                publish_count = self._lease_publish_counts.pop(
+                    (robot_id, command_id),
+                    0,
+                )
                 self.get_logger().warning(
-                    f"Stopped stale lease {command_id} after {robot_id} "
-                    "reported no matching active goal"
+                    "Navigation lease stopped reason=status_mismatch "
+                    f"robot={robot_id} command={command_id} "
+                    f"published={publish_count} reported_state="
+                    f"{int(message.state)} reported_command={reported_command or '-'}"
                 )
 
     def _safety_status_callback(self, message: SafetyStatus) -> None:
@@ -530,26 +888,23 @@ class FleetGatewayNode(Node):
         except ValueError as error:
             self.get_logger().error(f"Rejected {robot_id} map: {error}")
 
-    def _scan_callback(
+    def _web_telemetry_callback(
         self,
         robot_id: str,
-        message: LaserScan,
-        sensor_x: float,
-        sensor_y: float,
-        sensor_yaw: float,
+        message: String,
     ) -> None:
         try:
-            self.scan_registry.update(
+            scan, map_pose = web_telemetry_message_to_dict(
+                message,
                 robot_id,
-                scan_message_to_dict(
-                    message,
-                    sensor_x,
-                    sensor_y,
-                    sensor_yaw,
-                ),
             )
+            self.scan_registry.update(robot_id, scan)
+            if map_pose is not None:
+                self.registry.update_map_pose(map_pose)
         except ValueError as error:
-            self.get_logger().error(f"Rejected {robot_id} scan: {error}")
+            self.get_logger().error(
+                f"Rejected {robot_id} web telemetry: {error}"
+            )
 
     def set_estop(self, robot_id: str, engaged: bool) -> Dict[str, Any]:
         """Call a robot watchdog service from the HTTP worker thread."""
@@ -602,8 +957,42 @@ class FleetGatewayNode(Node):
             self._engage_gateway_estop(robot_id)
         return result
 
+    def _clock_sync_failure(
+        self,
+        robot_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Fail closed when recent robot time differs from control time."""
+        observed = self.registry.get(robot_id)
+        if observed is None or not observed.get("online"):
+            return None
+        raw_offset = observed.get("clock_offset_sec")
+        try:
+            offset = float(raw_offset)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(offset) or abs(offset) <= self._max_clock_skew_sec:
+            return None
+        self.get_logger().error(
+            "CLOCK_SKEW command rejected "
+            f"robot={robot_id} control_minus_robot={offset:.3f}s "
+            f"limit={self._max_clock_skew_sec:.3f}s"
+        )
+        return {
+            "success": False,
+            "status_code": 409,
+            "robot_id": robot_id,
+            "clock_offset_sec": round(offset, 6),
+            "message": (
+                "Control PC and robot clocks differ too much for safe motion; "
+                "synchronize Windows, WSL, and TB1 time before retrying"
+            ),
+        }
+
     def start_manual(self, robot_id: str) -> Dict[str, Any]:
         """Create a short-lived robot-local manual driving session."""
+        clock_failure = self._clock_sync_failure(robot_id)
+        if clock_failure is not None:
+            return clock_failure
         session_id = uuid.uuid4().hex
         with self._navigation_lock:
             if self._estop_engaged.get(robot_id, False):
@@ -934,6 +1323,9 @@ class FleetGatewayNode(Node):
         confirm_warnings: bool,
     ) -> Dict[str, Any]:
         """Submit a robot-local action and begin its fleet lease."""
+        clock_failure = self._clock_sync_failure(robot_id)
+        if clock_failure is not None:
+            return clock_failure
         client = self._navigation_clients.get(robot_id)
         if client is None or not client.wait_for_server(timeout_sec=1.0):
             return {
@@ -1003,6 +1395,7 @@ class FleetGatewayNode(Node):
                 self._active_navigation[robot_id] = (command_id, handle)
                 self._confirmed_navigation.pop(robot_id, None)
                 self._navigation_accepted_at[robot_id] = time.monotonic()
+                self._lease_publish_counts[(robot_id, command_id)] = 0
         if estop_engaged:
             try:
                 self._future_result(handle.cancel_goal_async(), 3.0)
@@ -1019,6 +1412,11 @@ class FleetGatewayNode(Node):
             )
         )
         self._publish_one_lease(robot_id, command_id)
+        self.get_logger().info(
+            "Navigation lease started "
+            f"robot={robot_id} command={command_id} interval="
+            f"{self._lease_publish_interval_sec:.3f}s clock=STEADY_TIME"
+        )
         return {
             "success": True,
             "robot_id": robot_id,
@@ -1044,6 +1442,14 @@ class FleetGatewayNode(Node):
             self._active_navigation.pop(robot_id, None)
             self._confirmed_navigation.pop(robot_id, None)
             self._navigation_accepted_at.pop(robot_id, None)
+            publish_count = self._lease_publish_counts.pop(
+                (robot_id, command_id),
+                0,
+            )
+        self.get_logger().info(
+            "Navigation lease stopped reason=user_cancel "
+            f"robot={robot_id} command={command_id} published={publish_count}"
+        )
         try:
             response = self._future_result(
                 active[1].cancel_goal_async(),
@@ -1088,6 +1494,14 @@ class FleetGatewayNode(Node):
             self._navigation_accepted_at.pop(robot_id, None)
         if active is None:
             return {"success": False, "message": "No active navigation"}
+        publish_count = self._lease_publish_counts.pop(
+            (robot_id, active[0]),
+            0,
+        )
+        self.get_logger().warning(
+            "Navigation lease stopped reason=estop "
+            f"robot={robot_id} command={active[0]} published={publish_count}"
+        )
         try:
             response = self._future_result(
                 active[1].cancel_goal_async(),
@@ -1115,6 +1529,8 @@ class FleetGatewayNode(Node):
 
     def _publish_navigation_leases(self) -> None:
         now = time.monotonic()
+        timer_gap = now - self._last_lease_timer_tick
+        self._last_lease_timer_tick = now
         unconfirmed = []
         with self._navigation_lock:
             for robot_id, accepted_at in list(
@@ -1134,6 +1550,17 @@ class FleetGatewayNode(Node):
                 (robot_id, active[0])
                 for robot_id, active in self._active_navigation.items()
             ]
+        if (
+            commands
+            and timer_gap
+            > max(1.0, self._lease_publish_interval_sec * 2.5)
+        ):
+            self.get_logger().error(
+                "Navigation lease timer gap "
+                f"{timer_gap:.3f}s expected="
+                f"{self._lease_publish_interval_sec:.3f}s "
+                f"active_commands={len(commands)}"
+            )
         for robot_id, active in unconfirmed:
             try:
                 active[1].cancel_goal_async()
@@ -1143,6 +1570,7 @@ class FleetGatewayNode(Node):
                 f"Stopped unconfirmed navigation lease {active[0]} for "
                 f"{robot_id}"
             )
+            self._lease_publish_counts.pop((robot_id, active[0]), None)
         for robot_id, command_id in commands:
             self._publish_one_lease(robot_id, command_id)
 
@@ -1152,18 +1580,36 @@ class FleetGatewayNode(Node):
         lease.robot_id = robot_id
         lease.command_id = command_id
         self._lease_publisher.publish(lease)
+        with self._navigation_lock:
+            key = (robot_id, command_id)
+            if key in self._lease_publish_counts:
+                self._lease_publish_counts[key] += 1
 
     def _on_navigation_result(self, robot_id: str, command_id: str, future) -> None:
+        result_status: Any = "exception"
         try:
-            future.result()
+            result = future.result()
+            result_status = getattr(result, "status", "unknown")
         except Exception as error:  # noqa: B902 - ROS future boundary
             self.get_logger().error(f"Navigation result failed: {error}")
+        removed = False
         with self._navigation_lock:
             active = self._active_navigation.get(robot_id)
             if active is not None and active[0] == command_id:
                 self._active_navigation.pop(robot_id, None)
                 self._confirmed_navigation.pop(robot_id, None)
                 self._navigation_accepted_at.pop(robot_id, None)
+                removed = True
+            publish_count = self._lease_publish_counts.pop(
+                (robot_id, command_id),
+                0,
+            )
+        self.get_logger().info(
+            "Navigation lease stopped reason=action_result "
+            f"robot={robot_id} command={command_id} "
+            f"result_status={result_status} published={publish_count} "
+            f"removed_active={str(removed).lower()}"
+        )
 
     @staticmethod
     def _future_result(future, timeout_sec: float):

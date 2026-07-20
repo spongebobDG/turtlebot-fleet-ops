@@ -19,6 +19,19 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     scan_normalizer = (
         PACKAGE_ROOT / "config" / "tb1_scan_normalizer.yaml"
     ).read_text()
+    web_telemetry = (
+        PACKAGE_ROOT / "config" / "tb1_web_telemetry.yaml"
+    ).read_text()
+    web_telemetry_node = (
+        PACKAGE_ROOT / "navigation_agent" / "web_telemetry.py"
+    ).read_text()
+    robot_agent_launch = (
+        REPOSITORY_ROOT
+        / "robot"
+        / "robot_agent"
+        / "launch"
+        / "robot_agent.launch.py"
+    ).read_text()
 
     assert "lease_timeout_sec: 2.0" in agent_config
     assert "nav2_unavailable_timeout_sec: 1.0" in agent_config
@@ -104,7 +117,17 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"use_composition": "False"' in launch
     assert '"use_respawn": "True"' in launch
     assert '"tb1_scan_normalizer.yaml"' in launch
+    assert 'executable="web_telemetry"' not in launch
+    assert '"tb1_web_telemetry.yaml"' in robot_agent_launch
+    assert 'executable="web_telemetry"' in robot_agent_launch
     assert "angle_offset_rad: 3.141592653589793" in scan_normalizer
+    assert "publish_intensities: false" in scan_normalizer
+    assert "publish_rate_hz: 2.0" in web_telemetry
+    assert "max_points: 90" in web_telemetry
+    assert "scan_topic: /scan" in web_telemetry
+    assert "sensor_yaw_rad: 3.141592653589793" in web_telemetry
+    assert "pose_timeout_sec: 1.0" in web_telemetry
+    assert "qos_profile_sensor_data" in web_telemetry_node
 
 
 def test_mapping_supports_simulation_without_changing_real_default() -> None:
@@ -114,6 +137,7 @@ def test_mapping_supports_simulation_without_changing_real_default() -> None:
     assert 'default_value="false"' in launch
     assert '"use_sim_time": use_sim_time' in launch
     assert '"tb1_scan_normalizer.yaml"' in launch
+    assert 'executable="web_telemetry"' not in launch
     slam_config = (PACKAGE_ROOT / "config" / "tb1_slam.yaml").read_text()
     assert "scan_topic: /scan_normalized" in slam_config
     assert "scan_queue_size: 10" in slam_config
@@ -207,7 +231,7 @@ def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
     assert 'reason="navigation agent exited"' in navigation_launch
     assert "respawn=False" in navigation_launch
     assert "Restart=always" in navigation_unit
-    assert "try-restart tb1-zenoh-bridge.service" in navigation_unit
+    assert "try-restart tb1-zenoh-bridge.service" not in navigation_unit
     assert watchdog_launch.count("respawn=True") == 2
     assert watchdog_launch.count("respawn_delay=0.0") == 2
     assert 'package="safety_watchdog_guard"' in watchdog_launch

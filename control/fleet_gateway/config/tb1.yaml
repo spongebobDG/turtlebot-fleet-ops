@@ -26,6 +26,8 @@ fleet_gateway:
       - /tb1/navigation/save_map
     map_topics:
       - /map
+    web_telemetry_topics:
+      - /fleet/web_telemetry
     scan_topics:
       - /scan
     scan_sensor_x_m:
@@ -33,5 +35,9 @@ fleet_gateway:
     scan_sensor_y_m:
       - 0.0
     scan_sensor_yaw_rad:
-      # Keep the web raw-scan overlay in the same base_link +X convention.
+      # The raw LDS-02 scan reports angle zero opposite base_link +X.
       - 3.141592653589793
+    map_pose_target_frames:
+      - map
+    map_pose_source_frames:
+      - base_footprint

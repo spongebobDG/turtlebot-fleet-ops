@@ -109,6 +109,13 @@ powershell -ExecutionPolicy Bypass -File scripts\control-pc\start_control_stack.
 powershell -ExecutionPolicy Bypass -File scripts\control-pc\test_tb1_connection.ps1
 ```
 
+실차 관제로 돌아갈 때는 다음 명령을 사용한다. 8000번 포트에서 `robotless-mock`이 실행 중이면
+정확히 그 mock을 종료한 뒤 production Gateway를 시작하고 브라우저를 연다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\control-pc\open_tb1_web_control.ps1
+```
+
 두 번째 명령은 TB1이 없을 때 SSH와 Zenoh 포트만 WARN으로 남기고 PC 준비 상태를 판정한다.
 TB1을 LAN에 연결한 뒤에는 두 포트도 필수로 바꾼다.
 

@@ -5,6 +5,8 @@ const test = require("node:test");
 
 const {
   canvasToWorld,
+  centerFreePose,
+  hasSameGeometry,
   isFreePose,
   worldToCanvas,
   worldToCell,
@@ -118,4 +120,40 @@ test("canvas drag yaw includes a rotated occupancy-grid origin", () => {
 
   closeTo(yawFromCanvasDrag(map, 5, 5, 7, 5), Math.PI / 2);
   closeTo(yawFromCanvasDrag(map, 5, 5, 5, 3), Math.PI);
+});
+
+test("map geometry ignores occupancy updates but detects an expanded map", () => {
+  const original = {
+    width: 10,
+    height: 8,
+    resolution: 0.05,
+    origin: { x: -1, y: -2, yaw: 0 },
+    data: [0, 100],
+  };
+  const occupancyUpdate = {
+    ...original,
+    data: [100, 0],
+  };
+  const expanded = {
+    ...occupancyUpdate,
+    width: 12,
+    origin: { ...original.origin, x: -1.1 },
+  };
+
+  assert.equal(hasSameGeometry(original, occupancyUpdate), true);
+  assert.equal(hasSameGeometry(original, expanded), false);
+  assert.equal(hasSameGeometry(original, null), false);
+});
+
+test("center free pose provides a safe seed for global LiDAR alignment", () => {
+  const map = {
+    width: 3,
+    height: 3,
+    resolution: 0.5,
+    origin: { x: -1, y: -2, yaw: 0 },
+    data: [100, 0, 100, 0, -1, 0, 100, 0, 100],
+  };
+
+  assert.deepEqual(centerFreePose(map), { x: -0.25, y: -1.75, yaw: 0 });
+  assert.equal(centerFreePose({ ...map, data: Array(9).fill(100) }), null);
 });

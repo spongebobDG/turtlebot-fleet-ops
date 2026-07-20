@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi.testclient import TestClient
 import pytest
 
@@ -354,6 +356,27 @@ def test_websocket_sends_current_snapshot():
     assert message["robots"][0]["online"] is True
 
 
+def test_websocket_ignores_disconnect_without_code():
+    app = create_app(make_registry(), websocket_interval_sec=0.01)
+    route = next(
+        item for item in app.router.routes
+        if getattr(item, "path", None) == "/ws/robots"
+    )
+
+    class AbruptDisconnectWebSocket:
+
+        async def accept(self):
+            return None
+
+        async def send_json(self, _message):
+            return None
+
+        async def receive_text(self):
+            raise KeyError("code")
+
+    asyncio.run(route.endpoint(AbruptDisconnectWebSocket()))
+
+
 def test_dashboard_assets_work_with_symlink_install(tmp_path):
     source_dir = tmp_path / "source"
     static_dir = tmp_path / "install"
@@ -362,6 +385,12 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
     (source_dir / "index.html").write_text("<h1>Fleet</h1>")
     (source_dir / "styles.css").write_text("body { color: white; }")
     (source_dir / "app.js").write_text("console.log('fleet');")
+    (source_dir / "manual_keys.js").write_text(
+        "globalThis.FleetManualKeys = {};"
+    )
+    (source_dir / "diagnostics_view.js").write_text(
+        "globalThis.FleetDiagnosticsView = {};"
+    )
     (source_dir / "map_math.js").write_text("globalThis.FleetMapMath = {};")
     (source_dir / "map_viewport.js").write_text(
         "globalThis.FleetMapViewport = {};"
@@ -373,6 +402,8 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
         "index.html",
         "styles.css",
         "app.js",
+        "diagnostics_view.js",
+        "manual_keys.js",
         "map_math.js",
         "map_viewport.js",
         "robot_display.js",
@@ -387,6 +418,8 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
     assert client.get("/").status_code == 200
     assert client.get("/static/styles.css").status_code == 200
     assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/diagnostics_view.js").status_code == 200
+    assert client.get("/static/manual_keys.js").status_code == 200
     assert client.get("/static/map_math.js").status_code == 200
     assert client.get("/static/map_viewport.js").status_code == 200
     assert client.get("/static/robot_display.js").status_code == 200
@@ -398,6 +431,8 @@ def test_dashboard_serves_map_math_from_regular_install(tmp_path):
         "index.html": "<h1>Fleet</h1>",
         "styles.css": "body {}",
         "app.js": "console.log('fleet');",
+        "manual_keys.js": "globalThis.FleetManualKeys = {};",
+        "diagnostics_view.js": "globalThis.FleetDiagnosticsView = {};",
         "map_math.js": "globalThis.FleetMapMath = {};",
         "map_viewport.js": "globalThis.FleetMapViewport = {};",
         "robot_display.js": "globalThis.FleetRobotDisplay = {};",
@@ -405,6 +440,8 @@ def test_dashboard_serves_map_math_from_regular_install(tmp_path):
         (tmp_path / name).write_text(content)
     client = TestClient(create_app(make_registry(), static_dir=tmp_path))
 
+    assert client.get("/static/manual_keys.js").status_code == 200
+    assert client.get("/static/diagnostics_view.js").status_code == 200
     assert client.get("/static/map_math.js").status_code == 200
     assert client.get("/static/map_viewport.js").status_code == 200
     assert client.get("/static/robot_display.js").status_code == 200

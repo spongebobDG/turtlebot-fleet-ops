@@ -13,6 +13,11 @@ def _allow(name: str) -> dict:
     return document["plugins"]["ros2dds"]["allow"]
 
 
+def _ros2dds(name: str) -> dict:
+    document = json.loads((ZENOH_ROOT / name).read_text(encoding="utf-8"))
+    return document["plugins"]["ros2dds"]
+
+
 def test_bridge_halves_cover_navigation_contract() -> None:
     robot = _allow("robot-bridge.json5")
     control = _allow("control-bridge.json5")
@@ -24,6 +29,7 @@ def test_bridge_halves_cover_navigation_contract() -> None:
         "^/fleet/navigation_status$",
         "^/fleet/safety_status$",
         "^/fleet/mapping_status$",
+        "^/fleet/web_telemetry$",
     ):
         assert topic in robot["publishers"]
         assert topic in control["subscribers"]
@@ -49,6 +55,17 @@ def test_bridges_never_proxy_velocity_topics() -> None:
         text = (ZENOH_ROOT / name).read_text(encoding="utf-8")
         for topic in forbidden:
             assert topic not in text
+
+
+def test_control_bridge_allows_long_robot_management_services() -> None:
+    timeouts = _ros2dds("control-bridge.json5")["queries_timeout"][
+        "services"
+    ]
+
+    assert ".*set_operating_profile$=50.0" in timeouts
+    assert ".*set_initial_pose$=20.0" in timeouts
+    assert ".*save_map$=100.0" in timeouts
+    assert ".*=5.0" in timeouts
 
 
 def test_start_scripts_load_repository_allow_lists() -> None:

@@ -1,0 +1,18 @@
+web_telemetry:
+  ros__parameters:
+    robot_id: tb1
+    # This node runs with the always-on robot agent, before profile-specific
+    # scan normalization starts. Apply the measured raw LDS-02 axis offset.
+    scan_topic: /scan
+    output_topic: /fleet/web_telemetry
+    # Two updates per second keep the dashboard responsive without competing
+    # with Nav2 and the 20 Hz safety path on the thermally constrained TB1.
+    publish_rate_hz: 2.0
+    scan_timeout_sec: 1.0
+    sensor_x_m: -0.032
+    sensor_y_m: 0.0
+    sensor_yaw_rad: 3.141592653589793
+    max_points: 90
+    target_frame: map
+    source_frame: base_footprint
+    pose_timeout_sec: 1.0

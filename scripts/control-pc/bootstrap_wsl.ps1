@@ -14,6 +14,10 @@ $logPath = Join-Path $outputDir "control-pc-wsl-bootstrap.log"
 $markerPath = Join-Path $outputDir "control-pc-ready.txt"
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
+if ($LinuxUser -notmatch '^[A-Za-z_][A-Za-z0-9_-]*$') {
+    throw "Invalid WSL user name: $LinuxUser"
+}
+
 if ([string]::IsNullOrWhiteSpace($RobotAddress)) {
     if (Test-Path -LiteralPath $markerPath) {
         $addressLine = Get-Content -LiteralPath $markerPath |
@@ -59,6 +63,10 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Windows Node.js failed the fleet web syntax check."
     }
+    & $node.Source --check (Join-Path $repoRoot "control\fleet_gateway\web\manual_keys.js")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Windows Node.js failed the WASD helper syntax check."
+    }
 
     & "$env:SystemRoot\System32\wsl.exe" --update --web-download
     if ($LASTEXITCODE -ne 0) {
@@ -101,7 +109,7 @@ try {
 
     $sourcePath = Convert-ToWslPath -WindowsPath $repoRoot
     $linuxRepo = "/home/$LinuxUser/turtlebot-fleet-ops"
-    $copyCommand = "set -e; mkdir -p '$linuxRepo'; tar -C '$sourcePath' --exclude='./build' --exclude='./install' --exclude='./log' --exclude='./output' -cf - . | tar -C '$linuxRepo' -xf -; find '$linuxRepo' -type d -exec chmod 0755 {} +; find '$linuxRepo' -type f -exec chmod 0644 {} +; find '$linuxRepo/infra' '$linuxRepo/scripts' -type f -name '*.sh' -exec chmod 0755 {} +; chown -R '${LinuxUser}:${LinuxUser}' '$linuxRepo'"
+    $copyCommand = "set -e; test '$linuxRepo' = '/home/$LinuxUser/turtlebot-fleet-ops'; rm -rf -- '$linuxRepo/build' '$linuxRepo/install' '$linuxRepo/log'; mkdir -p '$linuxRepo'; tar -C '$sourcePath' --exclude='./build' --exclude='./install' --exclude='./log' --exclude='./output' -cf - . | tar -C '$linuxRepo' -xf -; find '$linuxRepo' -type d -exec chmod 0755 {} +; find '$linuxRepo' -type f -exec chmod 0644 {} +; find '$linuxRepo/infra' '$linuxRepo/scripts' -type f -name '*.sh' -exec chmod 0755 {} +; chown -R '${LinuxUser}:${LinuxUser}' '$linuxRepo'"
     Invoke-Wsl -Arguments @("-d", $Distro, "-u", "root", "--", "bash", "-lc", $copyCommand)
 
     $bootstrapCommand = "cd '$linuxRepo' && ROBOT_ADDRESS='$RobotAddress' bash scripts/control-pc/bootstrap_control_pc.sh"

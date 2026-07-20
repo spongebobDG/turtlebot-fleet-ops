@@ -3,6 +3,55 @@
 이 절차는 Phase 8 코드를 TB1에 배포한 뒤 사용한다. 로봇 주변을 비우고 작업자가 전원 스위치와
 e-stop에 접근할 수 있을 때만 움직임 검증을 수행한다.
 
+## 0. 웹 관제 빠른 시작
+
+새 관제 PC에서는 WSL 제어 환경을 한 번만 구성한다. `-RobotAddress`에는 TB1에서 `hostname -I`로
+확인한 현재 유선 또는 Wi-Fi 주소를 넣는다. 같은 네트워크에서 `tb1` 이름이 해석되면 주소 대신
+기본값을 사용할 수 있다.
+
+```powershell
+cd C:\project\turtlebot-fleet-ops
+powershell -ExecutionPolicy Bypass -File `
+  .\scripts\control-pc\bootstrap_wsl.ps1 `
+  -RobotAddress 192.168.x.x
+```
+
+이후 평소에는 다음 한 명령만 실행한다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File `
+  .\scripts\control-pc\open_tb1_web_control.ps1
+```
+
+명령은 실제 control bridge, Gateway, 로그 모니터를 시작하고 기본 브라우저에서
+`http://127.0.0.1:8000`을 연다. 로봇 없는 mock이 8000번 포트를 사용 중이면 정확히 그 mock을
+종료한 뒤 실제 서비스를 시작한다. TB1이 꺼져 있으면 `TB1_WAITING_FOR_POWER`가 표시되지만 웹
+관제는 계속 실행된다. 배포 때 활성화한 TB1 bridge와 관제 bridge는 재시작 정책을 사용하므로,
+이후 TB1 전원을 켜고 네트워크가 연결되면 페이지를 다시 실행하지 않아도 자동으로 상태가
+`ONLINE`으로 바뀐다.
+
+TB1 주소가 바뀐 날만 다음처럼 갱신한다. 주소는 로컬 `control.env`에만 저장되며 Git에는
+기록되지 않는다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File `
+  .\scripts\control-pc\open_tb1_web_control.ps1 `
+  -RobotAddress 192.168.x.x
+```
+
+웹 지도 오른쪽의 수동 조종은 다음 deadman 계약을 따른다.
+
+- `W`: 전진, `S`: 후진, `A`: 제자리 좌회전, `D`: 제자리 우회전
+- 키 또는 화면 버튼을 누르는 동안만 명령을 10 Hz로 갱신하며 놓으면 즉시 정지한다.
+- 최대 속도는 선속도 `0.05 m/s`, 각속도 `0.3 rad/s`이다.
+- 입력칸 편집 중에는 WASD를 무시하고, 창 포커스 손실·`Space`·`Escape`·통신 오류에는 정지한다.
+- `MAPPING` 또는 `NAVIGATION`, safety fresh, e-stop 해제, motion armed, 활성 목적지·순찰 없음일
+  때만 수동 조종이 열린다.
+
+새 지도를 만들 때는 웹에서 `MAPPING` 프로필을 선택해 WASD로 주행하고 지도를 저장한다.
+저장된 지도에서 목적지·순찰을 실행할 때는 `NAVIGATION` 프로필로 전환한다. 프로필 전환은
+e-stop을 체결하고 이전 동작을 재개하지 않으므로 화면 지시에 따라 다시 명시적으로 재무장한다.
+
 ## 1. 배포 전 로봇 없는 검증
 
 WSL Ubuntu 22.04에서 실행한다.
@@ -71,10 +120,15 @@ powershell -ExecutionPolicy Bypass -File `
 ## 3. 목적지와 방향
 
 1. `NAVIGATION` 프로필과 e-stop 상태를 확인한다.
-2. 초기 위치를 드래그하거나 yaw 숫자를 입력해 적용한다.
-3. LiDAR overlay와 벽이 맞고 navigation 상태가 `READY`가 될 때까지 기다린다.
-4. 목적지 모드에서 위치를 누르고 로봇이 도착해 바라볼 방향으로 드래그한다.
-5. 표시된 rad/degree와 지도 화살표를 확인하고 전송한다.
+2. 지도 위 `초기 위치` 모드를 선택한다.
+3. `LiDAR로 현재 위치 찾기`를 누른다. 시작점을 따로 찍지 않아도 전체 지도에서 정합 후보를
+   검색한다.
+4. 붉은 LiDAR 점이 지도 벽과 맞는지 확인한 뒤 `초기 위치 적용`을 누른다.
+5. 파란 `TB1 현재 위치` 화살표와 `현 위치 map (...)` 표시가 나타나고 navigation 상태가
+   `READY`가 될 때까지 기다린다.
+6. 주변이 안전할 때만 e-stop을 해제한다.
+7. `목적지` 모드에서 위치를 누르고 로봇이 도착해 바라볼 방향으로 드래그한다.
+8. 표시된 rad/degree와 지도 화살표를 확인하고 전송한다.
 
 12 px 미만 드래그처럼 방향이 불명확한 목표는 전송하지 않는다. WARN이 있으면 fault 내용을
 확인하고 필요한 경우에만 경고 확인 후 다시 보낸다.
@@ -177,12 +231,15 @@ arbiter `IDLE`을 로그로 남긴다. 수동 조종 중에는 navigation 목표
 
 1. e-stop을 활성화한다.
 2. 웹에서 `새 지도`를 눌러 `MAPPING` 프로필로 전환한다.
+   `LIVE MAP` 표시가 켜지면 SLAM 지도가 1초 간격으로 화면에 갱신된다. 사용자가 맞춘 확대·이동은
+   유지되며, SLAM이 지도 범위를 확장했을 때만 전체 지도에 맞춰 다시 표시된다.
+   SLAM의 `map → base_footprint`가 준비되면 파란 `TB1 현재 위치` 화살표도 함께 갱신된다.
 3. 프로필 상태가 MAPPING이고 Nav2/AMCL이 실행되지 않는지 확인한다.
 4. e-stop을 해제하고 deadman 수동 조종으로 천천히 공간을 한 바퀴 이상 스캔한다.
 5. loop closure와 지도 벽 정합을 확인한다.
 6. 다시 e-stop을 활성화한 뒤 `지도 저장`을 누른다.
 7. map yaml/pgm과 pose graph가 모두 생성됐는지 확인한다.
-8. `주행` 프로필로 전환하고 초기 위치를 다시 적용한다.
+8. `주행` 프로필로 전환하고 3절의 LiDAR 자동 정렬로 초기 위치를 다시 적용한다.
 
 운영 산출물 기본 경로는 다음과 같다.
 

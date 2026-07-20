@@ -5,6 +5,8 @@ import math
 import pytest
 
 from robot_agent.model import (
+    CLEARANCE_BLOCKED,
+    CLEARANCE_CLEARED,
     Freshness,
     HealthInput,
     HealthThresholds,
@@ -12,6 +14,7 @@ from robot_agent.model import (
     LEVEL_OK,
     LEVEL_WARN,
     UNKNOWN_VALUE,
+    clearance_transition,
     evaluate_health,
     normalize_battery_percent,
     quaternion_to_yaw,
@@ -115,6 +118,60 @@ def test_scan_without_valid_points_uses_unknown_sentinel() -> None:
         0,
         UNKNOWN_VALUE,
     )
+
+
+def test_clearance_transition_logs_only_blocked_and_recovered_edges() -> None:
+    active, count, transition = clearance_transition(
+        False, True, 0.179, 0.19, 0.02
+    )
+    assert active is True
+    assert count == 0
+    assert transition == CLEARANCE_BLOCKED
+
+    active, count, transition = clearance_transition(
+        active, True, 0.185, 0.19, 0.02, count
+    )
+    assert active is True
+    assert count == 0
+    assert transition is None
+
+    for expected_count in (1, 2):
+        active, count, transition = clearance_transition(
+            active, True, 0.211, 0.19, 0.02, count
+        )
+        assert active is True
+        assert count == expected_count
+        assert transition is None
+
+    active, count, transition = clearance_transition(
+        active, True, 0.211, 0.19, 0.02, count
+    )
+    assert active is False
+    assert count == 0
+    assert transition == CLEARANCE_CLEARED
+
+
+def test_invalid_clearance_scan_does_not_change_latched_state() -> None:
+    assert clearance_transition(
+        True, False, math.nan, 0.19, 0.02, recovery_count=1
+    ) == (
+        True,
+        1,
+        None,
+    )
+
+
+def test_clearance_recovery_must_be_consecutive() -> None:
+    active, count, _ = clearance_transition(
+        True, True, 0.3, 0.19, 0.02
+    )
+    active, count, transition = clearance_transition(
+        active, True, 0.179, 0.19, 0.02, count
+    )
+
+    assert active is True
+    assert count == 0
+    assert transition is None
 
 
 @pytest.mark.parametrize(

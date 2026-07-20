@@ -97,27 +97,50 @@ for pid in "${smoke_pids[@]}"; do
   kill -0 "${pid}"
 done
 
-node_list="$(ros2 node list)"
+node_list="$(ros2 node list --no-daemon --spin-time 5)"
 echo "${node_list}"
 grep -Fxq "/safety_watchdog" <<<"${node_list}"
 grep -Fxq "/motion_arbiter" <<<"${node_list}"
 grep -Fxq "/navigation_agent" <<<"${node_list}"
 grep -Fxq "/fleet_gateway" <<<"${node_list}"
 
-action_list="$(ros2 action list -t)"
+action_list="$(python3 - <<'PY'
+import time
+
+import rclpy
+import rclpy.action
+
+rclpy.init()
+node = rclpy.create_node("robotless_action_graph_check")
+try:
+    deadline = time.monotonic() + 5.0
+    actions = []
+    while time.monotonic() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.1)
+        actions = rclpy.action.get_action_names_and_types(node)
+        names = {name for name, _ in actions}
+        if "/navigate_to_pose" in names and "/tb1/navigation/navigate" in names:
+            break
+    for name, types in sorted(actions):
+        print(f"{name} [{', '.join(types)}]")
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+PY
+)"
 echo "${action_list}"
 grep -Fq "/navigate_to_pose [nav2_msgs/action/NavigateToPose]" \
   <<<"${action_list}"
 grep -Fq "/tb1/navigation/navigate [fleet_interfaces/action/NavigateRobot]" \
   <<<"${action_list}"
 
-cmd_info="$(ros2 topic info /cmd_vel --verbose)"
+cmd_info="$(ros2 topic info /cmd_vel --verbose --no-daemon --spin-time 5)"
 echo "${cmd_info}"
 grep -Fq "Publisher count: 1" <<<"${cmd_info}"
 grep -Fq "Node name: safety_watchdog" <<<"${cmd_info}"
 
 navigation_cmd_info="$(
-  ros2 topic info /motion/navigation/cmd_vel --verbose
+  ros2 topic info /motion/navigation/cmd_vel --verbose --no-daemon --spin-time 5
 )"
 echo "${navigation_cmd_info}"
 grep -Fq "Publisher count: 1" <<<"${navigation_cmd_info}"
@@ -128,7 +151,7 @@ if grep -Eq "Node name: (controller_server|behavior_server)" \
   exit 1
 fi
 
-controller_cmd_info="$(ros2 topic info /cmd_vel_nav --verbose)"
+controller_cmd_info="$(ros2 topic info /cmd_vel_nav --verbose --no-daemon --spin-time 5)"
 echo "${controller_cmd_info}"
 grep -Fq "Publisher count: 5" <<<"${controller_cmd_info}"
 grep -Fq "Subscription count: 1" <<<"${controller_cmd_info}"

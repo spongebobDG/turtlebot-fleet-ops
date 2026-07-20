@@ -1,10 +1,13 @@
 """ROS 2 /rosout collector and live log-anomaly inference node."""
 
 from collections import deque
+from functools import partial
 import json
 import math
 import os
 from pathlib import Path
+import re
+import subprocess
 import time
 from typing import Any, Deque, Dict, Optional
 
@@ -33,10 +36,37 @@ SEVERITIES = {
     50: "ERROR",
 }
 
+SYSLOG_SEVERITIES = {
+    0: "ERROR",
+    1: "ERROR",
+    2: "ERROR",
+    3: "ERROR",
+    4: "WARNING",
+    5: "INFO",
+    6: "INFO",
+    7: "DEBUG",
+}
+
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _journal_message(value: Any) -> str:
+    """Decode journald text, including byte arrays used for ANSI output."""
+    if isinstance(value, list):
+        try:
+            value = bytes(int(item) for item in value).decode(
+                "utf-8",
+                errors="replace",
+            )
+        except (TypeError, ValueError):
+            return ""
+    return ANSI_ESCAPE.sub("", str(value or "")).strip()
+
 
 def rosout_message_to_record(
     message: Any,
     received_at: Optional[float] = None,
+    unit: str = "rosout",
 ) -> LogRecord:
     """Normalize an rcl_interfaces/Log-like message without ROS coupling."""
     timestamp = float(message.stamp.sec) + float(message.stamp.nanosec) / 1e9
@@ -47,7 +77,47 @@ def rosout_message_to_record(
         severity=SEVERITIES.get(int(message.level), "INFO"),
         logger=str(message.name),
         message=str(message.msg),
-        unit="rosout",
+        unit=unit,
+    )
+
+
+def journal_payload_to_record(payload: Dict[str, Any]) -> Optional[LogRecord]:
+    """Normalize one `journalctl --output=json` record."""
+    message = _journal_message(payload.get("MESSAGE"))
+    if not message:
+        return None
+    try:
+        timestamp = int(payload["__REALTIME_TIMESTAMP"]) / 1_000_000.0
+    except (KeyError, TypeError, ValueError):
+        return None
+    try:
+        priority = int(payload.get("PRIORITY", 6))
+    except (TypeError, ValueError):
+        priority = 6
+    severity = SYSLOG_SEVERITIES.get(priority, "INFO")
+    embedded_level = re.search(r"\b(ERROR|WARN(?:ING)?)\b", message, re.I)
+    if embedded_level is not None:
+        severity = (
+            "ERROR"
+            if embedded_level.group(1).upper() == "ERROR"
+            else "WARNING"
+        )
+    unit = str(
+        payload.get("_SYSTEMD_USER_UNIT")
+        or payload.get("_SYSTEMD_UNIT")
+        or "journal"
+    )
+    logger = str(
+        payload.get("SYSLOG_IDENTIFIER")
+        or payload.get("_COMM")
+        or unit
+    )
+    return LogRecord(
+        timestamp=timestamp,
+        severity=severity,
+        logger=logger,
+        message=message,
+        unit=unit,
     )
 
 
@@ -68,6 +138,17 @@ class RosoutMlopsNode(Node):
             float(os.environ.get("FLEET_LOG_MLOPS_LOOKBACK_SEC", "300")),
         )
         self._records: Deque[LogRecord] = deque()
+        self._journal_units = tuple(
+            value.strip()
+            for value in os.environ.get(
+                "FLEET_LOG_MLOPS_JOURNAL_UNITS",
+                "fleet-control-zenoh.service",
+            ).split(",")
+            if value.strip()
+        )
+        self._journal_since_usec = time.time_ns() // 1000 - 1_000_000
+        self._journal_seen_order: Deque[str] = deque()
+        self._journal_seen = set()
         self._model: Optional[Dict[str, Any]] = None
         self._model_mtime_ns: Optional[int] = None
         qos = QoSProfile(
@@ -75,8 +156,20 @@ class RosoutMlopsNode(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
         )
-        self.create_subscription(Log, "/fleet/rosout", self._on_log, qos)
+        self._log_subscriptions = [
+            self.create_subscription(
+                Log,
+                topic,
+                partial(self._on_log, source=source),
+                qos,
+            )
+            for topic, source in (
+                ("/fleet/rosout", "tb1_rosout"),
+                ("/rosout", "control_rosout"),
+            )
+        ]
         self.create_timer(15.0, self._publish_inference)
+        self.create_timer(2.0, self._poll_journal)
         self._restore_recent_records()
         self._publish_inference()
 
@@ -86,11 +179,71 @@ class RosoutMlopsNode(Node):
         cutoff = time.time() - self._lookback_sec
         self._records.extend(read_recent_jsonl(candidates, cutoff))
 
-    def _on_log(self, message: Log) -> None:
-        record = rosout_message_to_record(message)
+    def _on_log(self, message: Log, source: str = "rosout") -> None:
+        record = rosout_message_to_record(message, unit=source)
+        self._store_record(record)
+
+    def _store_record(self, record: LogRecord) -> None:
+        """Persist one normalized record and retain it for live inference."""
         self._records.append(record)
         self._append_raw(record)
         self._trim_records(time.time())
+
+    def _poll_journal(self) -> None:
+        """Collect control-bridge warnings that are outside ROS `/rosout`."""
+        if not self._journal_units:
+            return
+        poll_started_usec = time.time_ns() // 1000
+        command = [
+            "journalctl",
+            "--user",
+            "--no-pager",
+            "--output=json",
+            "--since",
+            f"@{self._journal_since_usec / 1_000_000.0:.6f}",
+        ]
+        for unit in self._journal_units:
+            command.extend(("--unit", unit))
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return
+        if completed.returncode != 0:
+            return
+        for line in completed.stdout.splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            cursor = str(payload.get("__CURSOR") or "")
+            if cursor and cursor in self._journal_seen:
+                continue
+            record = journal_payload_to_record(payload)
+            if record is None or record.severity not in {"WARNING", "ERROR"}:
+                continue
+            self._store_record(record)
+            if cursor:
+                self._journal_seen.add(cursor)
+                self._journal_seen_order.append(cursor)
+                while len(self._journal_seen_order) > 2048:
+                    self._journal_seen.discard(
+                        self._journal_seen_order.popleft()
+                    )
+        # Keep one second of overlap so records committed while journalctl was
+        # running are picked up on the next poll. Journal cursors deduplicate
+        # that overlap without relying on message text.
+        self._journal_since_usec = max(
+            self._journal_since_usec,
+            poll_started_usec - 1_000_000,
+        )
 
     def _append_raw(self, record: LogRecord) -> None:
         day = time.strftime("%Y%m%d", time.gmtime(record.timestamp))

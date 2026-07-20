@@ -44,6 +44,7 @@ setup(
             "profile_manager_node = navigation_agent.profile_manager_node:main",
             "validate_map = navigation_agent.map_validator:main",
             "scan_normalizer = navigation_agent.scan_normalizer:main",
+            "web_telemetry = navigation_agent.web_telemetry:main",
             "supervised_motion = navigation_agent.supervised_motion:main",
         ],
     },

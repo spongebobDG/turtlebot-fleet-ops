@@ -26,6 +26,7 @@ jobs:
       - name: Test web dashboard helpers
         run: |
           node --test \
+            control/fleet_gateway/test/test_manual_keys.js \
             control/fleet_gateway/test/test_map_math.js \
             control/fleet_gateway/test/test_map_viewport.js \
             control/fleet_gateway/test/test_robot_display.js

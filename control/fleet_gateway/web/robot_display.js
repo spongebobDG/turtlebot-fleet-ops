@@ -14,6 +14,15 @@
   };
 
   const selectDisplayPose = (robot) => {
+    const tfPose = robot?.map_pose;
+    if (tfPose?.frame_id === "map" && tfPose.fresh !== false && finitePose(tfPose)) {
+      return {
+        frame_id: "map",
+        x: Number(tfPose.x),
+        y: Number(tfPose.y),
+        yaw: Number(tfPose.yaw),
+      };
+    }
     const mapPose = robot?.navigation?.current;
     if (mapPose?.frame_id === "map" && finitePose(mapPose)) {
       return {
