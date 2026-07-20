@@ -63,4 +63,4 @@ def test_process_cleanup_tolerates_launch_interrupts(monkeypatch):
 
     _cleanup_navigation_agent(StubAgent(), StubExecutor())
 
-    assert calls == ["shutdown", "remove", "destroy", "executor", "rclpy"]
+    assert calls == ["shutdown", "executor", "remove", "destroy", "rclpy"]

@@ -1147,9 +1147,9 @@ def _cleanup_navigation_agent(node, executor) -> None:
     """Best-effort cleanup after launch has delivered SIGINT to all children."""
     for cleanup in (
         node.shutdown,
+        executor.shutdown,
         lambda: executor.remove_node(node),
         node.destroy_node,
-        executor.shutdown,
     ):
         try:
             cleanup()

@@ -211,7 +211,20 @@ def main(args: Optional[List[str]] = None) -> None:
     node = ManualControlNode()
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
+        _cleanup_manual_control(node)
+
+
+def _cleanup_manual_control(node) -> None:
+    """Suppress launch SIGINT races while still releasing ROS entities."""
+    try:
         node.destroy_node()
+    except (KeyboardInterrupt, RuntimeError):
+        pass
+    try:
         if rclpy.ok():
             rclpy.shutdown()
+    except (KeyboardInterrupt, RuntimeError):
+        pass

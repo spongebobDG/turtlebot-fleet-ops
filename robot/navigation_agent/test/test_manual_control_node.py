@@ -10,7 +10,10 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 
 from navigation_agent.arbiter_node import MotionArbiter
-from navigation_agent.manual_control_node import ManualControlNode
+from navigation_agent.manual_control_node import (
+    ManualControlNode,
+    _cleanup_manual_control,
+)
 
 
 def spin_until(executor, condition, timeout=2.0):
@@ -114,3 +117,30 @@ def test_destroy_after_context_shutdown_does_not_publish():
     rclpy.shutdown()
 
     manual.destroy_node()
+
+
+def test_process_cleanup_tolerates_repeated_launch_interrupts(monkeypatch):
+    calls = []
+
+    class StubManual:
+
+        def destroy_node(self):
+            calls.append("destroy")
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        "navigation_agent.manual_control_node.rclpy.ok", lambda: True
+    )
+
+    def interrupted_shutdown():
+        calls.append("rclpy")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        "navigation_agent.manual_control_node.rclpy.shutdown",
+        interrupted_shutdown,
+    )
+
+    _cleanup_manual_control(StubManual())
+
+    assert calls == ["destroy", "rclpy"]
