@@ -4,9 +4,14 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  aiAssessmentPresentation,
   diagnosisMeta,
   diagnosisRows,
+  escapeHtml,
   incidentSummary,
+  localAIActionPresentation,
+  localAIResultPresentation,
+  localAIStatusPresentation,
   modelPresentation,
   statusPresentation,
 } = require("../web/diagnostics_view.js");
@@ -124,4 +129,69 @@ test("no-data summary does not invent a zero-second log age", () => {
   });
 
   assert.equal(summary, "현재 조치 0 · 과거 0 · 정상·예상 0 · 수집 로그 없음");
+});
+
+test("local AI readiness controls the incident analysis action", () => {
+  const ready = localAIStatusPresentation({
+    state: "READY",
+    model: "qwen3:8b",
+    message: "ready",
+  });
+  const missing = localAIStatusPresentation({
+    state: "MODEL_NOT_READY",
+    model: "qwen3:8b",
+    message: "pull required",
+  });
+
+  assert.equal(ready.label, "Local AI · qwen3:8b · READY");
+  assert.equal(ready.canAnalyze, true);
+  assert.equal(missing.canAnalyze, false);
+  assert.equal(missing.tone, "model-not-ready");
+  assert.equal(missing.explanation, "pull required");
+});
+
+test("local AI assessment keeps uncertainty visible", () => {
+  assert.equal(aiAssessmentPresentation("LIKELY"), "가능성 높음");
+  assert.equal(aiAssessmentPresentation("POSSIBLE"), "가능성 있음");
+  assert.equal(
+    aiAssessmentPresentation("INSUFFICIENT_EVIDENCE"),
+    "근거 부족",
+  );
+});
+
+test("local AI action exposes loading and completed states", () => {
+  assert.deepEqual(
+    localAIActionPresentation({
+      canAnalyze: true,
+      inFlight: true,
+      hasResult: false,
+    }),
+    { disabled: true, label: "로컬 AI 분석 중…" },
+  );
+  assert.deepEqual(
+    localAIActionPresentation({
+      canAnalyze: true,
+      inFlight: false,
+      hasResult: true,
+    }),
+    { disabled: false, label: "로컬 AI 분석 다시 확인" },
+  );
+});
+
+test("local AI result distinguishes errors and cache reuse", () => {
+  assert.deepEqual(
+    localAIResultPresentation({ state: "ERROR", message: "timeout" }),
+    { isError: true, message: "timeout", source: "" },
+  );
+  assert.equal(
+    localAIResultPresentation({ cached: true, latency_ms: 999 }).source,
+    "캐시 재사용",
+  );
+});
+
+test("AI report fields are HTML escaped before rendering", () => {
+  assert.equal(
+    escapeHtml('<img src=x onerror="alert(1)">&\''),
+    "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;&#039;",
+  );
 });

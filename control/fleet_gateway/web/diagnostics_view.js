@@ -5,6 +5,17 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.FleetDiagnosticsView = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
+  const escapeHtml = (value) => String(value ?? "").replace(
+    /[&<>"']/g,
+    (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    })[character],
+  );
+
   const diagnosisKey = (item, index) => String(
     item?.cause || item?.label || `diagnosis-${index}`,
   );
@@ -73,6 +84,55 @@
       || { label: String(status || "검토"), tone: "review" };
   };
 
+  const localAIStatusPresentation = (status) => {
+    const state = String(status?.state || "UNAVAILABLE").toUpperCase();
+    const model = String(status?.model || "qwen3:8b");
+    const labels = {
+      READY: "READY",
+      MODEL_NOT_READY: "MODEL NOT READY",
+      DISABLED: "DISABLED",
+      UNAVAILABLE: "UNAVAILABLE",
+    };
+    return {
+      label: `Local AI · ${model} · ${labels[state] || state}`,
+      tone: state.toLowerCase().replaceAll("_", "-"),
+      canAnalyze: state === "READY",
+      explanation: String(status?.message || "로컬 AI 상태를 확인할 수 없습니다."),
+    };
+  };
+
+  const aiAssessmentPresentation = (assessment) => {
+    const values = {
+      LIKELY: "가능성 높음",
+      POSSIBLE: "가능성 있음",
+      INSUFFICIENT_EVIDENCE: "근거 부족",
+    };
+    return values[String(assessment || "").toUpperCase()] || "AI 자문";
+  };
+
+  const localAIActionPresentation = ({ canAnalyze, inFlight, hasResult }) => ({
+    disabled: !canAnalyze || inFlight,
+    label: inFlight
+      ? "로컬 AI 분석 중…"
+      : (hasResult ? "로컬 AI 분석 다시 확인" : "로컬 AI 분석"),
+  });
+
+  const localAIResultPresentation = (result) => {
+    if (result?.state === "ERROR") {
+      return {
+        isError: true,
+        message: String(result.message || "분석 결과를 가져오지 못했습니다."),
+        source: "",
+      };
+    }
+    const latency = Number(result?.latency_ms || 0) / 1000;
+    return {
+      isError: false,
+      message: "",
+      source: result?.cached ? "캐시 재사용" : `${latency}초`,
+    };
+  };
+
   const formatAge = (ageSec) => {
     const value = Number(ageSec);
     if (!Number.isFinite(value)) return "시각 미상";
@@ -110,10 +170,15 @@
   };
 
   return {
+    aiAssessmentPresentation,
     diagnosisMeta,
     diagnosisRows,
+    escapeHtml,
     formatAge,
     incidentSummary,
+    localAIActionPresentation,
+    localAIResultPresentation,
+    localAIStatusPresentation,
     modelPresentation,
     statusPresentation,
   };

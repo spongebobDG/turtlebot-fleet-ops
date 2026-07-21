@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 
 import uvicorn
 
@@ -13,6 +14,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT / "control" / "fleet_gateway"))
 
 from fleet_gateway.api import create_app  # noqa: E402
+from fleet_gateway.log_ai import LocalLogAIAnalyzer  # noqa: E402
+from fleet_gateway.log_mlops import LogRecord, write_json, write_jsonl  # noqa: E402
 from fleet_gateway.map_registry import MapRegistry  # noqa: E402
 from fleet_gateway.operations import OperationsStore  # noqa: E402
 from fleet_gateway.registry import StatusRegistry  # noqa: E402
@@ -139,15 +142,56 @@ def build_app():
     task = store.create_task("tb1", 0.5, 0.25, 0.0, True)
     store.update_task(task["task_id"], "SUCCEEDED", "Preview task succeeded")
     controller = PreviewController()
-    return create_app(
+    log_tempdir = tempfile.TemporaryDirectory(prefix="tb1-web-preview-mlops-")
+    log_root = Path(log_tempdir.name)
+    log_status_path = log_root / "status" / "latest.json"
+    write_json(
+        log_status_path,
+        {
+            "state": "ANOMALY",
+            "observed_at": "2999-01-01T00:00:00+00:00",
+            "model_id": "preview-production-statistical-model",
+            "score": 8.0,
+            "threshold": 4.0,
+        },
+    )
+    write_jsonl(
+        log_root / "raw" / "preview.jsonl",
+        [
+            LogRecord(
+                timestamp=time.time(),
+                severity="ERROR",
+                logger="navigation_agent",
+                message="Controller failed to make progress; progress checker timeout",
+                unit="tb1-navigation.service",
+            )
+        ],
+    )
+    log_ai = LocalLogAIAnalyzer(
+        status_path=log_status_path,
+        root=log_root,
+        robot_snapshot=registry.snapshot,
+        enabled=os.environ.get("PREVIEW_LOG_AI", "0") == "1",
+        base_url=os.environ.get(
+            "FLEET_LOG_AI_BASE_URL",
+            "http://127.0.0.1:11434",
+        ),
+        model=os.environ.get("FLEET_LOG_AI_MODEL", "qwen3:8b"),
+        timeout_sec=float(os.environ.get("FLEET_LOG_AI_TIMEOUT_SEC", "90")),
+    )
+    app = create_app(
         registry,
         estop_controller=controller,
         navigation_controller=controller,
         map_registry=maps,
         operations_store=store,
         task_manager=NavigationTaskManager(store, controller),
+        log_mlops_status_path=log_status_path,
+        log_ai_analyzer=log_ai,
         static_dir=REPOSITORY_ROOT / "control" / "fleet_gateway" / "web",
     )
+    app.state.preview_log_tempdir = log_tempdir
+    return app
 
 
 def main() -> None:

@@ -20,6 +20,13 @@ from fleet_gateway.pose_alignment import (
     score_pose_alignment,
 )
 from fleet_gateway.log_mlops import incidents_from_path, status_from_path
+from fleet_gateway.log_ai import (
+    LocalAIInvalidResponse,
+    LocalAIBusy,
+    LocalAINotReady,
+    LocalAITimeout,
+    LocalLogAIAnalyzer,
+)
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.task_manager import NavigationTaskManager
 from fleet_gateway.patrol_manager import PatrolManager
@@ -158,6 +165,7 @@ def create_app(
     task_manager: Optional[NavigationTaskManager] = None,
     patrol_manager: Optional[PatrolManager] = None,
     log_mlops_status_path: Optional[Path] = None,
+    log_ai_analyzer: Optional[LocalLogAIAnalyzer] = None,
     static_dir: Optional[Path] = None,
     websocket_interval_sec: float = 0.5,
 ) -> FastAPI:
@@ -212,6 +220,42 @@ def create_app(
     @app.get("/api/mlops/ros2-logs/incidents")
     def ros2_log_incidents() -> Dict[str, Any]:
         return incidents_from_path(log_mlops_status_path)
+
+    @app.get("/api/mlops/ros2-logs/ai")
+    def ros2_log_ai_status() -> Dict[str, Any]:
+        if log_ai_analyzer is None:
+            return {
+                "state": "DISABLED",
+                "provider": "ollama",
+                "model": "qwen3:8b",
+                "message": "로컬 AI 분석이 구성되지 않았습니다.",
+            }
+        return log_ai_analyzer.health()
+
+    @app.post(
+        "/api/mlops/ros2-logs/incidents/{incident_id}/ai-analysis"
+    )
+    async def analyze_ros2_log_incident(incident_id: str) -> Dict[str, Any]:
+        if log_ai_analyzer is None:
+            raise HTTPException(
+                status_code=503,
+                detail="로컬 AI 분석이 구성되지 않았습니다.",
+            )
+        try:
+            return await run_in_threadpool(log_ai_analyzer.analyze, incident_id)
+        except KeyError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="현재 로그 범위에서 해당 사건을 찾을 수 없습니다.",
+            ) from error
+        except LocalAINotReady as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except LocalAIBusy as error:
+            raise HTTPException(status_code=429, detail=str(error)) from error
+        except LocalAITimeout as error:
+            raise HTTPException(status_code=504, detail=str(error)) from error
+        except LocalAIInvalidResponse as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
 
     @app.get("/api/events")
     def list_events(

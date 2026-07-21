@@ -29,14 +29,39 @@ install -m 0644 \
   infra/systemd/user/fleet-log-mlops.service \
   "${HOME}/.config/systemd/user/"
 
-cat >"${HOME}/.config/turtlebot-fleet-ops/control.env" <<EOF
-ROBOT_ADDRESS=${robot_address}
-ROS_DISTRO=humble
-ROS_DOMAIN_ID=42
-FLEET_LOG_MLOPS_ROOT=${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs
-FLEET_LOG_MLOPS_STATUS=${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/status/latest.json
-EOF
-chmod 0600 "${HOME}/.config/turtlebot-fleet-ops/control.env"
+control_env="${HOME}/.config/turtlebot-fleet-ops/control.env"
+touch "${control_env}"
+chmod 0600 "${control_env}"
+
+upsert_env() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" "${control_env}"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "${control_env}"
+  else
+    printf '%s=%s\n' "${key}" "${value}" >>"${control_env}"
+  fi
+}
+
+default_env() {
+  local key="$1"
+  local value="$2"
+  grep -q "^${key}=" "${control_env}" \
+    || printf '%s=%s\n' "${key}" "${value}" >>"${control_env}"
+}
+
+upsert_env ROBOT_ADDRESS "${robot_address}"
+upsert_env ROS_DISTRO humble
+upsert_env ROS_DOMAIN_ID 42
+upsert_env FLEET_LOG_MLOPS_ROOT \
+  "${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs"
+upsert_env FLEET_LOG_MLOPS_STATUS \
+  "${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/status/latest.json"
+default_env FLEET_LOG_AI_ENABLED 0
+default_env FLEET_LOG_AI_BASE_URL http://127.0.0.1:11434
+default_env FLEET_LOG_AI_MODEL qwen3:8b
+default_env FLEET_LOG_AI_TIMEOUT_SEC 90
+default_env FLEET_LOG_AI_RETENTION_DAYS 30
 
 # These are intentionally literal shell startup lines written to .bashrc.
 # shellcheck disable=SC2016

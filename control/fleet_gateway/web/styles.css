@@ -469,6 +469,18 @@ body[data-map-mode="waypoint"] .navigation-actions .task-create { display: none;
   text-overflow: clip;
   white-space: normal;
 }
+.mlops-summary .local-ai-summary { grid-column: 1 / -1; }
+.mlops-summary .local-ai-summary strong { color: var(--muted); }
+.mlops-summary .local-ai-summary strong.ready { color: var(--mint); }
+.mlops-summary .local-ai-summary strong.model-not-ready,
+.mlops-summary .local-ai-summary strong.disabled,
+.mlops-summary .local-ai-summary strong.unavailable { color: var(--yellow); }
+.mlops-summary .local-ai-explanation {
+  color: #9fb4ae;
+  line-height: 1.35;
+  text-overflow: clip;
+  white-space: normal;
+}
 .incident-details {
   grid-column: 1 / -1;
   min-height: 0;
@@ -505,6 +517,27 @@ body[data-map-mode="waypoint"] .navigation-actions .task-create { display: none;
 .incident-evidence { color: var(--muted); overflow-wrap: anywhere; }
 .incident-evidence time { color: var(--mint); }
 .incident-evidence b { color: var(--red); }
+.local-ai-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.local-ai-actions button { flex: 0 0 auto; padding: 5px 8px; font-size: 0.55rem; }
+.local-ai-actions span { color: var(--muted); font-size: 0.52rem; }
+.local-ai-report {
+  margin-top: 7px;
+  padding: 7px;
+  background: rgba(104, 255, 201, 0.035);
+  border: 1px solid rgba(104, 255, 201, 0.22);
+  border-radius: 7px;
+}
+.local-ai-report.error { border-color: rgba(255, 105, 115, 0.35); }
+.local-ai-report-title { display: flex; justify-content: space-between; gap: 8px; }
+.local-ai-report-title span { color: var(--mint); font-size: 0.52rem; }
+.local-ai-report > small { display: block; margin-top: 2px; color: var(--muted); }
+.local-ai-report .local-ai-notice { color: var(--yellow); }
 .patrol-list { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border); }
 
 .operations-card {

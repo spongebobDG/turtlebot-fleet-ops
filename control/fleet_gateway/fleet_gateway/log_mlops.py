@@ -845,6 +845,12 @@ def diagnose_records(
         )
         evidence = [
             {
+                "evidence_id": "evidence-" + hashlib.sha256(
+                    (
+                        f"{record.timestamp:.6f}\n{record.unit}\n"
+                        f"{record.logger}\n{record.message}"
+                    ).encode("utf-8")
+                ).hexdigest()[:12],
                 "timestamp": utc_now(record.timestamp),
                 "severity": record.severity,
                 "logger": record.logger,
@@ -1018,9 +1024,67 @@ def diagnose_records(
     )
     selected = diagnoses[: max(1, min(int(limit), 20))]
     for item in selected:
+        item["incident_id"] = "incident-" + content_hash(
+            {
+                "version": 1,
+                "cause": item["cause"],
+                "first_seen": item["first_seen"],
+                "sources": item["sources"],
+            }
+        )[:16]
+        item["evidence_digest"] = content_hash(
+            {
+                "cause": item["cause"],
+                "status": item["status"],
+                "evidence": item["evidence"],
+                "correlated_causes": item["correlated_causes"],
+                "checks": item["checks"],
+                "fixes": item["fixes"],
+            }
+        )
         for internal_key in ("_sort_score", "_first_ts", "_last_ts"):
             item.pop(internal_key, None)
     return selected
+
+
+def records_from_status_path(
+    status_path: Optional[Path],
+    max_records: int = 2000,
+) -> List[LogRecord]:
+    """Read recent immutable raw records associated with one status path."""
+    records: List[LogRecord] = []
+    if status_path is None:
+        return records
+    raw_dir = Path(status_path).expanduser().parent.parent / "raw"
+    try:
+        files = sorted(raw_dir.glob("*.jsonl"), reverse=True)
+    except OSError:
+        files = []
+    for path in files:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in reversed(lines):
+            if len(records) >= max_records:
+                break
+            try:
+                payload = json.loads(line)
+                records.append(
+                    LogRecord(
+                        timestamp=float(payload["timestamp"]),
+                        severity=str(payload.get("severity", "INFO")),
+                        logger=str(payload.get("logger", "unknown")),
+                        message=str(payload.get("message", "")),
+                        unit=str(payload.get("unit", "")),
+                    )
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+        if len(records) >= max_records:
+            break
+    records.sort(key=lambda record: record.timestamp)
+    return records
 
 
 def incidents_from_path(
@@ -1031,37 +1095,7 @@ def incidents_from_path(
 ) -> Dict[str, Any]:
     """Read recent immutable raw logs and return explainable diagnoses."""
     status = status_from_path(status_path)
-    records: List[LogRecord] = []
-    if status_path is not None:
-        raw_dir = Path(status_path).expanduser().parent.parent / "raw"
-        try:
-            files = sorted(raw_dir.glob("*.jsonl"), reverse=True)
-        except OSError:
-            files = []
-        for path in files:
-            try:
-                lines = path.read_text(encoding="utf-8").splitlines()
-            except OSError:
-                continue
-            for line in reversed(lines):
-                if len(records) >= max_records:
-                    break
-                try:
-                    payload = json.loads(line)
-                    records.append(
-                        LogRecord(
-                            timestamp=float(payload["timestamp"]),
-                            severity=str(payload.get("severity", "INFO")),
-                            logger=str(payload.get("logger", "unknown")),
-                            message=str(payload.get("message", "")),
-                            unit=str(payload.get("unit", "")),
-                        )
-                    )
-                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-                    continue
-            if len(records) >= max_records:
-                break
-    records.sort(key=lambda record: record.timestamp)
+    records = records_from_status_path(status_path, max_records=max_records)
     all_records = list(records)
     total_record_count = len(all_records)
     reference_timestamp = (

@@ -53,6 +53,8 @@ const mlopsModel = document.querySelector("#mlops-model");
 const mlopsScore = document.querySelector("#mlops-score");
 const mlopsReasons = document.querySelector("#mlops-reasons");
 const mlopsModelExplanation = document.querySelector("#mlops-model-explanation");
+const localAIState = document.querySelector("#local-ai-state");
+const localAIExplanation = document.querySelector("#local-ai-explanation");
 const incidentCause = document.querySelector("#incident-cause");
 const incidentAction = document.querySelector("#incident-action");
 const incidentDetails = document.querySelector("#incident-details");
@@ -82,6 +84,9 @@ let faults = [];
 let events = [];
 let logMlops = null;
 let logIncidents = null;
+let localLogAI = null;
+const localAIReports = new Map();
+const localAIInFlight = new Set();
 let headingSpecified = false;
 let manualSession = null;
 let manualTimer = null;
@@ -93,16 +98,7 @@ let manualStartInFlight = false;
 let liveMapRefreshInFlight = false;
 let liveMapStatus = { robotId: "", updatedAt: null, error: false };
 
-const escapeHtml = (value) => String(value ?? "").replace(
-  /[&<>"']/g,
-  (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  })[character],
-);
+const escapeHtml = diagnosticsView.escapeHtml;
 
 const number = (value, digits = 1, suffix = "") => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -1384,6 +1380,46 @@ const renderOperations = () => {
     </div>`).join("") : '<p class="record-empty">기록된 이벤트가 없습니다.</p>';
 };
 
+const renderLocalAIReport = (item) => {
+  const result = localAIReports.get(item.incident_id);
+  if (!result) return "";
+  const resultPresentation = diagnosticsView.localAIResultPresentation(result);
+  if (resultPresentation.isError) {
+    return `<section class="local-ai-report error">
+      <strong>로컬 AI 분석 실패</strong>
+      <p>${escapeHtml(resultPresentation.message)}</p>
+    </section>`;
+  }
+  const report = result.report || {};
+  const primary = report.primary_cause || {};
+  const confidence = Number(primary.confidence);
+  const confidenceText = Number.isFinite(confidence)
+    ? `${Math.round(confidence * 100)}%`
+    : "—";
+  const list = (label, values, valueOf = (value) => value) => values?.length ? `
+    <section><strong>${label}</strong><ol>${values.map((value) => `<li>${escapeHtml(valueOf(value))}</li>`).join("")}</ol></section>` : "";
+  const alternatives = (report.alternative_causes || []).map((cause) => {
+    const value = Number(cause.confidence);
+    const percent = Number.isFinite(value) ? `${Math.round(value * 100)}%` : "—";
+    return `${cause.label} (${percent}) · ${cause.rationale}`;
+  });
+  const metadata = `${result.model || "qwen3:8b"} · ${recordTime(result.generated_at)} · ${resultPresentation.source}`;
+  return `<section class="local-ai-report">
+    <div class="local-ai-report-title"><strong>로컬 AI 자문</strong><span>${escapeHtml(diagnosticsView.aiAssessmentPresentation(report.assessment))}</span></div>
+    <small>${escapeHtml(metadata)}</small>
+    <p>${escapeHtml(report.summary_ko || "요약이 없습니다.")}</p>
+    <p><strong>주요 원인 ${escapeHtml(confidenceText)}</strong> ${escapeHtml(primary.label || "근거 부족")}</p>
+    <p>${escapeHtml(primary.rationale || "추가 근거가 필요합니다.")}</p>
+    ${list("인용 근거", primary.evidence_ids || [])}
+    ${list("대안 원인", alternatives)}
+    ${list("우선 점검", report.recommended_checks || [], (value) => value.text)}
+    ${list("해결·검증 제안", report.recommended_fixes || [], (value) => value.text)}
+    ${list("누락된 근거", report.missing_evidence || [])}
+    ${list("운영 주의", report.operator_cautions || [])}
+    <p class="local-ai-notice">${escapeHtml(result.notice || "읽기 전용 AI 자문이며 안전 제어를 변경하지 않습니다.")}</p>
+  </section>`;
+};
+
 const renderLogMlops = () => {
   const status = logMlops || { state: "UNAVAILABLE" };
   const state = String(status.state || "UNAVAILABLE");
@@ -1415,6 +1451,11 @@ const renderLogMlops = () => {
   mlopsModel.textContent = modelPresentation.label;
   mlopsModel.title = modelPresentation.explanation;
   mlopsModelExplanation.textContent = modelPresentation.explanation;
+  const aiPresentation = diagnosticsView.localAIStatusPresentation(localLogAI);
+  localAIState.textContent = aiPresentation.label;
+  localAIState.className = aiPresentation.tone;
+  localAIState.title = aiPresentation.explanation;
+  localAIExplanation.textContent = aiPresentation.explanation;
   incidentCause.textContent = diagnosticsView.incidentSummary(logIncidents);
   incidentAction.textContent = diagnosis?.confirmed_symptom || logIncidents?.message || "";
   incidentCause.title = diagnosis?.evidence?.map((item) => `${item.logger}: ${item.message}`).join("\n") || "";
@@ -1438,6 +1479,13 @@ const renderLogMlops = () => {
       .map((cause) => causeLabels.get(cause) || cause);
     const evidence = (item.evidence || []).map((entry) => `
       <li><time>${recordTime(entry.timestamp)}</time> <b>${escapeHtml(entry.severity)}</b> ${escapeHtml(entry.logger)}: ${escapeHtml(entry.message)}</li>`).join("");
+    const incidentId = String(item.incident_id || "");
+    const aiRunning = localAIInFlight.has(incidentId);
+    const aiAction = diagnosticsView.localAIActionPresentation({
+      canAnalyze: Boolean(incidentId) && aiPresentation.canAnalyze,
+      inFlight: aiRunning,
+      hasResult: localAIReports.has(incidentId),
+    });
     return `<details class="incident-item ${escapeHtml(status.tone)}" data-cause="${escapeHtml(key)}" ${open ? "open" : ""}>
       <summary><span>${escapeHtml(status.label)}</span>${escapeHtml(item.label)} <small>${escapeHtml(diagnosticsView.diagnosisMeta(item))}</small></summary>
       <p><strong>판정</strong> ${escapeHtml(item.root_cause_status || "HYPOTHESIS")}</p>
@@ -1448,6 +1496,11 @@ const renderLogMlops = () => {
       ${list("해결·검증", item.fixes)}
       ${list("현재 로그의 한계", item.missing_evidence)}
       ${evidence ? `<section><strong>근거 로그</strong><ul class="incident-evidence">${evidence}</ul></section>` : ""}
+      <section class="local-ai-actions">
+        <button type="button" class="secondary" data-ai-incident-id="${escapeHtml(incidentId)}" ${aiAction.disabled ? "disabled" : ""}>${escapeHtml(aiAction.label)}</button>
+        <span>${escapeHtml(aiPresentation.canAnalyze ? "선택 사건만 로컬에서 분석합니다." : aiPresentation.explanation)}</span>
+      </section>
+      ${renderLocalAIReport(item)}
     </details>`;
   }).join("") : '<p class="record-empty">해당 시간 범위에 진단 가능한 로그가 없습니다.</p>';
   incidentDetails.dataset.rendered = "true";
@@ -1460,9 +1513,10 @@ const loadLogMlops = async () => {
     if (!response.ok) throw new Error(body.detail || fallbackMessage);
     return body;
   };
-  const [statusResult, incidentResult] = await Promise.allSettled([
+  const [statusResult, incidentResult, aiResult] = await Promise.allSettled([
     fetchJson("/api/mlops/ros2-logs", "MLOps 상태 조회 실패"),
     fetchJson("/api/mlops/ros2-logs/incidents", "원인 분석 조회 실패"),
+    fetchJson("/api/mlops/ros2-logs/ai", "로컬 AI 상태 조회 실패"),
   ]);
   if (statusResult.status === "fulfilled") {
     logMlops = statusResult.value;
@@ -1481,8 +1535,45 @@ const loadLogMlops = async () => {
     const error = incidentResult.reason;
     logIncidents = { diagnoses: [], message: error.message };
   }
+  if (aiResult.status === "fulfilled") {
+    localLogAI = aiResult.value;
+  } else {
+    localLogAI = {
+      state: "UNAVAILABLE",
+      model: "qwen3:8b",
+      message: aiResult.reason.message,
+    };
+  }
   renderLogMlops();
 };
+
+incidentDetails.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-ai-incident-id]");
+  if (!button || button.disabled) return;
+  const incidentId = button.dataset.aiIncidentId;
+  if (!incidentId || localAIInFlight.has(incidentId)) return;
+  localAIInFlight.add(incidentId);
+  renderLogMlops();
+  try {
+    const response = await fetch(
+      `/api/mlops/ros2-logs/incidents/${encodeURIComponent(incidentId)}/ai-analysis`,
+      { method: "POST" },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "로컬 AI 분석 실패");
+    localAIReports.set(incidentId, body);
+    showToast(body.cached ? "저장된 로컬 AI 분석을 불러왔습니다." : "로컬 AI 분석을 완료했습니다.");
+  } catch (error) {
+    localAIReports.set(incidentId, {
+      state: "ERROR",
+      message: error.message,
+    });
+    showToast(error.message, true);
+  } finally {
+    localAIInFlight.delete(incidentId);
+    renderLogMlops();
+  }
+});
 
 const loadOperations = async () => {
   loadLogMlops();

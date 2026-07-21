@@ -4,6 +4,12 @@ from fastapi.testclient import TestClient
 import pytest
 
 from fleet_gateway.api import create_app
+from fleet_gateway.log_ai import (
+    LocalAIInvalidResponse,
+    LocalAIBusy,
+    LocalAINotReady,
+    LocalAITimeout,
+)
 from fleet_gateway.map_registry import MapRegistry
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.registry import StatusRegistry
@@ -466,6 +472,88 @@ def test_ros2_log_mlops_status_route_is_fail_visible(tmp_path):
     assert missing.json()["state"] == "MODEL_NOT_READY"
     assert available.json()["state"] == "NORMAL"
     assert available.json()["model_id"] == "model-1"
+
+
+class FakeLogAIAnalyzer:
+
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    def health(self):
+        return {
+            "state": "READY",
+            "provider": "ollama",
+            "model": "qwen3:8b",
+        }
+
+    def analyze(self, incident_id):
+        self.calls.append(incident_id)
+        if self.error is not None:
+            raise self.error
+        return {
+            "state": "READY",
+            "incident_id": incident_id,
+            "model": "qwen3:8b",
+            "report": {"summary_ko": "분석 완료"},
+        }
+
+
+def test_local_log_ai_status_and_on_demand_analysis_routes():
+    analyzer = FakeLogAIAnalyzer()
+    client = TestClient(
+        create_app(make_registry(), log_ai_analyzer=analyzer)
+    )
+
+    health = client.get("/api/mlops/ros2-logs/ai")
+    analysis = client.post(
+        "/api/mlops/ros2-logs/incidents/incident-1/ai-analysis"
+    )
+
+    assert health.status_code == 200
+    assert health.json()["state"] == "READY"
+    assert analysis.status_code == 200
+    assert analysis.json()["incident_id"] == "incident-1"
+    assert analyzer.calls == ["incident-1"]
+
+
+@pytest.mark.parametrize(
+    "error,status_code",
+    [
+        (KeyError("missing"), 404),
+        (LocalAINotReady("not ready"), 503),
+        (LocalAIBusy("busy"), 429),
+        (LocalAITimeout("timeout"), 504),
+        (LocalAIInvalidResponse("invalid"), 502),
+    ],
+)
+def test_local_log_ai_route_maps_fail_visible_errors(error, status_code):
+    client = TestClient(
+        create_app(
+            make_registry(),
+            log_ai_analyzer=FakeLogAIAnalyzer(error=error),
+        )
+    )
+
+    response = client.post(
+        "/api/mlops/ros2-logs/incidents/incident-1/ai-analysis"
+    )
+
+    assert response.status_code == status_code
+    assert response.json()["detail"]
+
+
+def test_local_log_ai_is_optional_and_does_not_break_dashboard():
+    client = TestClient(create_app(make_registry()))
+
+    health = client.get("/api/mlops/ros2-logs/ai")
+    analysis = client.post(
+        "/api/mlops/ros2-logs/incidents/incident-1/ai-analysis"
+    )
+
+    assert health.status_code == 200
+    assert health.json()["state"] == "DISABLED"
+    assert analysis.status_code == 503
 
 
 def test_navigation_map_initial_pose_goal_and_cancel_routes():

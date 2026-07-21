@@ -232,6 +232,8 @@ dataset·candidate·Production registry는 lineage를 위해 자동 삭제하지
 - [TB1 매핑·Nav2·웹 목적지 운영 및 검증](docs/setup/tb1-navigation.md)
 - [TB1 작업·감사·재부팅 복구 운영 및 검증](docs/setup/tb1-operations.md)
 - [ROS 2 로그 MLOps 학습·승격·추론 운영](docs/setup/ros2-log-mlops.md)
+- 로컬 Ollama `qwen3:8b` 사건 보고서는 위 운영 문서의 설치 절차 후 Dashboard에서 사건별로
+  요청하며, 읽기 전용 자문으로만 동작한다.
 - [로봇 없는 TB1 개발·mock 검증](docs/setup/weekend-robotless-development.md)
 - [Zenoh ROS 2 DDS 브리지 운영](infra/zenoh/README.md)
 - [Git 작업 흐름](docs/git-workflow.md)
