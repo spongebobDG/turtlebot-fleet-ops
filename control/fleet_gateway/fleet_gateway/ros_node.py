@@ -533,6 +533,9 @@ class FleetGatewayNode(Node):
         )
         save_map_names = list(self.get_parameter("save_map_services").value)
         map_topics = list(self.get_parameter("map_topics").value)
+        annotation_topics = list(
+            self.get_parameter("map_annotation_topics").value
+        )
         web_telemetry_topics = list(
             self.get_parameter("web_telemetry_topics").value
         )
@@ -557,6 +560,7 @@ class FleetGatewayNode(Node):
             profile_names,
             save_map_names,
             map_topics,
+            annotation_topics,
             web_telemetry_topics,
             scan_topics,
             scan_sensor_x,
@@ -619,6 +623,13 @@ class FleetGatewayNode(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
+        self._annotation_publishers = {
+            robot_id: self.create_publisher(String, annotation_topic, map_qos)
+            for robot_id, annotation_topic in zip(
+                robot_ids,
+                annotation_topics,
+            )
+        }
         self._map_subscriptions = [
             self.create_subscription(
                 OccupancyGrid,
@@ -657,6 +668,7 @@ class FleetGatewayNode(Node):
             "map_pose_target_frames": map_pose_target_frames,
             "map_pose_source_frames": map_pose_source_frames,
         }
+        self._configured_robot_ids = tuple(str(item) for item in robot_ids)
 
         self._navigation_lock = threading.RLock()
         self._manual_lock = threading.RLock()
@@ -766,6 +778,10 @@ class FleetGatewayNode(Node):
         )
         self.declare_parameter("map_topics", ["/map"])
         self.declare_parameter(
+            "map_annotation_topics",
+            ["/tb1/map_annotations"],
+        )
+        self.declare_parameter(
             "web_telemetry_topics",
             ["/fleet/web_telemetry"],
         )
@@ -793,6 +809,42 @@ class FleetGatewayNode(Node):
     def web_port(self) -> int:
         """Return the configured HTTP bind port."""
         return int(self.get_parameter("web_port").value)
+
+    @property
+    def configured_robot_ids(self) -> Tuple[str, ...]:
+        """Return robot identifiers aligned with configured ROS endpoints."""
+        return self._configured_robot_ids
+
+    def publish_map_annotations(
+        self,
+        robot_id: str,
+        annotations: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Publish a complete transient-local semantic-map snapshot."""
+        publisher = self._annotation_publishers.get(robot_id)
+        if publisher is None:
+            return {
+                "success": False,
+                "robot_id": robot_id,
+                "message": "No map annotation topic configured",
+            }
+        message = String()
+        message.data = json.dumps(
+            {
+                "version": 1,
+                "robot_id": robot_id,
+                "annotations": annotations,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        publisher.publish(message)
+        return {
+            "success": True,
+            "robot_id": robot_id,
+            "annotation_count": len(annotations),
+            "message": "Map policies published to the robot",
+        }
 
     def _status_callback(self, message: RobotStatus) -> None:
         status = status_message_to_dict(message)

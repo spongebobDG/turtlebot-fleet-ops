@@ -1,0 +1,19 @@
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      filters:
+        - semantic_keepout_filter
+      semantic_keepout_filter:
+        plugin: nav2_costmap_2d::KeepoutFilter
+        enabled: true
+        filter_info_topic: /tb1/map_annotations/filter_info
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      filters:
+        - semantic_keepout_filter
+      semantic_keepout_filter:
+        plugin: nav2_costmap_2d::KeepoutFilter
+        enabled: true
+        filter_info_topic: /tb1/map_annotations/filter_info

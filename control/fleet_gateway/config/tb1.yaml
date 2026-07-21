@@ -26,6 +26,8 @@ fleet_gateway:
       - /tb1/navigation/save_map
     map_topics:
       - /map
+    map_annotation_topics:
+      - /tb1/map_annotations
     web_telemetry_topics:
       - /fleet/web_telemetry
     scan_topics:

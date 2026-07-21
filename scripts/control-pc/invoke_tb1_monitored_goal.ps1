@@ -12,7 +12,7 @@ param(
     [double]$Yaw,
     [double]$CancelAfterSec = -1.0,
     [double]$TimeoutSec = 60.0,
-    [double]$MinScanM = 0.19,
+    [double]$MinScanM = 0.16,
     [double]$MaxObservedLinearMps = 0.06,
     [double]$MaxObservedAngularRadps = 0.32,
     [ValidateRange(50, 1000)]

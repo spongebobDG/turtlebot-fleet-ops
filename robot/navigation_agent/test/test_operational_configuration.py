@@ -16,6 +16,9 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     nav2_launch = (
         PACKAGE_ROOT / "launch" / "tb1_nav2_navigation.launch.py"
     ).read_text()
+    annotation_filters = (
+        PACKAGE_ROOT / "config" / "tb1_map_annotation_filters.yaml"
+    ).read_text()
     scan_normalizer = (
         PACKAGE_ROOT / "config" / "tb1_scan_normalizer.yaml"
     ).read_text()
@@ -40,7 +43,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "goal_max_duration_sec: 180.0" in agent_config
     assert "goal_distance_progress_m: 0.05" in agent_config
     assert "goal_yaw_progress_rad: 0.1" in agent_config
-    assert "navigation_min_clearance_m: 0.19" in agent_config
+    assert "navigation_min_clearance_m: 0.16" in agent_config
     assert "nav2_lifecycle_service: /bt_navigator/get_state" in agent_config
     assert "authorization_timeout_sec: 0.5" in agent_config
     assert "navigation_input_topic: /motion/navigation/cmd_vel" in agent_config
@@ -72,7 +75,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "update_min_d: 0.05" in nav2_rewrites
     assert "update_min_a: 0.05" in nav2_rewrites
     assert "robot_radius: 0.14" in nav2_rewrites
-    assert "inflation_radius: 0.19" in nav2_rewrites
+    assert "inflation_radius: 0.16" in nav2_rewrites
     assert "cost_scaling_factor: 3.0" in nav2_rewrites
     assert "xy_goal_tolerance: 0.10" in nav2_rewrites
     assert "yaw_goal_tolerance: 0.15" in nav2_rewrites
@@ -112,6 +115,13 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert 'NAVIGATION_CMD_TOPIC = "/motion/navigation/cmd_vel"' in (
         nav2_launch
     )
+    assert "tb1_map_annotation_filters.yaml" in nav2_launch
+    assert "nav2_costmap_2d::KeepoutFilter" in annotation_filters
+    assert annotation_filters.count("semantic_keepout_filter") >= 4
+    assert annotation_filters.count(
+        "/tb1/map_annotations/filter_info"
+    ) == 2
+    assert 'executable="map_annotation_filter"' in launch
     assert 'LaunchConfiguration("use_sim_time")' in launch
     assert 'default_value="false"' in launch
     assert '"use_composition": "False"' in launch
@@ -201,6 +211,17 @@ def test_tb1_ros_services_wait_for_an_operating_network() -> None:
         unit = (units / unit_name).read_text()
         assert "After=" in unit and "tb1-network-ready.service" in unit
         assert "Wants=" in unit and "tb1-network-ready.service" in unit
+
+
+def test_tb1_bringup_uses_stable_opencr_device_identity() -> None:
+    unit = (
+        REPOSITORY_ROOT / "infra" / "systemd" / "user"
+        / "tb1-bringup.service"
+    ).read_text()
+
+    assert "TB1_OPENCR_PORT=/dev/serial/by-id/usb-ROBOTIS_OpenCR_" in unit
+    assert "robot.launch.py usb_port:=${TB1_OPENCR_PORT}" in unit
+    assert "robot.launch.py'" not in unit
 
 
 def test_tb1_acceptance_tests_are_serialized_and_scoped() -> None:

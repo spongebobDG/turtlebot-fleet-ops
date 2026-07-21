@@ -1,5 +1,8 @@
 """Launch Humble Nav2 with TB1-specific velocity ownership."""
 
+from pathlib import Path
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
@@ -30,11 +33,16 @@ def generate_launch_description() -> LaunchDescription:
         ),
         allow_substs=True,
     )
+    annotation_filters = (
+        Path(get_package_share_directory("navigation_agent"))
+        / "config"
+        / "tb1_map_annotation_filters.yaml"
+    )
     common = {
         "output": "screen",
         "respawn": use_respawn,
         "respawn_delay": 2.0,
-        "parameters": [configured_params],
+        "parameters": [configured_params, str(annotation_filters)],
         "arguments": ["--ros-args", "--log-level", log_level],
     }
     common_remaps = [
@@ -73,6 +81,7 @@ def generate_launch_description() -> LaunchDescription:
                 arguments=common["arguments"],
                 parameters=[
                     configured_params,
+                    str(annotation_filters),
                     {
                         # Slow in-place alignment is valid progress even
                         # before the robot can translate along the path.

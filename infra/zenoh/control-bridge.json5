@@ -12,7 +12,8 @@
       },
       "allow": {
         "publishers": [
-          "^/fleet/navigation_lease$"
+          "^/fleet/navigation_lease$",
+          "^/tb1/map_annotations$"
         ],
         "subscribers": [
           "^/fleet/robot_status$",

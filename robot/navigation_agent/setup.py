@@ -46,6 +46,8 @@ setup(
             "scan_normalizer = navigation_agent.scan_normalizer:main",
             "web_telemetry = navigation_agent.web_telemetry:main",
             "supervised_motion = navigation_agent.supervised_motion:main",
+            "map_annotation_filter = "
+            "navigation_agent.map_annotation_filter:main",
         ],
     },
 )

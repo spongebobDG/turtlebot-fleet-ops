@@ -22,8 +22,8 @@ navigation_agent:
     goal_max_duration_sec: 180.0
     goal_distance_progress_m: 0.05
     goal_yaw_progress_rad: 0.1
-    # 0.14m TB1 footprint radius + 0.05m requested obstacle margin.
-    navigation_min_clearance_m: 0.19
+    # 0.14m TB1 footprint radius + 0.02m narrow-passage clearance.
+    navigation_min_clearance_m: 0.16
     robot_status_timeout_sec: 3.0
     safety_status_timeout_sec: 1.5
     authorization_rate_hz: 10.0

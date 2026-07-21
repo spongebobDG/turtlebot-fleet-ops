@@ -16,6 +16,18 @@ const mapZoomOut = document.querySelector("#map-zoom-out");
 const mapZoomIn = document.querySelector("#map-zoom-in");
 const mapZoomLabel = document.querySelector("#map-zoom-label");
 const mapFit = document.querySelector("#map-fit");
+const zoneEditorToggle = document.querySelector("#zone-editor-toggle");
+const zoneEditor = document.querySelector("#zone-editor");
+const zoneEditorClose = document.querySelector("#zone-editor-close");
+const zoneName = document.querySelector("#zone-name");
+const zoneEditorHelp = document.querySelector("#zone-editor-help");
+const saveZoneButton = document.querySelector("#save-zone");
+const cancelZoneButton = document.querySelector("#cancel-zone");
+const zoneList = document.querySelector("#zone-list");
+const mapPolicyStrip = document.querySelector("#map-policy-strip");
+const mapPolicyState = document.querySelector("#map-policy-state");
+const mapPolicyDetail = document.querySelector("#map-policy-detail");
+const navigateCharging = document.querySelector("#navigate-charging");
 const refreshMapButton = document.querySelector("#refresh-map");
 const applyMapCommand = document.querySelector("#apply-map-command");
 const cancelNavigation = document.querySelector("#cancel-navigation");
@@ -58,17 +70,30 @@ const localAIExplanation = document.querySelector("#local-ai-explanation");
 const incidentCause = document.querySelector("#incident-cause");
 const incidentAction = document.querySelector("#incident-action");
 const incidentDetails = document.querySelector("#incident-details");
+const mlopsCard = document.querySelector(".mlops-card");
+const logExpandButton = document.querySelector("#log-expand");
+const adminAlert = document.querySelector("#admin-alert");
+const adminAlertLabel = document.querySelector("#admin-alert-label");
+const adminAlertCount = document.querySelector("#admin-alert-count");
+const adminAlertSummary = document.querySelector("#admin-alert-summary");
+const adminAlertDetail = document.querySelector("#admin-alert-detail");
+const adminAlertOpenLogs = document.querySelector("#admin-alert-open-logs");
 const mapMath = window.FleetMapMath;
 const viewportMath = window.FleetMapViewport;
 const robotDisplay = window.FleetRobotDisplay;
 const manualKeys = window.FleetManualKeys;
 const diagnosticsView = window.FleetDiagnosticsView;
+const annotationMath = window.FleetMapAnnotations;
 
 let reconnectTimer;
 let robots = [];
 let currentMap = null;
 let currentScan = null;
 let currentMapRobot = "";
+let mapAnnotations = [];
+let annotationDraft = null;
+let annotationDragStart = null;
+let zoneEditorOpen = false;
 let mapMode = "goal";
 let selectedPose = null;
 let poseAlignment = null;
@@ -99,6 +124,78 @@ let liveMapRefreshInFlight = false;
 let liveMapStatus = { robotId: "", updatedAt: null, error: false };
 
 const escapeHtml = diagnosticsView.escapeHtml;
+const defaultDocumentTitle = document.title;
+
+const positionLogWindow = () => {
+  const robotPane = document.querySelector(".robot-pane");
+  const operationsPane = document.querySelector(".operations-pane");
+  if (!robotPane || !operationsPane) return;
+  const robotBounds = robotPane.getBoundingClientRect();
+  const operationsBounds = operationsPane.getBoundingClientRect();
+  const edgeGap = window.innerWidth <= 760 ? 6 : 12;
+  mlopsCard.style.setProperty(
+    "--log-window-top",
+    `${Math.max(edgeGap, Math.min(robotBounds.top, operationsBounds.top))}px`,
+  );
+  mlopsCard.style.setProperty(
+    "--log-window-left",
+    `${Math.max(edgeGap, Math.min(robotBounds.left, operationsBounds.left))}px`,
+  );
+  mlopsCard.style.setProperty(
+    "--log-window-right",
+    `${Math.max(edgeGap, window.innerWidth - Math.max(robotBounds.right, operationsBounds.right))}px`,
+  );
+  mlopsCard.style.setProperty(
+    "--log-window-bottom",
+    `${Math.max(edgeGap, window.innerHeight - Math.max(robotBounds.bottom, operationsBounds.bottom))}px`,
+  );
+};
+
+const setLogExpanded = (expanded) => {
+  if (expanded) positionLogWindow();
+  mlopsCard.classList.toggle("log-expanded", expanded);
+  document.body.classList.toggle("log-view-open", expanded);
+  logExpandButton.setAttribute("aria-expanded", String(expanded));
+  logExpandButton.textContent = expanded ? "원래 크기" : "크게 보기";
+  logExpandButton.title = expanded ? "Esc 키로도 닫을 수 있습니다." : "ROS 2 로그를 화면 전체로 확대합니다.";
+};
+
+const renderAdminAlert = () => {
+  const presentation = diagnosticsView.adminAlertPresentation({
+    robots,
+    faults,
+    diagnoses: logIncidents?.diagnoses || [],
+    mlops: logMlops,
+    dataHealth: logIncidents?.data_health,
+  });
+  mlopsCard.classList.toggle(
+    "has-active-alert",
+    (logIncidents?.diagnoses || []).some((item) => item.status === "ACTION_REQUIRED")
+      || ["ANOMALY", "ERROR"].includes(String(logMlops?.state || "").toUpperCase()),
+  );
+  if (!presentation.visible) {
+    adminAlert.hidden = true;
+    adminAlert.dataset.tone = "normal";
+    adminAlert.dataset.signature = "";
+    document.body.classList.remove("has-admin-alert");
+    document.title = defaultDocumentTitle;
+    return;
+  }
+
+  const signature = JSON.stringify(presentation);
+  if (adminAlert.dataset.signature !== signature) {
+    adminAlertLabel.textContent = presentation.label;
+    adminAlertCount.textContent = String(presentation.count);
+    adminAlertSummary.textContent = presentation.summary;
+    adminAlertDetail.textContent = presentation.detail;
+    adminAlert.dataset.signature = signature;
+  }
+  adminAlert.dataset.tone = presentation.tone;
+  adminAlert.hidden = false;
+  document.body.classList.add("has-admin-alert");
+  document.title = `⚠ ${presentation.count} · ${defaultDocumentTitle}`;
+  if (mlopsCard.classList.contains("log-expanded")) positionLogWindow();
+};
 
 const number = (value, digits = 1, suffix = "") => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -164,6 +261,7 @@ const render = (nextRobots) => {
   updatedAt.textContent = `최근 갱신 ${new Date().toLocaleTimeString("ko-KR")}`;
   updateRobotOptions();
   renderNavigation();
+  renderAdminAlert();
 };
 
 const setConnection = (state, label) => {
@@ -254,7 +352,12 @@ const renderNavigation = () => {
     selectedPose
     && currentMap
     && headingSpecified
-    && mapMath.isFreePose(currentMap, selectedPose.x, selectedPose.y),
+    && mapMath.isFreePose(currentMap, selectedPose.x, selectedPose.y)
+    && !annotationMath.blockedReason(
+      mapAnnotations,
+      selectedPose.x,
+      selectedPose.y,
+    ),
   );
   const commonReady = Boolean(
     robot?.online && robot.level < 2 && currentMap && !activeGoal,
@@ -316,6 +419,7 @@ const renderNavigation = () => {
     ? "조종 중"
     : manualPendingOwner ? "연결 중" : manualReady ? "WASD 준비" : "잠김";
   saveMapButton.disabled = profile.profile !== "MAPPING" || profile.transitioning;
+  renderMapPolicy();
   drawMap();
 };
 
@@ -358,6 +462,102 @@ const syncPoseSelectionFromFields = () => {
   renderNavigation();
 };
 
+const annotationLabel = (type) => annotationMath.types[type]?.label || type;
+
+const resetAnnotationDraft = (type = null) => {
+  annotationDragStart = null;
+  annotationDraft = type ? { type, points: [], pose: null } : null;
+  zoneName.value = type ? annotationLabel(type) : "";
+  renderZoneEditor();
+  drawMap();
+};
+
+const annotationDraftReady = () => {
+  if (!annotationDraft) return false;
+  if (annotationDraft.type === "charging") {
+    return Boolean(annotationDraft.pose && Number.isFinite(annotationDraft.pose.yaw));
+  }
+  if (annotationDraft.type === "virtual_wall") {
+    if (annotationDraft.points.length < 2) return false;
+    const [first, second] = annotationDraft.points;
+    return Math.hypot(second.x - first.x, second.y - first.y) >= 0.05;
+  }
+  return annotationDraft.points.length >= 3;
+};
+
+const renderZoneEditor = () => {
+  zoneEditor.hidden = !zoneEditorOpen;
+  mapCanvas.classList.toggle("zone-editing", zoneEditorOpen);
+  zoneEditorToggle.classList.toggle("active", zoneEditorOpen);
+  document.querySelectorAll("[data-zone-type]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.zoneType === annotationDraft?.type);
+  });
+  saveZoneButton.disabled = !annotationDraftReady();
+  const type = annotationDraft?.type;
+  zoneEditorHelp.textContent = !type
+    ? "도구를 선택한 뒤 지도에서 그리세요. 주행 중에는 변경할 수 없습니다."
+    : type === "virtual_wall"
+      ? "지도에서 벽의 시작점부터 끝점까지 드래그하세요. 로봇 반경 0.16m가 자동 반영됩니다."
+      : type === "charging"
+        ? "자유 공간에서 충전 위치와 도크를 바라볼 방향으로 드래그하세요."
+        : `지도에서 꼭짓점을 ${type === "privacy" ? "3개 이상 찍어 개인정보 보호구역" : "3개 이상 찍어 금지구역"}을 만드세요.`;
+  zoneList.innerHTML = mapAnnotations.length
+    ? mapAnnotations.map((annotation) => {
+      const style = annotationMath.types[annotation.type] || {};
+      return `
+        <div class="zone-list-item">
+          <i style="background:${escapeHtml(style.color || "#bed1cb")}"></i>
+          <span title="${escapeHtml(annotation.name)}">${escapeHtml(annotationLabel(annotation.type))} · ${escapeHtml(annotation.name)}</span>
+          <button data-delete-zone="${escapeHtml(annotation.annotation_id)}" type="button">삭제</button>
+        </div>`;
+    }).join("")
+    : "<p>저장된 운영구역이 없습니다.</p>";
+};
+
+const renderMapPolicy = () => {
+  const robot = selectedRobot();
+  const enabled = mapAnnotations.filter((annotation) => annotation.enabled);
+  const hard = enabled.filter((annotation) => ["virtual_wall", "keepout", "privacy"].includes(annotation.type));
+  const charging = enabled.find((annotation) => annotation.type === "charging");
+  const batteryPercent = Number(robot?.battery?.percent);
+  const lowBattery = (robot?.fault_codes || []).includes("LOW_BATTERY")
+    || (robot?.battery?.valid && batteryPercent >= 0 && batteryPercent <= 20);
+  mapPolicyStrip.classList.toggle("battery-low", Boolean(lowBattery));
+  mapPolicyState.textContent = lowBattery
+    ? `배터리 ${number(batteryPercent, 1, "%")} · 충전 필요`
+    : `운영구역 ${enabled.length}개 · 강제 차단 ${hard.length}개`;
+  mapPolicyDetail.textContent = lowBattery
+    ? charging ? "충전 위치로 이동한 뒤 사람이 충전기를 연결하세요." : "먼저 지도에서 충전 위치를 지정하세요."
+    : "목적지·웹 WASD는 강제 차단되며 TB1 필터 배포 후 Nav2 경로에도 적용됩니다.";
+  navigateCharging.textContent = charging ? "충전하러 가기" : "충전 위치 미지정";
+  navigateCharging.disabled = !charging
+    || !robot?.online
+    || Boolean(robot?.navigation?.active_command_id)
+    || robot?.mapping?.profile !== "NAVIGATION";
+};
+
+const loadMapAnnotations = async (robotId = robotSelect.value) => {
+  if (!robotId) {
+    mapAnnotations = [];
+    renderZoneEditor();
+    renderMapPolicy();
+    return;
+  }
+  try {
+    const response = await fetch(`/api/robots/${encodeURIComponent(robotId)}/map-annotations`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "운영구역을 불러오지 못했습니다.");
+    if (robotSelect.value !== robotId) return;
+    mapAnnotations = body.annotations || [];
+  } catch (error) {
+    mapAnnotations = [];
+    showToast(error.message, true);
+  }
+  renderZoneEditor();
+  renderMapPolicy();
+  drawMap();
+};
+
 const applyMapSnapshot = (snapshot, { preserveViewport = false } = {}) => {
   if (!Array.isArray(snapshot.data) || snapshot.data.length !== snapshot.width * snapshot.height) {
     throw new Error("지도 크기와 데이터가 일치하지 않습니다.");
@@ -375,6 +575,7 @@ const loadMap = async () => {
   const robotId = robotSelect.value;
   currentMap = null;
   currentScan = null;
+  mapAnnotations = [];
   mapBitmap = null;
   mapViewport = null;
   resetPoseSelection();
@@ -391,6 +592,7 @@ const loadMap = async () => {
     if (!response.ok) throw new Error(body.detail || "지도를 불러오지 못했습니다.");
     if (robotSelect.value !== robotId) return;
     applyMapSnapshot(body);
+    await loadMapAnnotations(robotId);
     loadScan();
   } catch (error) {
     mapPlaceholder.textContent = error.message;
@@ -487,6 +689,7 @@ const drawMap = () => {
     currentMap.height * mapViewport.scale,
   );
   drawCellGrid(context);
+  drawMapAnnotations(context);
   const robot = selectedRobot();
   drawScanOverlay(context, robot, width, height);
   const displayPose = robotDisplay.selectDisplayPose(robot);
@@ -522,6 +725,103 @@ const drawMap = () => {
       "#58e0ae",
       mapMode === "initial" ? "초기 위치 후보" : "목적지 후보",
     );
+  }
+};
+
+const drawMapAnnotations = (context) => {
+  const drawOne = (annotation, draft = false) => {
+    const style = annotationMath.types[annotation.type] || {
+      color: "#bed1cb",
+      fill: "rgba(190, 209, 203, 0.2)",
+    };
+    context.save();
+    context.strokeStyle = style.color;
+    context.fillStyle = style.fill;
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    if (draft) context.setLineDash([6, 4]);
+    if (annotation.type === "charging" && annotation.pose) {
+      if (Number.isFinite(annotation.pose.yaw)) {
+        drawArrow(
+          context,
+          annotation.pose,
+          style.color,
+          draft ? "충전 위치 후보" : annotation.name || "충전 위치",
+        );
+      } else {
+        const center = worldToScreen(annotation.pose.x, annotation.pose.y);
+        context.beginPath();
+        context.arc(center.x, center.y, 6, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.restore();
+      return;
+    }
+    const points = annotation.points || [];
+    if (points.length < 2) {
+      context.restore();
+      return;
+    }
+    const screenPoints = points.map((point) => worldToScreen(point.x, point.y));
+    if (annotation.type === "virtual_wall") {
+      const pixelsPerMeter = mapViewport.scale / currentMap.resolution;
+      const blockedWidth = Number(annotation.width_m || 0.08)
+        + Number(annotation.safety_margin_m || 0.16) * 2;
+      context.globalAlpha = draft ? 0.38 : 0.24;
+      context.lineWidth = Math.max(4, blockedWidth * pixelsPerMeter);
+      context.beginPath();
+      screenPoints.forEach((point, index) => {
+        if (index === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+      });
+      context.stroke();
+      context.globalAlpha = 1;
+      context.lineWidth = 3;
+      context.beginPath();
+      screenPoints.forEach((point, index) => {
+        if (index === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+      });
+      context.stroke();
+    } else {
+      context.lineWidth = 2;
+      context.beginPath();
+      screenPoints.forEach((point, index) => {
+        if (index === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+      });
+      if (points.length >= 3) context.closePath();
+      context.fill();
+      context.stroke();
+    }
+    for (const point of screenPoints) {
+      context.beginPath();
+      context.arc(point.x, point.y, draft ? 4 : 2.5, 0, Math.PI * 2);
+      context.fillStyle = style.color;
+      context.fill();
+    }
+    if (!draft && screenPoints.length) {
+      context.font = "700 10px system-ui, sans-serif";
+      context.fillStyle = style.color;
+      context.fillText(
+        annotation.name || annotationLabel(annotation.type),
+        screenPoints[0].x + 6,
+        screenPoints[0].y - 6,
+      );
+    }
+    context.restore();
+  };
+  mapAnnotations.filter((annotation) => annotation.enabled).forEach(
+    (annotation) => drawOne(annotation),
+  );
+  if (annotationDraft) {
+    drawOne({
+      ...annotationDraft,
+      name: zoneName.value.trim() || annotationLabel(annotationDraft.type),
+      enabled: true,
+      width_m: 0.08,
+      safety_margin_m: 0.16,
+    }, true);
   }
 };
 
@@ -711,7 +1011,8 @@ const updateMapReadout = (point) => {
   }
   const world = mapMath.canvasToWorld(currentMap, cell.mapPoint.x, cell.mapPoint.y);
   const state = cell.value < 0 ? "UNKNOWN" : cell.value === 0 ? "FREE" : `OCCUPIED ${cell.value}`;
-  mapReadout.textContent = `map x ${world.x.toFixed(3)} · y ${world.y.toFixed(3)} m · cell ${cell.cellX},${cell.cellY} · ${state}`;
+  const policy = annotationMath.blockedReason(mapAnnotations, world.x, world.y);
+  mapReadout.textContent = `map x ${world.x.toFixed(3)} · y ${world.y.toFixed(3)} m · cell ${cell.cellX},${cell.cellY} · ${policy || state}`;
 };
 
 mapCanvas.addEventListener("pointerdown", (event) => {
@@ -724,6 +1025,41 @@ mapCanvas.addEventListener("pointerdown", (event) => {
     return;
   }
   const cell = cellAtScreenPoint(point);
+  if (zoneEditorOpen) {
+    if (!annotationDraft) {
+      mapCanvas.releasePointerCapture(event.pointerId);
+      showToast("먼저 가상 벽, 금지구역, 개인정보 또는 충전 위치 도구를 선택하세요.", true);
+      return;
+    }
+    if (!cell) {
+      mapCanvas.releasePointerCapture(event.pointerId);
+      showToast("지도 안에서 운영구역을 그리세요.", true);
+      return;
+    }
+    if (annotationDraft.type === "charging" && cell.value !== 0) {
+      mapCanvas.releasePointerCapture(event.pointerId);
+      showToast("충전 위치는 자유 공간에 지정하세요.", true);
+      return;
+    }
+    if (["virtual_wall", "charging"].includes(annotationDraft.type)) {
+      annotationDragStart = { ...cell.center, screen: point };
+      if (annotationDraft.type === "virtual_wall") {
+        annotationDraft.points = [cell.center, cell.center];
+      } else {
+        annotationDraft.pose = { ...cell.center, yaw: Number.NaN };
+      }
+    } else {
+      if (annotationDraft.points.length >= 64) {
+        showToast("구역 꼭짓점은 최대 64개입니다.", true);
+      } else {
+        annotationDraft.points.push(cell.center);
+      }
+      mapCanvas.releasePointerCapture(event.pointerId);
+      renderZoneEditor();
+      drawMap();
+    }
+    return;
+  }
   if (!cell) {
     mapCanvas.releasePointerCapture(event.pointerId);
     showToast("지도 안의 자유 공간을 선택하세요.", true);
@@ -753,6 +1089,35 @@ mapCanvas.addEventListener("pointermove", (event) => {
   if (panDrag && mapCanvas.hasPointerCapture(event.pointerId)) {
     viewportMath.pan(mapViewport, point.x - panDrag.x, point.y - panDrag.y);
     panDrag = point;
+    drawMap();
+    return;
+  }
+  if (zoneEditorOpen) {
+    if (!annotationDragStart || !mapCanvas.hasPointerCapture(event.pointerId)) return;
+    const cell = cellAtScreenPoint(point);
+    if (!cell) return;
+    if (annotationDraft.type === "virtual_wall") {
+      annotationDraft.points = [
+        { x: annotationDragStart.x, y: annotationDragStart.y },
+        cell.center,
+      ];
+    } else if (annotationDraft.type === "charging") {
+      const dragPixels = Math.hypot(
+        point.x - annotationDragStart.screen.x,
+        point.y - annotationDragStart.screen.y,
+      );
+      annotationDraft.pose = {
+        x: annotationDragStart.x,
+        y: annotationDragStart.y,
+        yaw: dragPixels >= 12
+          ? Math.atan2(
+            cell.center.y - annotationDragStart.y,
+            cell.center.x - annotationDragStart.x,
+          )
+          : Number.NaN,
+      };
+    }
+    renderZoneEditor();
     drawMap();
     return;
   }
@@ -802,6 +1167,13 @@ mapCanvas.addEventListener("pointerup", (event) => {
     if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
     return;
   }
+  if (zoneEditorOpen) {
+    annotationDragStart = null;
+    if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
+    renderZoneEditor();
+    drawMap();
+    return;
+  }
   if (!dragStart) {
     if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
     return;
@@ -824,6 +1196,7 @@ mapCanvas.addEventListener("pointercancel", (event) => {
   dragStartScreen = null;
   headingSpecified = false;
   panDrag = null;
+  annotationDragStart = null;
   mapCanvas.classList.remove("panning");
   if (mapCanvas.hasPointerCapture(event.pointerId)) mapCanvas.releasePointerCapture(event.pointerId);
 });
@@ -865,6 +1238,8 @@ new ResizeObserver(() => drawMap()).observe(mapFrame);
 
 document.querySelectorAll("button[data-map-mode]").forEach((button) => {
   button.addEventListener("click", () => {
+    zoneEditorOpen = false;
+    resetAnnotationDraft();
     mapMode = button.dataset.mapMode;
     resetPoseSelection();
     document.querySelectorAll("button[data-map-mode]").forEach(
@@ -872,6 +1247,115 @@ document.querySelectorAll("button[data-map-mode]").forEach((button) => {
     );
     renderNavigation();
   });
+});
+
+const setZoneEditorOpen = (open) => {
+  zoneEditorOpen = Boolean(open);
+  if (zoneEditorOpen) resetPoseSelection();
+  else resetAnnotationDraft();
+  renderZoneEditor();
+  drawMap();
+};
+
+zoneEditorToggle.addEventListener("click", () => setZoneEditorOpen(!zoneEditorOpen));
+zoneEditorClose.addEventListener("click", () => setZoneEditorOpen(false));
+cancelZoneButton.addEventListener("click", () => resetAnnotationDraft(annotationDraft?.type || null));
+zoneName.addEventListener("input", drawMap);
+
+document.querySelectorAll("[data-zone-type]").forEach((button) => {
+  button.addEventListener("click", () => resetAnnotationDraft(button.dataset.zoneType));
+});
+
+saveZoneButton.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  if (!robot || !currentMap || !annotationDraftReady()) return;
+  const type = annotationDraft.type;
+  const payload = {
+    type,
+    name: zoneName.value.trim() || annotationLabel(type),
+    points: annotationDraft.points || [],
+    pose: annotationDraft.pose,
+    width_m: 0.08,
+    safety_margin_m: 0.16,
+    enabled: true,
+  };
+  saveZoneButton.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robot.robot_id)}/map-annotations`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "운영구역 저장 실패");
+    showToast(body.distribution?.success
+      ? `${annotationLabel(type)}을 저장하고 TB1 적용 채널로 배포했습니다.`
+      : `${annotationLabel(type)}은 저장했지만 TB1 배포 상태를 확인하세요.`);
+    await loadMapAnnotations(robot.robot_id);
+    resetAnnotationDraft(type);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    renderZoneEditor();
+  }
+});
+
+zoneList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-delete-zone]");
+  const robot = selectedRobot();
+  if (!button || !robot) return;
+  const annotation = mapAnnotations.find(
+    (item) => item.annotation_id === button.dataset.deleteZone,
+  );
+  if (!annotation || !window.confirm(`${annotation.name}을 삭제하고 TB1 정책에서도 제거할까요?`)) return;
+  button.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robot.robot_id)}/map-annotations/${encodeURIComponent(annotation.annotation_id)}`,
+      { method: "DELETE" },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "운영구역 삭제 실패");
+    showToast(`${annotation.name}을 삭제했습니다.`);
+    await loadMapAnnotations(robot.robot_id);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+navigateCharging.addEventListener("click", async () => {
+  const robot = selectedRobot();
+  const charging = mapAnnotations.find(
+    (annotation) => annotation.enabled && annotation.type === "charging",
+  );
+  if (!robot || !charging) return;
+  const warningConfirmed = robot.level === 1
+    ? window.confirm(`${robot.robot_id} 경고(${(robot.fault_codes || []).join(", ")})를 확인하고 충전 위치로 이동할까요?`)
+    : false;
+  if (robot.level === 1 && !warningConfirmed) return;
+  navigateCharging.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/robots/${encodeURIComponent(robot.robot_id)}/map-annotations/${encodeURIComponent(charging.annotation_id)}/navigate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm_warnings: warningConfirmed }),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || "충전 위치 이동 요청 실패");
+    showToast("충전 위치로 이동을 시작했습니다. 도착 후 충전기를 직접 연결하세요.");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    renderNavigation();
+  }
 });
 
 [poseX, poseY, poseYaw].forEach((input) => {
@@ -931,7 +1415,14 @@ applyMapCommand.addEventListener("click", async () => {
   const robot = selectedRobot();
   if (!robot) return;
   const pose = selectedPose ? { ...selectedPose } : null;
-  if (!pose || !headingSpecified || !currentMap || !mapMath.isFreePose(currentMap, pose.x, pose.y)) {
+  const policyBlock = pose
+    ? annotationMath.blockedReason(mapAnnotations, pose.x, pose.y)
+    : "";
+  if (!pose || !headingSpecified || !currentMap || !mapMath.isFreePose(currentMap, pose.x, pose.y) || policyBlock) {
+    if (policyBlock) {
+      showToast(policyBlock, true);
+      return;
+    }
     showToast("지도에서 자유 공간의 위치와 방향을 새로 선택하세요.", true);
     return;
   }
@@ -1378,6 +1869,7 @@ const renderOperations = () => {
         <p>${recordTime(item.occurred_at)} · ${escapeHtml(item.category)}</p>
       </div>
     </div>`).join("") : '<p class="record-empty">기록된 이벤트가 없습니다.</p>';
+  renderAdminAlert();
 };
 
 const renderLocalAIReport = (item) => {
@@ -1504,7 +1996,24 @@ const renderLogMlops = () => {
     </details>`;
   }).join("") : '<p class="record-empty">해당 시간 범위에 진단 가능한 로그가 없습니다.</p>';
   incidentDetails.dataset.rendered = "true";
+  renderAdminAlert();
 };
+
+logExpandButton.addEventListener("click", () => {
+  setLogExpanded(!mlopsCard.classList.contains("log-expanded"));
+});
+adminAlertOpenLogs.addEventListener("click", () => {
+  setLogExpanded(true);
+  logExpandButton.focus();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !mlopsCard.classList.contains("log-expanded")) return;
+  setLogExpanded(false);
+  logExpandButton.focus();
+});
+window.addEventListener("resize", () => {
+  if (mlopsCard.classList.contains("log-expanded")) positionLogWindow();
+});
 
 const loadLogMlops = async () => {
   const fetchJson = async (url, fallbackMessage) => {
@@ -1611,7 +2120,14 @@ createTaskButton.addEventListener("click", async () => {
   const robot = selectedRobot();
   if (!robot) return;
   const pose = selectedPose ? { ...selectedPose } : null;
-  if (!pose || !currentMap || !mapMath.isFreePose(currentMap, pose.x, pose.y)) {
+  const policyBlock = pose
+    ? annotationMath.blockedReason(mapAnnotations, pose.x, pose.y)
+    : "";
+  if (!pose || !currentMap || !mapMath.isFreePose(currentMap, pose.x, pose.y) || policyBlock) {
+    if (policyBlock) {
+      showToast(policyBlock, true);
+      return;
+    }
     showToast("지도에서 자유 공간의 위치와 방향을 새로 선택하세요.", true);
     return;
   }

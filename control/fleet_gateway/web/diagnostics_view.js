@@ -169,7 +169,94 @@
     return `현재 조치 ${Number(summary.active || 0)} · 과거 ${Number(summary.historical || 0)} · 정상·예상 ${Number(summary.expected || 0)} · ${healthLabels[health.state] || "수집 상태 확인 중"}${evidenceAge}`;
   };
 
+  const adminAlertPresentation = ({
+    robots = [],
+    faults = [],
+    diagnoses = [],
+    mlops = null,
+    dataHealth = null,
+  } = {}) => {
+    const offlineRobots = robots.filter((robot) => robot?.online === false);
+    const errorRobots = robots.filter(
+      (robot) => robot?.online !== false && Number(robot?.level || 0) >= 2,
+    );
+    const warningRobots = robots.filter(
+      (robot) => robot?.online !== false && Number(robot?.level || 0) === 1,
+    );
+    const activeFaults = faults.filter((fault) => {
+      const severity = String(fault?.severity || "").toUpperCase();
+      return ["WARN", "WARNING", "ERROR", "CRITICAL", "FATAL"].includes(severity);
+    });
+    const criticalFaults = activeFaults.filter((fault) => [
+      "ERROR", "CRITICAL", "FATAL",
+    ].includes(String(fault?.severity || "").toUpperCase()));
+    const activeDiagnoses = diagnoses.filter(
+      (item) => String(item?.status || "").toUpperCase() === "ACTION_REQUIRED",
+    );
+    const mlopsState = String(mlops?.state || "").toUpperCase();
+    const criticalMlops = ["ANOMALY", "ERROR"].includes(mlopsState);
+    const staleEvidence = String(dataHealth?.state || "").toUpperCase()
+      === "STALE_EVIDENCE";
+    const warningMlops = ["STALE", "MODEL_NOT_READY"].includes(mlopsState)
+      || staleEvidence;
+
+    const critical = offlineRobots.length > 0
+      || errorRobots.length > 0
+      || criticalFaults.length > 0
+      || criticalMlops;
+    const warning = warningRobots.length > 0
+      || activeFaults.length > 0
+      || activeDiagnoses.length > 0
+      || warningMlops;
+    if (!critical && !warning) {
+      return {
+        visible: false,
+        tone: "normal",
+        label: "정상",
+        count: 0,
+        summary: "",
+        detail: "",
+      };
+    }
+
+    const parts = [];
+    if (offlineRobots.length) parts.push(`오프라인 로봇 ${offlineRobots.length}`);
+    if (errorRobots.length) parts.push(`로봇 오류 ${errorRobots.length}`);
+    if (warningRobots.length) parts.push(`로봇 경고 ${warningRobots.length}`);
+    if (activeFaults.length) parts.push(`활성 고장 ${activeFaults.length}`);
+    if (activeDiagnoses.length) parts.push(`로그 조치 ${activeDiagnoses.length}`);
+    if (criticalMlops || warningMlops) {
+      parts.push(`로그 분석 ${staleEvidence ? "STALE_EVIDENCE" : (mlopsState || "STALE")}`);
+    }
+
+    const firstDiagnosis = activeDiagnoses[0];
+    const firstFault = activeFaults[0];
+    const affectedRobots = [...offlineRobots, ...errorRobots, ...warningRobots]
+      .map((robot) => robot?.robot_id)
+      .filter(Boolean);
+    const detail = firstDiagnosis?.confirmed_symptom
+      || firstDiagnosis?.label
+      || firstFault?.fault_code
+      || (affectedRobots.length ? `대상: ${affectedRobots.join(", ")}` : "ROS 2 로그 상세를 확인하세요.");
+    const count = offlineRobots.length
+      + errorRobots.length
+      + warningRobots.length
+      + activeFaults.length
+      + activeDiagnoses.length
+      + Number(criticalMlops || warningMlops);
+
+    return {
+      visible: true,
+      tone: critical ? "critical" : "warning",
+      label: critical ? "관리자 긴급 확인" : "관리자 확인 필요",
+      count,
+      summary: parts.join(" · "),
+      detail: String(detail),
+    };
+  };
+
   return {
+    adminAlertPresentation,
     aiAssessmentPresentation,
     diagnosisMeta,
     diagnosisRows,

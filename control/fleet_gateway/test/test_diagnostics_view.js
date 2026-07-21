@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  adminAlertPresentation,
   aiAssessmentPresentation,
   diagnosisMeta,
   diagnosisRows,
@@ -15,6 +16,62 @@ const {
   modelPresentation,
   statusPresentation,
 } = require("../web/diagnostics_view.js");
+
+test("admin alert stays hidden while robot and log health are normal", () => {
+  const presentation = adminAlertPresentation({
+    robots: [{ robot_id: "tb1", online: true, level: 0 }],
+    faults: [],
+    diagnoses: [{ status: "HISTORICAL" }],
+    mlops: { state: "NORMAL" },
+    dataHealth: { state: "FRESH" },
+  });
+
+  assert.equal(presentation.visible, false);
+  assert.equal(presentation.count, 0);
+});
+
+test("admin alert highlights critical robot faults and actionable log incidents", () => {
+  const presentation = adminAlertPresentation({
+    robots: [{ robot_id: "tb1", online: false, level: 2 }],
+    faults: [{ severity: "ERROR", fault_code: "SCAN_STALE" }],
+    diagnoses: [{
+      status: "ACTION_REQUIRED",
+      label: "LiDAR 입력 중단",
+      confirmed_symptom: "최근 LaserScan이 갱신되지 않았습니다.",
+    }],
+    mlops: { state: "ANOMALY" },
+  });
+
+  assert.equal(presentation.visible, true);
+  assert.equal(presentation.tone, "critical");
+  assert.equal(presentation.label, "관리자 긴급 확인");
+  assert.match(presentation.summary, /오프라인 로봇 1/);
+  assert.match(presentation.summary, /로그 조치 1/);
+  assert.equal(presentation.detail, "최근 LaserScan이 갱신되지 않았습니다.");
+});
+
+test("admin alert treats an actionable diagnosis as a visible warning", () => {
+  const presentation = adminAlertPresentation({
+    robots: [{ robot_id: "tb1", online: true, level: 0 }],
+    diagnoses: [{ status: "ACTION_REQUIRED", label: "주행 진행 정체" }],
+    mlops: { state: "NORMAL" },
+  });
+
+  assert.equal(presentation.visible, true);
+  assert.equal(presentation.tone, "warning");
+  assert.equal(presentation.detail, "주행 진행 정체");
+});
+
+test("admin alert names stale evidence instead of reporting a normal model state", () => {
+  const presentation = adminAlertPresentation({
+    mlops: { state: "NORMAL" },
+    dataHealth: { state: "STALE_EVIDENCE" },
+  });
+
+  assert.equal(presentation.visible, true);
+  assert.equal(presentation.tone, "warning");
+  assert.equal(presentation.summary, "로그 분석 STALE_EVIDENCE");
+});
 
 test("diagnosis refresh preserves the user-selected open item", () => {
   const diagnoses = [

@@ -14,6 +14,7 @@ import uvicorn
 
 from fleet_gateway.api import create_app
 from fleet_gateway.log_ai import LocalLogAIAnalyzer
+from fleet_gateway.map_annotations import MapAnnotationStore
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.patrol_manager import PatrolManager
 from fleet_gateway.ros_node import (
@@ -79,6 +80,13 @@ def main(args: Optional[List[str]] = None) -> None:
         )
     ).expanduser()
     operations_store = OperationsStore(database_path)
+    map_annotation_path = Path(
+        os.environ.get(
+            "FLEET_MAP_ANNOTATIONS_PATH",
+            "~/.local/share/turtlebot-fleet-ops/map-annotations.json",
+        )
+    ).expanduser()
+    map_annotation_store = MapAnnotationStore(map_annotation_path)
     log_mlops_root = Path(
         os.environ.get(
             "FLEET_LOG_MLOPS_ROOT",
@@ -132,6 +140,11 @@ def main(args: Optional[List[str]] = None) -> None:
         ),
     )
     node.registry.add_listener(patrol_manager.observe)
+    for robot_id in node.configured_robot_ids:
+        node.publish_map_annotations(
+            robot_id,
+            map_annotation_store.list(robot_id),
+        )
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
     ros_thread = threading.Thread(
@@ -149,6 +162,8 @@ def main(args: Optional[List[str]] = None) -> None:
         manual_controller=node,
         profile_controller=node,
         map_registry=node.map_registry,
+        map_annotation_store=map_annotation_store,
+        map_annotation_controller=node,
         scan_registry=node.scan_registry,
         operations_store=operations_store,
         task_manager=task_manager,

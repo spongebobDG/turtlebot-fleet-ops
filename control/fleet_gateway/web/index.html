@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>TurtleBot Fleet Ops</title>
-    <link rel="stylesheet" href="/static/styles.css?v=diagnostics-2">
+    <link rel="stylesheet" href="/static/styles.css?v=map-policy-1">
   </head>
   <body>
     <header class="topbar">
@@ -20,6 +20,18 @@
         </div>
       </div>
     </header>
+
+    <aside class="admin-alert" id="admin-alert" role="alert" aria-live="assertive" hidden>
+      <div class="admin-alert-heading">
+        <span id="admin-alert-label">관리자 확인 필요</span>
+        <strong id="admin-alert-count">0</strong>
+      </div>
+      <div class="admin-alert-copy">
+        <strong id="admin-alert-summary">운영 이상이 감지되었습니다.</strong>
+        <p id="admin-alert-detail">ROS 2 로그와 로봇 상태를 확인하세요.</p>
+      </div>
+      <button class="admin-alert-action" id="admin-alert-open-logs" type="button">로그 크게 보기</button>
+    </aside>
 
     <main class="dashboard-shell">
       <section class="summary" aria-label="플릿 요약">
@@ -80,6 +92,7 @@
                 <button class="mode" data-map-mode="waypoint" type="button">순찰점</button>
                 <button class="mode" data-map-mode="initial" type="button">초기 위치</button>
               </div>
+              <button class="secondary compact zone-editor-toggle" id="zone-editor-toggle" type="button">운영구역 편집</button>
               <div class="map-viewport-controls" role="group" aria-label="지도 확대와 이동">
                 <button id="map-zoom-out" type="button" aria-label="지도 축소">−</button>
                 <span id="map-zoom-label">100%</span>
@@ -91,6 +104,25 @@
               <canvas id="map-canvas" width="640" height="420"></canvas>
               <p class="map-placeholder" id="map-placeholder">로봇 지도를 기다리는 중입니다.</p>
               <output class="map-readout" id="map-readout">커서를 지도 위에 올리세요.</output>
+              <section class="zone-editor" id="zone-editor" aria-label="지도 운영구역 편집기" hidden>
+                <div class="zone-editor-heading">
+                  <div><span>SEMANTIC MAP</span><strong>운영구역 편집</strong></div>
+                  <button id="zone-editor-close" type="button" aria-label="편집기 닫기">×</button>
+                </div>
+                <div class="zone-tool-grid" role="group" aria-label="운영구역 종류">
+                  <button data-zone-type="virtual_wall" type="button">가상 벽</button>
+                  <button data-zone-type="keepout" type="button">금지구역</button>
+                  <button data-zone-type="privacy" type="button">개인정보</button>
+                  <button data-zone-type="charging" type="button">충전 위치</button>
+                </div>
+                <label class="zone-name-field">이름<input id="zone-name" maxlength="80" placeholder="구역 이름"></label>
+                <p class="zone-editor-help" id="zone-editor-help">도구를 선택한 뒤 지도에서 그리세요.</p>
+                <div class="zone-editor-actions">
+                  <button class="primary" id="save-zone" type="button" disabled>저장·적용</button>
+                  <button class="secondary" id="cancel-zone" type="button">그리기 취소</button>
+                </div>
+                <div class="zone-list" id="zone-list"><p>저장된 운영구역이 없습니다.</p></div>
+              </section>
             </div>
             <div class="map-help-row">
               <p class="map-help">클릭 원=로봇 중심 · 드래그 끝 삼각형=로봇 앞 · 휠: 확대 · Shift+드래그: 이동</p>
@@ -103,6 +135,13 @@
               <span><i class="current"></i>현재 위치·앞방향</span>
               <span><i class="active-target"></i>활성 목표</span>
               <span><i class="candidate"></i>전송 후보</span>
+              <span><i class="virtual-wall"></i>가상 벽·금지</span>
+              <span><i class="privacy-zone"></i>개인정보</span>
+              <span><i class="charging-zone"></i>충전 위치</span>
+            </div>
+            <div class="map-policy-strip" id="map-policy-strip">
+              <div><strong id="map-policy-state">운영구역 0개</strong><span id="map-policy-detail">목적지·WASD는 즉시 차단되며 TB1 필터 배포 후 Nav2 경로에도 적용됩니다.</span></div>
+              <button class="secondary" id="navigate-charging" type="button" disabled>충전 위치 미지정</button>
             </div>
           </div>
 
@@ -201,7 +240,10 @@
           <article class="operations-card mlops-card">
             <div class="card-title">
               <h3>ROS 2 Log MLOps</h3>
-              <span class="mlops-state" id="mlops-state">LOADING</span>
+              <div class="mlops-title-actions">
+                <span class="mlops-state" id="mlops-state">LOADING</span>
+                <button class="secondary compact log-expand" id="log-expand" type="button" aria-expanded="false" aria-controls="incident-details">크게 보기</button>
+              </div>
             </div>
             <div class="mlops-summary">
               <div><span>Production model</span><strong id="mlops-model">—</strong></div>
@@ -221,10 +263,11 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="/static/map_math.js?v=localize-1" defer></script>
+    <script src="/static/map_annotations.js?v=policy-1" defer></script>
     <script src="/static/map_viewport.js" defer></script>
     <script src="/static/robot_display.js?v=localize-1" defer></script>
     <script src="/static/manual_keys.js?v=wasd-1" defer></script>
-    <script src="/static/diagnostics_view.js?v=local-ai-1" defer></script>
-    <script src="/static/app.js?v=local-ai-1" defer></script>
+    <script src="/static/diagnostics_view.js?v=admin-alert-1" defer></script>
+    <script src="/static/app.js?v=map-policy-1" defer></script>
   </body>
 </html>

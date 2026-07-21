@@ -226,6 +226,7 @@ dataset·candidate·Production registry는 lineage를 위해 자동 삭제하지
 
 - [Phase 1 대표 장애 해결 사례](docs/case-studies/lds02-scan-data-recovery.md)
 - [TB1 Bringup 운영 절차](docs/setup/tb1-bringup.md)
+- [TB1 구동 명령어와 일상 운영 가이드](docs/setup/tb1-operation-command-guide.md)
 - [TB1 안전 수동주행 및 Watchdog 검증 절차](docs/setup/tb1-safe-teleoperation.md)
 - [TB1 Robot Agent 배포 및 검증 절차](docs/setup/tb1-robot-agent.md)
 - [TB1 웹 관제 대시보드 운영 절차](docs/setup/tb1-web-dashboard.md)

@@ -144,9 +144,9 @@ inside 51%로 거부됐고, 전역 보정 후보는 match 92~93%, inside 99~100%
 같은 날 재확인한 잘못된 현재 pose는 match 13%, inside 51%였고, e-stop 상태에서 전역 정렬한
 후보는 match 91%, inside 100%였다. 적용 뒤 AMCL pose 재검증도 match 89%, inside 100%였다.
 
-Navigation agent는 별도로 신선하고 유효한 scan의 최소 거리가 0.19m 이상인지, 현재 AMCL pose가
-known free cell인지 목표 접수 전과 목표 실행 중 모두 검사한다. 0.19m는 Nav2 footprint 반경
-0.14m에 로봇 외곽 여유 0.05m를 더한 값이다. 이 조건이 깨지면 Nav2 목표를 취소하고 arbiter
+Navigation agent는 별도로 신선하고 유효한 scan의 최소 거리가 0.16m 이상인지, 현재 AMCL pose가
+known free cell인지 목표 접수 전과 목표 실행 중 모두 검사한다. 좁은 통로 운영값 0.16m는
+Nav2 footprint 반경 0.14m에 로봇 외곽 여유 0.02m를 더한 값이다. 이 조건이 깨지면 Nav2 목표를 취소하고 arbiter
 authorization을 닫는다. LiDAR 중심 기준 0.05m는 footprint 안쪽이므로 안전 기준으로 사용하지 않는다.
 이 보호는 LiDAR 평면 아래의 낮은 장애물을 볼 수 있게 만들지는 않으므로 현장 육안 점검은 남는다.
 

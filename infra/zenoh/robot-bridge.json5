@@ -27,7 +27,8 @@
           "^/global_costmap/.*"
         ],
         "subscribers": [
-          "^/fleet/navigation_lease$"
+          "^/fleet/navigation_lease$",
+          "^/tb1/map_annotations$"
         ],
         "service_servers": [
           "^/safety_watchdog/set_estop$",
