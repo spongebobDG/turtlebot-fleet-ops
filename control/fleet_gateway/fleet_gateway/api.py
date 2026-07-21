@@ -8,18 +8,26 @@ from typing import Any, Dict, List, Optional, Protocol
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from fleet_gateway.registry import StatusRegistry
 from fleet_gateway.scan_registry import ScanRegistry
 from fleet_gateway.map_registry import MapRegistry
+from fleet_gateway.map_annotations import MapAnnotationStore
 from fleet_gateway.pose_alignment import (
     align_pose,
     alignment_is_acceptable,
     score_pose_alignment,
 )
 from fleet_gateway.log_mlops import incidents_from_path, status_from_path
+from fleet_gateway.log_ai import (
+    LocalAIInvalidResponse,
+    LocalAIBusy,
+    LocalAINotReady,
+    LocalAITimeout,
+    LocalLogAIAnalyzer,
+)
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.task_manager import NavigationTaskManager
 from fleet_gateway.patrol_manager import PatrolManager
@@ -98,6 +106,17 @@ class ProfileController(Protocol):
         """Engage e-stop and save the current map and pose graph."""
 
 
+class MapAnnotationController(Protocol):
+    """ROS adapter that distributes semantic-map policies to a robot."""
+
+    def publish_map_annotations(
+        self,
+        robot_id: str,
+        annotations: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Publish one complete, replace-all annotation snapshot."""
+
+
 class EStopRequest(BaseModel):
     """Emergency-stop HTTP request body."""
 
@@ -114,6 +133,31 @@ class PoseRequest(BaseModel):
 
 class NavigationGoalRequest(PoseRequest):
     """Navigation goal plus explicit warning acknowledgement."""
+
+    confirm_warnings: bool = False
+
+
+class MapPointRequest(BaseModel):
+    """One map-frame point in annotation geometry."""
+
+    x: float
+    y: float
+
+
+class MapAnnotationRequest(BaseModel):
+    """Editable semantic object drawn over the immutable occupancy map."""
+
+    type: str  # noqa: A003 - public JSON contract uses "type"
+    name: str = ""
+    points: List[MapPointRequest] = Field(default_factory=list)
+    pose: Optional[PoseRequest] = None
+    width_m: float = 0.08
+    safety_margin_m: float = 0.16
+    enabled: bool = True
+
+
+class AnnotationNavigationRequest(BaseModel):
+    """Explicit warning acknowledgement for a stored charging target."""
 
     confirm_warnings: bool = False
 
@@ -153,11 +197,14 @@ def create_app(
     manual_controller: Optional[ManualController] = None,
     profile_controller: Optional[ProfileController] = None,
     map_registry: Optional[MapRegistry] = None,
+    map_annotation_store: Optional[MapAnnotationStore] = None,
+    map_annotation_controller: Optional[MapAnnotationController] = None,
     scan_registry: Optional[ScanRegistry] = None,
     operations_store: Optional[OperationsStore] = None,
     task_manager: Optional[NavigationTaskManager] = None,
     patrol_manager: Optional[PatrolManager] = None,
     log_mlops_status_path: Optional[Path] = None,
+    log_ai_analyzer: Optional[LocalLogAIAnalyzer] = None,
     static_dir: Optional[Path] = None,
     websocket_interval_sec: float = 0.5,
 ) -> FastAPI:
@@ -212,6 +259,42 @@ def create_app(
     @app.get("/api/mlops/ros2-logs/incidents")
     def ros2_log_incidents() -> Dict[str, Any]:
         return incidents_from_path(log_mlops_status_path)
+
+    @app.get("/api/mlops/ros2-logs/ai")
+    def ros2_log_ai_status() -> Dict[str, Any]:
+        if log_ai_analyzer is None:
+            return {
+                "state": "DISABLED",
+                "provider": "ollama",
+                "model": "qwen3:8b",
+                "message": "로컬 AI 분석이 구성되지 않았습니다.",
+            }
+        return log_ai_analyzer.health()
+
+    @app.post(
+        "/api/mlops/ros2-logs/incidents/{incident_id}/ai-analysis"
+    )
+    async def analyze_ros2_log_incident(incident_id: str) -> Dict[str, Any]:
+        if log_ai_analyzer is None:
+            raise HTTPException(
+                status_code=503,
+                detail="로컬 AI 분석이 구성되지 않았습니다.",
+            )
+        try:
+            return await run_in_threadpool(log_ai_analyzer.analyze, incident_id)
+        except KeyError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="현재 로그 범위에서 해당 사건을 찾을 수 없습니다.",
+            ) from error
+        except LocalAINotReady as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except LocalAIBusy as error:
+            raise HTTPException(status_code=429, detail=str(error)) from error
+        except LocalAITimeout as error:
+            raise HTTPException(status_code=504, detail=str(error)) from error
+        except LocalAIInvalidResponse as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
 
     @app.get("/api/events")
     def list_events(
@@ -274,6 +357,176 @@ def create_app(
         if snapshot is None:
             raise HTTPException(status_code=503, detail="Map is unavailable")
         return snapshot
+
+    @app.get("/api/robots/{robot_id}/map-annotations")
+    def list_map_annotations(robot_id: str) -> Dict[str, Any]:
+        _robot_or_404(registry, robot_id)
+        store = _map_annotations_or_503(map_annotation_store)
+        annotations = store.list_for_robot(robot_id)
+        return {
+            "robot_id": robot_id,
+            "annotations": annotations,
+            "hard_block_count": sum(
+                item.get("enabled", True)
+                and item.get("type")
+                in {"virtual_wall", "keepout", "privacy"}
+                for item in annotations
+            ),
+        }
+
+    @app.post(
+        "/api/robots/{robot_id}/map-annotations",
+        status_code=201,
+    )
+    def create_map_annotation(
+        robot_id: str,
+        request: MapAnnotationRequest,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        store = _map_annotations_or_503(map_annotation_store)
+        if map_registry is None:
+            raise HTTPException(status_code=503, detail="Map registry unavailable")
+        occupancy_map = map_registry.get(robot_id)
+        if occupancy_map is None:
+            raise HTTPException(status_code=503, detail="Map is unavailable")
+        _require_no_active_goal(robot)
+        _require_no_active_patrol(operations_store, robot_id)
+        _require_no_active_manual(manual_controller, robot_id)
+        try:
+            record = store.create(
+                robot_id,
+                request.dict(),
+                occupancy_map,
+                protected_pose=_robot_map_pose(robot),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        distribution = _publish_map_annotation_snapshot(
+            map_annotation_controller,
+            store,
+            robot_id,
+        )
+        if operations_store is not None:
+            operations_store.record_event(
+                robot_id,
+                "MAP_POLICY",
+                "MAP_ANNOTATION_CREATED",
+                f"Created {record['type']} annotation {record['name']}",
+                details={
+                    "annotation_id": record["annotation_id"],
+                    "type": record["type"],
+                    "distributed": distribution.get("success", False),
+                },
+            )
+        return {**record, "distribution": distribution}
+
+    @app.delete(
+        "/api/robots/{robot_id}/map-annotations/{annotation_id}",
+        status_code=202,
+    )
+    def delete_map_annotation(
+        robot_id: str,
+        annotation_id: str,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        store = _map_annotations_or_503(map_annotation_store)
+        _require_no_active_goal(robot)
+        _require_no_active_patrol(operations_store, robot_id)
+        _require_no_active_manual(manual_controller, robot_id)
+        record = store.get(robot_id, annotation_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Unknown map annotation")
+        store.delete(robot_id, annotation_id)
+        distribution = _publish_map_annotation_snapshot(
+            map_annotation_controller,
+            store,
+            robot_id,
+        )
+        if operations_store is not None:
+            operations_store.record_event(
+                robot_id,
+                "MAP_POLICY",
+                "MAP_ANNOTATION_DELETED",
+                f"Deleted {record['type']} annotation {record['name']}",
+                details={"annotation_id": annotation_id},
+            )
+        return {
+            "success": True,
+            "robot_id": robot_id,
+            "annotation_id": annotation_id,
+            "distribution": distribution,
+        }
+
+    @app.post(
+        "/api/robots/{robot_id}/map-annotations/{annotation_id}/navigate",
+        status_code=202,
+    )
+    async def navigate_to_map_annotation(
+        robot_id: str,
+        annotation_id: str,
+        request: AnnotationNavigationRequest,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        store = _map_annotations_or_503(map_annotation_store)
+        record = store.get(robot_id, annotation_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Unknown map annotation")
+        if record.get("type") != "charging" or not record.get("enabled", True):
+            raise HTTPException(
+                status_code=409,
+                detail="Only an enabled charging position can be navigated",
+            )
+        pose = record.get("pose") or {}
+        _require_free_map_pose(
+            map_registry,
+            robot_id,
+            float(pose.get("x", math.nan)),
+            float(pose.get("y", math.nan)),
+        )
+        _require_allowed_map_pose(
+            map_annotation_store,
+            robot_id,
+            float(pose["x"]),
+            float(pose["y"]),
+        )
+        _require_goal_ready(robot, request.confirm_warnings)
+        _require_no_active_patrol(operations_store, robot_id)
+        _require_no_active_manual(manual_controller, robot_id)
+        _require_free_current_pose(map_registry, robot_id, robot)
+        _require_allowed_current_pose(map_annotation_store, robot_id, robot)
+        if navigation_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Navigation controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            navigation_controller.start_navigation,
+            robot_id,
+            float(pose["x"]),
+            float(pose["y"]),
+            float(pose["yaw"]),
+            request.confirm_warnings,
+        )
+        accepted = _require_controller_success(result)
+        if operations_store is not None:
+            operations_store.record_event(
+                robot_id,
+                "CHARGING",
+                "CHARGING_GOAL_ACCEPTED",
+                accepted.get("message", "Charging destination accepted"),
+                command_id=accepted.get("command_id"),
+                details={
+                    "annotation_id": annotation_id,
+                    "x": pose["x"],
+                    "y": pose["y"],
+                    "yaw": pose["yaw"],
+                },
+            )
+        return {
+            **accepted,
+            "annotation_id": annotation_id,
+            "destination_kind": "charging",
+        }
 
     @app.get("/api/robots/{robot_id}/scan")
     def get_robot_scan(robot_id: str) -> Dict[str, Any]:
@@ -344,6 +597,12 @@ def create_app(
         robot = _robot_or_404(registry, robot_id)
         _validate_pose_request(request)
         _require_free_map_pose(map_registry, robot_id, request.x, request.y)
+        _require_allowed_map_pose(
+            map_annotation_store,
+            robot_id,
+            request.x,
+            request.y,
+        )
         _require_online_and_no_error(robot)
         _require_no_active_goal(robot)
         _require_no_active_patrol(operations_store, robot_id)
@@ -410,10 +669,17 @@ def create_app(
         robot = _robot_or_404(registry, robot_id)
         _validate_pose_request(request)
         _require_free_map_pose(map_registry, robot_id, request.x, request.y)
+        _require_allowed_map_pose(
+            map_annotation_store,
+            robot_id,
+            request.x,
+            request.y,
+        )
         _require_goal_ready(robot, request.confirm_warnings)
         _require_no_active_patrol(operations_store, robot_id)
         _require_no_active_manual(manual_controller, robot_id)
         _require_free_current_pose(map_registry, robot_id, robot)
+        _require_allowed_current_pose(map_annotation_store, robot_id, robot)
         if navigation_controller is None:
             raise HTTPException(
                 status_code=503,
@@ -481,6 +747,7 @@ def create_app(
     ) -> Dict[str, Any]:
         robot = _robot_or_404(registry, robot_id)
         _require_manual_ready(robot, request.confirm_warnings)
+        _require_allowed_current_pose(map_annotation_store, robot_id, robot)
         _require_no_active_patrol(operations_store, robot_id)
         if manual_controller is None:
             raise HTTPException(
@@ -514,6 +781,23 @@ def create_app(
         robot = _robot_or_404(registry, robot_id)
         _require_manual_ready(robot, True)
         _validate_manual_velocity(request)
+        try:
+            _require_allowed_manual_motion(
+                map_annotation_store,
+                robot_id,
+                robot,
+                request.linear_x,
+            )
+        except HTTPException:
+            if manual_controller is not None:
+                await run_in_threadpool(
+                    manual_controller.send_manual,
+                    robot_id,
+                    session_id,
+                    0.0,
+                    0.0,
+                )
+            raise
         if manual_controller is None:
             raise HTTPException(
                 status_code=503,
@@ -648,6 +932,12 @@ def create_app(
         _robot_or_404(registry, robot_id)
         _validate_pose_request(request)
         _require_free_map_pose(map_registry, robot_id, request.x, request.y)
+        _require_allowed_map_pose(
+            map_annotation_store,
+            robot_id,
+            request.x,
+            request.y,
+        )
         manager = _task_manager_or_503(task_manager)
         return manager.create(
             robot_id,
@@ -675,6 +965,12 @@ def create_app(
                 point.x,
                 point.y,
             )
+            _require_allowed_map_pose(
+                map_annotation_store,
+                robot_id,
+                point.x,
+                point.y,
+            )
         manager = _patrol_manager_or_503(patrol_manager)
         return manager.create(
             robot_id,
@@ -695,9 +991,20 @@ def create_app(
             patrol["robot_id"],
         )
         _require_free_current_pose(map_registry, patrol["robot_id"], robot)
+        _require_allowed_current_pose(
+            map_annotation_store,
+            patrol["robot_id"],
+            robot,
+        )
         for point in patrol["waypoints"]:
             _require_free_map_pose(
                 map_registry,
+                patrol["robot_id"],
+                point["x"],
+                point["y"],
+            )
+            _require_allowed_map_pose(
+                map_annotation_store,
                 patrol["robot_id"],
                 point["x"],
                 point["y"],
@@ -732,10 +1039,21 @@ def create_app(
             target["x"],
             target["y"],
         )
+        _require_allowed_map_pose(
+            map_annotation_store,
+            task["robot_id"],
+            target["x"],
+            target["y"],
+        )
         _require_goal_ready(robot, task["confirm_warnings"])
         _require_no_active_patrol(operations_store, task["robot_id"])
         _require_no_active_manual(manual_controller, task["robot_id"])
         _require_free_current_pose(map_registry, task["robot_id"], robot)
+        _require_allowed_current_pose(
+            map_annotation_store,
+            task["robot_id"],
+            robot,
+        )
         manager = _task_manager_or_503(task_manager)
         try:
             result = await run_in_threadpool(manager.run, task_id)
@@ -834,6 +1152,7 @@ def create_app(
             "app.js",
             "diagnostics_view.js",
             "manual_keys.js",
+            "map_annotations.js",
             "map_math.js",
             "map_viewport.js",
             "robot_display.js",
@@ -1029,6 +1348,130 @@ def _require_free_map_pose(
         return
     status_code = 503 if detail == "Map is unavailable" else 422
     raise HTTPException(status_code=status_code, detail=detail)
+
+
+def _map_annotations_or_503(
+    store: Optional[MapAnnotationStore],
+) -> MapAnnotationStore:
+    if store is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Map annotation store unavailable",
+        )
+    return store
+
+
+def _publish_map_annotation_snapshot(
+    controller: Optional[MapAnnotationController],
+    store: MapAnnotationStore,
+    robot_id: str,
+) -> Dict[str, Any]:
+    if controller is None:
+        return {
+            "success": False,
+            "message": "ROS map annotation publisher is unavailable",
+        }
+    try:
+        return controller.publish_map_annotations(
+            robot_id,
+            store.list_for_robot(robot_id),
+        )
+    except (RuntimeError, ValueError) as error:
+        return {"success": False, "message": str(error)}
+
+
+def _require_allowed_map_pose(
+    store: Optional[MapAnnotationStore],
+    robot_id: str,
+    x: float,
+    y: float,
+) -> None:
+    if store is None:
+        return
+    reason = store.blocked_reason(robot_id, x, y)
+    if reason:
+        raise HTTPException(status_code=409, detail=reason)
+
+
+def _robot_map_pose(robot: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    def normalize(candidate: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        try:
+            values = {
+                field: float(candidate.get(field, math.nan))
+                for field in ("x", "y", "yaw")
+            }
+        except (TypeError, ValueError):
+            return None
+        return values if all(math.isfinite(value) for value in values.values()) else None
+
+    map_pose = robot.get("map_pose") or {}
+    if (
+        map_pose.get("frame_id") == "map"
+        and map_pose.get("fresh", True)
+        and normalize(map_pose) is not None
+    ):
+        return normalize(map_pose)
+    current = (robot.get("navigation") or {}).get("current") or {}
+    if (
+        current.get("frame_id") == "map"
+        and normalize(current) is not None
+    ):
+        return normalize(current)
+    return None
+
+
+def _require_allowed_current_pose(
+    store: Optional[MapAnnotationStore],
+    robot_id: str,
+    robot: Dict[str, Any],
+) -> None:
+    if store is None or not store.has_hard_blocks(robot_id):
+        return
+    pose = _robot_map_pose(robot)
+    if pose is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Current map pose is required while hard map policies "
+                "are enabled"
+            ),
+        )
+    _require_allowed_map_pose(store, robot_id, pose["x"], pose["y"])
+
+
+def _require_allowed_manual_motion(
+    store: Optional[MapAnnotationStore],
+    robot_id: str,
+    robot: Dict[str, Any],
+    linear_x: float,
+) -> None:
+    if (
+        store is None
+        or not store.has_hard_blocks(robot_id)
+        or abs(linear_x) <= 1.0e-9
+    ):
+        return
+    pose = _robot_map_pose(robot)
+    if pose is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Manual translation is blocked because the current map "
+                "pose is unavailable"
+            ),
+        )
+    horizon_sec = 0.75
+    end = (
+        pose["x"] + math.cos(pose["yaw"]) * linear_x * horizon_sec,
+        pose["y"] + math.sin(pose["yaw"]) * linear_x * horizon_sec,
+    )
+    reason = store.segment_blocked_reason(
+        robot_id,
+        (pose["x"], pose["y"]),
+        end,
+    )
+    if reason:
+        raise HTTPException(status_code=409, detail=reason)
 
 
 def _require_free_current_pose(

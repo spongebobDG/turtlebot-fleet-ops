@@ -225,6 +225,22 @@ if ($robots | Where-Object { $_.hostname -eq "robotless-mock" }) {
     throw "Port 8000 still belongs to the robotless mock; production Gateway was not started."
 }
 
+$localAiState = "UNAVAILABLE"
+$localAiModel = "qwen3:8b"
+try {
+    $localAi = Invoke-RestMethod `
+        -Uri "http://127.0.0.1:8000/api/mlops/ros2-logs/ai" `
+        -TimeoutSec 5
+    $localAiState = [string]$localAi.state
+    $localAiModel = [string]$localAi.model
+    if ($localAiState -ne "READY") {
+        Write-Warning "Local log AI is $localAiState ($($localAi.message)). Dashboard and robot control remain available."
+    }
+}
+catch {
+    Write-Warning "Could not read local log AI status. Dashboard and robot control remain available."
+}
+
 $configuredAddress = (& $wslExe -d $Distro -u $LinuxUser -- bash -lc `
     "sed -n 's/^ROBOT_ADDRESS=//p' ~/.config/turtlebot-fleet-ops/control.env | head -n 1").Trim()
 
@@ -236,7 +252,9 @@ $result = @(
     "RobotAddress=$configuredAddress",
     "KeepAliveProcessId=$keepAliveProcessId",
     "KeepAliveStartTimeUtc=$($keepAliveStartTimeUtc.ToString('o'))",
-    "Dashboard=http://localhost:8000"
+    "Dashboard=http://localhost:8000",
+    "LocalLogAI=$localAiState",
+    "LocalLogAIModel=$localAiModel"
 )
 Set-Content -LiteralPath $markerPath -Value $result -Encoding UTF8
 $result | ForEach-Object { Write-Host $_ }

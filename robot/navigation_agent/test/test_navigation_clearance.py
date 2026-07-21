@@ -7,7 +7,7 @@ from navigation_agent.agent_node import NavigationAgent
 
 class StubAgent:
     _robot_id = "tb1"
-    _navigation_min_clearance_m = 0.19
+    _navigation_min_clearance_m = 0.16
 
     def __init__(self):
         self._lock = threading.RLock()
@@ -39,19 +39,19 @@ def scan_status(distance):
 def test_navigation_clearance_requires_fresh_valid_scan_above_limit():
     agent = StubAgent()
 
-    NavigationAgent._on_robot_status(agent, scan_status(0.20))
+    NavigationAgent._on_robot_status(agent, scan_status(0.165))
     assert agent._scan_clearance_ready()
 
-    NavigationAgent._on_robot_status(agent, scan_status(0.18))
+    NavigationAgent._on_robot_status(agent, scan_status(0.159))
     assert not agent._scan_clearance_ready()
-    assert "0.180m < 0.190m" in agent._scan_clearance_failure()
+    assert "0.159m < 0.160m" in agent._scan_clearance_failure()
 
 
 def test_active_goal_is_stopped_when_clearance_falls_below_limit():
     agent = StubAgent()
     agent._active_command_id = "goal-1"
 
-    NavigationAgent._on_robot_status(agent, scan_status(0.18))
+    NavigationAgent._on_robot_status(agent, scan_status(0.159))
 
     assert len(agent.stop_reasons) == 1
     assert "clearance fell below" in agent.stop_reasons[0]

@@ -582,6 +582,9 @@ def test_root_cause_diagnosis_keeps_evidence_and_recommendation():
     assert progress["confidence"] > 0.5
     assert "map-frame" in progress["recommended_action"]
     assert progress["evidence"][-1]["logger"] == "fleet_gateway"
+    assert progress["incident_id"].startswith("incident-")
+    assert len(progress["evidence_digest"]) == 64
+    assert progress["evidence"][-1]["evidence_id"].startswith("evidence-")
 
 
 def test_root_cause_diagnosis_ignores_success_path_info_messages():

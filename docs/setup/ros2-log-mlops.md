@@ -202,3 +202,50 @@ systemctl --user restart fleet-log-mlops.service
 
 소프트웨어·Nav2 설정·센서가 바뀌거나 지속적인 false positive가 생기면 새 dataset hash와 모델
 ID로 재학습한다. 과거 모델 파일을 덮어쓰지 않고 candidate와 승격 시각을 학습 일지에 기록한다.
+
+## 7. 로컬 AI 사건 보고서
+
+Production 통계 모델과 규칙 기반 원인 분석 위에 읽기 전용 Ollama 자문을 선택적으로 사용할 수
+있다. 이 기능은 사건을 자동 분석하지 않으며, Dashboard에서 한 사건의 `로컬 AI 분석` 버튼을
+눌렀을 때만 실행된다. AI는 `/cmd_vel`, e-stop, 서비스 재시작 또는 다른 제어 API를 호출하지
+않고 기존 규칙에 등록된 점검·해결 항목만 우선순위로 선택한다.
+
+최초 한 번 WSL에서 다음 스크립트를 실행한다. Ollama와 `qwen3:8b`를 내려받으므로 인터넷,
+약 6GB 이상의 저장 공간과 `sudo` 권한이 필요하다.
+
+```bash
+cd ~/turtlebot-fleet-ops
+bash scripts/control-pc/setup_local_log_ai.sh
+```
+
+Windows용 Ollama가 로그인 자동 시작으로 실행 중이면 먼저 종료하고 자동 시작을
+비활성화한다. Windows와 WSL 서버를 동시에 `127.0.0.1:11434`에 띄우지 않는다.
+
+설치 스크립트는 `ollama.service`를 부팅 시 자동 시작하도록 설정하고 구조화 JSON 응답과 GPU
+상태를 확인한다. 설정은 Git 밖의 `~/.config/turtlebot-fleet-ops/control.env`에 보존된다.
+
+```bash
+curl -sS http://127.0.0.1:8000/api/mlops/ros2-logs/ai | jq
+ollama ps
+journalctl -u ollama.service -n 100 --no-pager
+```
+
+GPU 적재와 네 가지 대표 사건의 구조화 응답을 다시 승인하려면 다음을 실행한다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/turtlebot-fleet-ops/install/setup.bash
+python3 ~/turtlebot-fleet-ops/scripts/control-pc/verify_local_log_ai.py
+```
+
+정상 상태는 `state=READY`, `provider=ollama`, `model=qwen3:8b`이다. `DISABLED`,
+`MODEL_NOT_READY`, `UNAVAILABLE`이어도 기존 ML·규칙 분석과 웹 관제는 계속 동작한다. 동일한
+사건·근거·모델·프롬프트 결과는 다음 경로에서 재사용되며 기본 30일 뒤 정리된다.
+
+```text
+~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/ai/analyses/
+```
+
+로그 문자열은 비신뢰 입력으로 취급되고 password, PSK, token, API key, Authorization 값은
+모델 입력 전에 마스킹된다. 분석 결과는 원인 확정이나 안전 승인으로 사용하지 않고 인용된
+근거 로그와 실제 ROS 상태를 운영자가 다시 확인한다.

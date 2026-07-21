@@ -4,7 +4,14 @@ from fastapi.testclient import TestClient
 import pytest
 
 from fleet_gateway.api import create_app
+from fleet_gateway.log_ai import (
+    LocalAIInvalidResponse,
+    LocalAIBusy,
+    LocalAINotReady,
+    LocalAITimeout,
+)
 from fleet_gateway.map_registry import MapRegistry
+from fleet_gateway.map_annotations import MapAnnotationStore
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.registry import StatusRegistry
 from fleet_gateway.scan_registry import ScanRegistry
@@ -392,6 +399,9 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
         "globalThis.FleetDiagnosticsView = {};"
     )
     (source_dir / "map_math.js").write_text("globalThis.FleetMapMath = {};")
+    (source_dir / "map_annotations.js").write_text(
+        "globalThis.FleetMapAnnotations = {};"
+    )
     (source_dir / "map_viewport.js").write_text(
         "globalThis.FleetMapViewport = {};"
     )
@@ -404,6 +414,7 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
         "app.js",
         "diagnostics_view.js",
         "manual_keys.js",
+        "map_annotations.js",
         "map_math.js",
         "map_viewport.js",
         "robot_display.js",
@@ -420,6 +431,7 @@ def test_dashboard_assets_work_with_symlink_install(tmp_path):
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/diagnostics_view.js").status_code == 200
     assert client.get("/static/manual_keys.js").status_code == 200
+    assert client.get("/static/map_annotations.js").status_code == 200
     assert client.get("/static/map_math.js").status_code == 200
     assert client.get("/static/map_viewport.js").status_code == 200
     assert client.get("/static/robot_display.js").status_code == 200
@@ -433,6 +445,7 @@ def test_dashboard_serves_map_math_from_regular_install(tmp_path):
         "app.js": "console.log('fleet');",
         "manual_keys.js": "globalThis.FleetManualKeys = {};",
         "diagnostics_view.js": "globalThis.FleetDiagnosticsView = {};",
+        "map_annotations.js": "globalThis.FleetMapAnnotations = {};",
         "map_math.js": "globalThis.FleetMapMath = {};",
         "map_viewport.js": "globalThis.FleetMapViewport = {};",
         "robot_display.js": "globalThis.FleetRobotDisplay = {};",
@@ -442,6 +455,7 @@ def test_dashboard_serves_map_math_from_regular_install(tmp_path):
 
     assert client.get("/static/manual_keys.js").status_code == 200
     assert client.get("/static/diagnostics_view.js").status_code == 200
+    assert client.get("/static/map_annotations.js").status_code == 200
     assert client.get("/static/map_math.js").status_code == 200
     assert client.get("/static/map_viewport.js").status_code == 200
     assert client.get("/static/robot_display.js").status_code == 200
@@ -466,6 +480,102 @@ def test_ros2_log_mlops_status_route_is_fail_visible(tmp_path):
     assert missing.json()["state"] == "MODEL_NOT_READY"
     assert available.json()["state"] == "NORMAL"
     assert available.json()["model_id"] == "model-1"
+
+
+class FakeLogAIAnalyzer:
+
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    def health(self):
+        return {
+            "state": "READY",
+            "provider": "ollama",
+            "model": "qwen3:8b",
+        }
+
+    def analyze(self, incident_id):
+        self.calls.append(incident_id)
+        if self.error is not None:
+            raise self.error
+        return {
+            "state": "READY",
+            "incident_id": incident_id,
+            "model": "qwen3:8b",
+            "report": {"summary_ko": "분석 완료"},
+        }
+
+
+class FakeMapAnnotationController:
+
+    def __init__(self):
+        self.calls = []
+
+    def publish_map_annotations(self, robot_id, annotations):
+        self.calls.append((robot_id, annotations))
+        return {
+            "success": True,
+            "robot_id": robot_id,
+            "annotation_count": len(annotations),
+        }
+
+
+def test_local_log_ai_status_and_on_demand_analysis_routes():
+    analyzer = FakeLogAIAnalyzer()
+    client = TestClient(
+        create_app(make_registry(), log_ai_analyzer=analyzer)
+    )
+
+    health = client.get("/api/mlops/ros2-logs/ai")
+    analysis = client.post(
+        "/api/mlops/ros2-logs/incidents/incident-1/ai-analysis"
+    )
+
+    assert health.status_code == 200
+    assert health.json()["state"] == "READY"
+    assert analysis.status_code == 200
+    assert analysis.json()["incident_id"] == "incident-1"
+    assert analyzer.calls == ["incident-1"]
+
+
+@pytest.mark.parametrize(
+    "error,status_code",
+    [
+        (KeyError("missing"), 404),
+        (LocalAINotReady("not ready"), 503),
+        (LocalAIBusy("busy"), 429),
+        (LocalAITimeout("timeout"), 504),
+        (LocalAIInvalidResponse("invalid"), 502),
+    ],
+)
+def test_local_log_ai_route_maps_fail_visible_errors(error, status_code):
+    client = TestClient(
+        create_app(
+            make_registry(),
+            log_ai_analyzer=FakeLogAIAnalyzer(error=error),
+        )
+    )
+
+    response = client.post(
+        "/api/mlops/ros2-logs/incidents/incident-1/ai-analysis"
+    )
+
+    assert response.status_code == status_code
+    assert response.json()["detail"]
+
+
+def test_local_log_ai_is_optional_and_does_not_break_dashboard():
+    client = TestClient(create_app(make_registry()))
+
+    health = client.get("/api/mlops/ros2-logs/ai")
+    analysis = client.post(
+        "/api/mlops/ros2-logs/incidents/incident-1/ai-analysis"
+    )
+
+    assert health.status_code == 200
+    assert health.json()["state"] == "DISABLED"
+    assert analysis.status_code == 503
 
 
 def test_navigation_map_initial_pose_goal_and_cancel_routes():
@@ -500,6 +610,117 @@ def test_navigation_map_initial_pose_goal_and_cancel_routes():
         "goal",
         "cancel",
     ]
+
+
+def test_map_annotation_api_distributes_and_enforces_privacy_zone():
+    store = MapAnnotationStore()
+    publisher = FakeMapAnnotationController()
+    navigation = FakeNavigationController()
+    client = TestClient(
+        create_app(
+            make_navigation_registry(),
+            navigation_controller=navigation,
+            map_registry=make_map_registry(),
+            map_annotation_store=store,
+            map_annotation_controller=publisher,
+        )
+    )
+
+    created = client.post(
+        "/api/robots/tb1/map-annotations",
+        json={
+            "type": "privacy",
+            "name": "개인정보 상담실",
+            "points": [
+                {"x": 1.0, "y": 1.0},
+                {"x": 1.8, "y": 1.0},
+                {"x": 1.8, "y": 1.8},
+                {"x": 1.0, "y": 1.8},
+            ],
+        },
+    )
+    listed = client.get("/api/robots/tb1/map-annotations")
+    blocked = client.post(
+        "/api/robots/tb1/navigation/goals",
+        json={"x": 1.25, "y": 1.25, "yaw": 0.0},
+    )
+    deleted = client.delete(
+        "/api/robots/tb1/map-annotations/"
+        f"{created.json()['annotation_id']}"
+    )
+
+    assert created.status_code == 201
+    assert created.json()["policy"]["data"] == "NO_CAPTURE_NO_STORAGE"
+    assert listed.json()["hard_block_count"] == 1
+    assert blocked.status_code == 409
+    assert "개인정보 보호구역" in blocked.json()["detail"]
+    assert deleted.status_code == 202
+    assert [len(call[1]) for call in publisher.calls] == [1, 0]
+
+
+def test_charging_annotation_is_a_server_owned_navigation_target():
+    store = MapAnnotationStore()
+    navigation = FakeNavigationController()
+    client = TestClient(
+        create_app(
+            make_navigation_registry(),
+            navigation_controller=navigation,
+            map_registry=make_map_registry(),
+            map_annotation_store=store,
+        )
+    )
+    created = client.post(
+        "/api/robots/tb1/map-annotations",
+        json={
+            "type": "charging",
+            "name": "교실 충전기",
+            "pose": {"x": 1.25, "y": 1.25, "yaw": 3.14},
+        },
+    )
+
+    moved = client.post(
+        "/api/robots/tb1/map-annotations/"
+        f"{created.json()['annotation_id']}/navigate",
+        json={},
+    )
+
+    assert created.status_code == 201
+    assert moved.status_code == 202
+    assert moved.json()["destination_kind"] == "charging"
+    assert navigation.calls[-1][0] == "goal"
+    assert navigation.calls[-1][2:5] == (1.25, 1.25, 3.14)
+
+
+def test_virtual_wall_stops_predicted_web_manual_translation():
+    store = MapAnnotationStore()
+    manual = FakeManualController()
+    client = TestClient(
+        create_app(
+            make_navigation_registry(),
+            manual_controller=manual,
+            map_registry=make_map_registry(),
+            map_annotation_store=store,
+        )
+    )
+    created = client.post(
+        "/api/robots/tb1/map-annotations",
+        json={
+            "type": "virtual_wall",
+            "name": "근접 벽",
+            "points": [{"x": 0.47, "y": 0.05}, {"x": 0.47, "y": 0.95}],
+        },
+    )
+    started = client.post("/api/robots/tb1/manual/sessions", json={})
+    command = client.put(
+        "/api/robots/tb1/manual/sessions/manual-1",
+        json={"linear_x": 0.05, "angular_z": 0.0},
+    )
+
+    assert created.status_code == 201
+    assert started.status_code == 202
+    assert command.status_code == 409
+    assert "가상 벽" in command.json()["detail"]
+    assert manual.calls[-1] == ("command", "tb1", "manual-1", 0.0, 0.0)
 
 
 def test_navigation_goal_requires_warning_confirmation():

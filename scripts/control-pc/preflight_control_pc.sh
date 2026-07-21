@@ -78,6 +78,34 @@ else
   fail "production ROS domain mismatch"
 fi
 
+ai_enabled="$(sed -n 's/^FLEET_LOG_AI_ENABLED=//p' \
+  "${HOME}/.config/turtlebot-fleet-ops/control.env" | tail -n 1)"
+ai_model="$(sed -n 's/^FLEET_LOG_AI_MODEL=//p' \
+  "${HOME}/.config/turtlebot-fleet-ops/control.env" | tail -n 1)"
+if [[ "${ai_enabled}" == "1" ]]; then
+  ai_model="${ai_model:-qwen3:8b}"
+  if command -v ollama >/dev/null 2>&1; then
+    pass "command ollama"
+  else
+    warn "local log AI enabled but ollama is not installed"
+  fi
+  if systemctl is-active --quiet ollama.service 2>/dev/null; then
+    pass "ollama.service active"
+  else
+    warn "local log AI enabled but ollama.service is not active"
+  fi
+  if curl --silent --fail --max-time 3 \
+    http://127.0.0.1:11434/api/tags \
+    | jq -e --arg model "${ai_model}" \
+      '.models[]? | select((.name // .model) == $model)' >/dev/null; then
+    pass "local log AI model ${ai_model}"
+  else
+    warn "local log AI model ${ai_model} is unavailable"
+  fi
+else
+  warn "local log AI disabled; run setup_local_log_ai.sh to enable it"
+fi
+
 for unit in \
   fleet-control-zenoh.service \
   fleet-gateway.service \

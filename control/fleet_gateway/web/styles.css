@@ -77,6 +77,48 @@ h3 { font-size: 0.82rem; }
 .connection[data-state="connected"] .connection-dot { background: var(--mint); }
 .connection[data-state="offline"] .connection-dot { background: var(--red); }
 
+.admin-alert {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  z-index: 20;
+  width: min(920px, calc(100% - 32px));
+  min-height: 48px;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  color: #fff4d3;
+  background: rgba(66, 48, 12, 0.97);
+  border: 1px solid var(--yellow);
+  border-radius: 11px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.46), 0 0 0 3px rgba(255, 209, 102, 0.09);
+  transform: translateX(-50%);
+}
+.admin-alert[hidden] { display: none; }
+.admin-alert[data-tone="critical"] {
+  color: #fff2f2;
+  background: rgba(77, 20, 24, 0.98);
+  border-color: var(--red);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(255, 107, 107, 0.12);
+  animation: admin-alert-pulse 1.8s ease-in-out infinite;
+}
+.admin-alert-heading { display: grid; gap: 2px; color: inherit; font-size: 0.62rem; font-weight: 900; white-space: nowrap; }
+.admin-alert-heading strong { font-size: 1.1rem; }
+.admin-alert-copy { min-width: 0; }
+.admin-alert-copy strong,
+.admin-alert-copy p { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-alert-copy strong { font-size: 0.72rem; }
+.admin-alert-copy p { margin-top: 2px; color: #e7d9bd; font-size: 0.62rem; }
+.admin-alert-action { padding: 7px 9px; color: white; background: rgba(255, 255, 255, 0.08); border-color: currentColor; white-space: nowrap; }
+@keyframes admin-alert-pulse {
+  50% { border-color: #ffb0b5; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), 0 0 0 5px rgba(255, 107, 107, 0.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-alert[data-tone="critical"] { animation: none; }
+}
+
 .dashboard-shell {
   width: min(1600px, calc(100% - 24px));
   height: calc(100dvh - 58px);
@@ -91,6 +133,7 @@ h3 { font-size: 0.82rem; }
   grid-template-rows: 46px minmax(0, 1fr);
   gap: 9px;
 }
+body.has-admin-alert .dashboard-shell { padding-top: 66px; }
 
 .summary {
   grid-area: summary;
@@ -332,6 +375,40 @@ input {
 
 .map-frame.loaded #map-canvas { display: block; }
 .map-frame.loaded .map-placeholder { display: none; }
+.zone-editor {
+  position: absolute;
+  z-index: 5;
+  top: 9px;
+  left: 9px;
+  width: min(300px, calc(100% - 18px));
+  max-height: calc(100% - 18px);
+  padding: 9px;
+  overflow: auto;
+  color: var(--text);
+  background: rgba(5, 14, 12, 0.96);
+  border: 1px solid rgba(88, 224, 174, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+}
+.zone-editor[hidden] { display: none; }
+.zone-editor-heading { display: flex; justify-content: space-between; align-items: flex-start; }
+.zone-editor-heading span { display: block; color: var(--mint); font-size: 0.5rem; letter-spacing: 0.12em; }
+.zone-editor-heading strong { display: block; margin-top: 2px; font-size: 0.76rem; }
+.zone-editor-heading button { padding: 1px 6px; color: var(--muted); background: transparent; border: 0; font-size: 1.1rem; }
+.zone-tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 8px; }
+.zone-tool-grid button { padding: 6px 4px; color: var(--muted); background: rgba(255, 255, 255, 0.025); font-size: 0.58rem; }
+.zone-tool-grid button.active { color: #07110e; background: var(--mint); border-color: var(--mint); }
+.zone-name-field { display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 5px; margin-top: 7px; color: var(--muted); font-size: 0.55rem; }
+.zone-name-field input { width: 100%; padding: 5px 6px; }
+.zone-editor-help { min-height: 2.4em; margin-top: 6px; color: #bed1cb; font-size: 0.55rem; line-height: 1.2; }
+.zone-editor-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 6px; }
+.zone-editor-actions button { padding: 6px; font-size: 0.58rem; }
+.zone-list { display: grid; gap: 4px; max-height: 108px; margin-top: 7px; overflow: auto; }
+.zone-list p { color: var(--muted); font-size: 0.53rem; }
+.zone-list-item { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 5px; padding: 5px; background: rgba(255, 255, 255, 0.025); border-radius: 6px; }
+.zone-list-item i { width: 7px; height: 7px; border-radius: 50%; }
+.zone-list-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.54rem; }
+.zone-list-item button { padding: 2px 5px; color: #ff9ca1; background: transparent; border-color: rgba(255, 95, 103, 0.3); font-size: 0.5rem; }
 .map-placeholder, .map-help, .map-meta { color: var(--muted); font-size: 0.6rem; }
 .map-help-row {
   display: flex;
@@ -450,6 +527,8 @@ body[data-map-mode="waypoint"] .navigation-actions .task-create { display: none;
 .mlops-state.anomaly { color: var(--red) !important; }
 .mlops-state.model-not-ready,
 .mlops-state.stale { color: var(--yellow) !important; }
+.mlops-title-actions { display: flex; align-items: center; gap: 6px; }
+.mlops-title-actions .log-expand { padding: 4px 7px; font-size: 0.56rem; }
 .mlops-summary {
   min-height: 0;
   margin-top: 6px;
@@ -464,6 +543,37 @@ body[data-map-mode="waypoint"] .navigation-actions .task-create { display: none;
 .mlops-summary .incident-cause { color: var(--yellow); }
 .mlops-summary .incident-action { color: #bed1cb; }
 .mlops-summary .model-explanation {
+  color: #9fb4ae;
+  line-height: 1.35;
+  text-overflow: clip;
+  white-space: normal;
+}
+.map-legend .virtual-wall { background: #ff5f67; }
+.map-legend .privacy-zone { background: #c084fc; }
+.map-legend .charging-zone { background: #38d996; }
+.map-policy-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(88, 224, 174, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.map-policy-strip strong { display: block; color: #bed1cb; font-size: 0.6rem; }
+.map-policy-strip span { display: block; margin-top: 2px; color: var(--muted); font-size: 0.5rem; }
+.map-policy-strip button { padding: 6px 8px; font-size: 0.56rem; white-space: nowrap; }
+.map-policy-strip.battery-low { border-color: rgba(255, 159, 67, 0.65); background: rgba(255, 159, 67, 0.09); }
+.map-policy-strip.battery-low strong { color: var(--yellow); }
+#map-canvas.zone-editing { cursor: crosshair; }
+.mlops-summary .local-ai-summary { grid-column: 1 / -1; }
+.mlops-summary .local-ai-summary strong { color: var(--muted); }
+.mlops-summary .local-ai-summary strong.ready { color: var(--mint); }
+.mlops-summary .local-ai-summary strong.model-not-ready,
+.mlops-summary .local-ai-summary strong.disabled,
+.mlops-summary .local-ai-summary strong.unavailable { color: var(--yellow); }
+.mlops-summary .local-ai-explanation {
   color: #9fb4ae;
   line-height: 1.35;
   text-overflow: clip;
@@ -505,6 +615,65 @@ body[data-map-mode="waypoint"] .navigation-actions .task-create { display: none;
 .incident-evidence { color: var(--muted); overflow-wrap: anywhere; }
 .incident-evidence time { color: var(--mint); }
 .incident-evidence b { color: var(--red); }
+.local-ai-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.mlops-card.has-active-alert { border-color: rgba(255, 107, 107, 0.72); }
+body.log-view-open::before {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  content: "";
+  background: rgba(1, 7, 6, 0.78);
+  backdrop-filter: blur(3px);
+}
+.mlops-card.log-expanded {
+  position: fixed;
+  inset:
+    var(--log-window-top, 108px)
+    var(--log-window-right, 12px)
+    var(--log-window-bottom, 12px)
+    var(--log-window-left, 12px);
+  z-index: 30;
+  padding: 16px;
+  background: linear-gradient(145deg, #172724, #0d1816);
+  border-color: rgba(88, 224, 174, 0.46);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(88, 224, 174, 0.08);
+}
+.mlops-card.log-expanded .card-title h3 { font-size: 1.05rem; }
+.mlops-card.log-expanded .mlops-summary {
+  min-height: 0;
+  flex: 1;
+  grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.mlops-card.log-expanded .mlops-summary span { font-size: 0.65rem; }
+.mlops-card.log-expanded .mlops-summary strong { font-size: 0.78rem; }
+.mlops-card.log-expanded .mlops-summary p { font-size: 0.67rem; }
+.mlops-card.log-expanded .incident-details { max-height: none; padding-right: 5px; }
+.mlops-card.log-expanded .incident-item { padding: 10px; }
+.mlops-card.log-expanded .incident-item summary { font-size: 0.75rem; }
+.mlops-card.log-expanded .incident-item section { font-size: 0.68rem; line-height: 1.5; }
+.mlops-card.log-expanded .incident-item p { font-size: 0.7rem; line-height: 1.5; }
+.local-ai-actions button { flex: 0 0 auto; padding: 5px 8px; font-size: 0.55rem; }
+.local-ai-actions span { color: var(--muted); font-size: 0.52rem; }
+.local-ai-report {
+  margin-top: 7px;
+  padding: 7px;
+  background: rgba(104, 255, 201, 0.035);
+  border: 1px solid rgba(104, 255, 201, 0.22);
+  border-radius: 7px;
+}
+.local-ai-report.error { border-color: rgba(255, 105, 115, 0.35); }
+.local-ai-report-title { display: flex; justify-content: space-between; gap: 8px; }
+.local-ai-report-title span { color: var(--mint); font-size: 0.52rem; }
+.local-ai-report > small { display: block; margin-top: 2px; color: var(--muted); }
+.local-ai-report .local-ai-notice { color: var(--yellow); }
 .patrol-list { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border); }
 
 .operations-card {
@@ -605,5 +774,9 @@ body[data-map-mode="waypoint"] .navigation-actions .task-create { display: none;
   .navigation-controls { display: grid; grid-template-columns: 1fr 1fr; }
   .navigation-actions { margin-top: 0; }
   .operations-grid { grid-template-columns: 1fr; grid-template-rows: repeat(3, minmax(180px, 1fr)); }
+  .admin-alert { top: 72px; grid-template-columns: auto minmax(0, 1fr); }
+  .admin-alert-action { grid-column: 1 / -1; width: 100%; }
+  body.has-admin-alert .dashboard-shell { padding-top: 112px; }
+  .mlops-card.log-expanded { padding: 10px; }
   .audit-card { grid-column: auto; }
 }

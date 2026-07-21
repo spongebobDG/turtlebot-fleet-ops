@@ -95,6 +95,15 @@ def generate_launch_description() -> LaunchDescription:
                 respawn=True,
                 respawn_delay=3.0,
             ),
+            Node(
+                package="navigation_agent",
+                executable="map_annotation_filter",
+                name="map_annotation_filter",
+                output="screen",
+                parameters=[{"use_sim_time": use_sim_time}],
+                respawn=True,
+                respawn_delay=3.0,
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     str(share_dir / "launch" / "tb1_nav2_navigation.launch.py")

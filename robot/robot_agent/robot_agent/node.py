@@ -113,7 +113,7 @@ class RobotAgent(Node):
         self.declare_parameter("battery_timeout_sec", 5.0)
         self.declare_parameter("odom_timeout_sec", 1.0)
         self.declare_parameter("scan_timeout_sec", 2.0)
-        self.declare_parameter("navigation_min_clearance_m", 0.19)
+        self.declare_parameter("navigation_min_clearance_m", 0.16)
         self.declare_parameter("clearance_log_hysteresis_m", 0.02)
         self.declare_parameter("clearance_recovery_samples", 3)
         self.declare_parameter("low_battery_percent", 20.0)

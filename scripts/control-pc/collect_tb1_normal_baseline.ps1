@@ -80,7 +80,7 @@ try {
         if ([bool]$robot.safety.estop_active -or -not [bool]$robot.safety.motion_armed) {
             throw "Motion safety became disarmed during baseline collection."
         }
-        if (-not [bool]$robot.scan.fresh -or $scanMinimum -lt 0.19) {
+        if (-not [bool]$robot.scan.fresh -or $scanMinimum -lt 0.16) {
             throw "LiDAR safety precondition failed during baseline collection."
         }
         if (-not [string]::IsNullOrWhiteSpace([string]$robot.navigation.active_command_id)) {

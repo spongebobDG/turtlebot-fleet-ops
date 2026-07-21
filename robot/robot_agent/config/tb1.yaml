@@ -9,7 +9,8 @@ robot_agent:
     battery_timeout_sec: 5.0
     odom_timeout_sec: 1.0
     scan_timeout_sec: 2.0
-    navigation_min_clearance_m: 0.19
+    # 0.14m footprint radius + 0.02m narrow-passage clearance.
+    navigation_min_clearance_m: 0.16
     clearance_log_hysteresis_m: 0.02
     clearance_recovery_samples: 3
     low_battery_percent: 20.0

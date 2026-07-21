@@ -179,8 +179,9 @@ ros2 topic echo /fleet/navigation_status
    `Localization ready; waiting for motion safety rearm`이 정상이다. e-stop을 해제하고 안전 재무장한
    경우에만 `READY`가 된다.
 6. `목적지` 모드에서 가까운 자유 셀을 클릭·드래그한다.
-7. 최소 LiDAR 거리가 0.19m 이상인지 확인한다. 이는 TB1 반경 0.14m에 요청한 외곽 여유
-   0.05m를 더한 값이다. 현재 pose도 known free cell이어야 한다.
+7. 최소 LiDAR 거리가 0.16m 이상인지 확인한다. 이는 TB1 반경 0.14m에 좁은 통로용 외곽 여유
+   0.02m를 더한 값이다. 현재 pose도 known free cell이어야 한다. 0.16m 미만이면 목표를
+   승인하지 않으며 실행 중 이 값 아래로 내려가도 즉시 정지한다.
 8. `목적지 전송` 후 거리, 경과시간, 예상시간, recovery와 lease age를 관찰한다.
 
 스캔 외부각 설정을 변경하거나 navigation agent를 재시작한 뒤에는 이전 AMCL pose를 재사용하지

@@ -21,6 +21,10 @@ grep -Fq "ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/scripts/tb1/wait_networ
   "${units_dir}/tb1-network-ready.service"
 grep -Fq "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" \
   "${units_dir}/tb1-profile-manager.service"
+grep -Fq "Environment=TB1_OPENCR_PORT=/dev/serial/by-id/usb-ROBOTIS_OpenCR_" \
+  "${units_dir}/tb1-bringup.service"
+grep -Fq 'robot.launch.py usb_port:=${TB1_OPENCR_PORT}' \
+  "${units_dir}/tb1-bringup.service"
 for unit in \
   tb1-bringup.service \
   tb1-safety-watchdog.service \
