@@ -42,3 +42,12 @@ def test_square_room_scan_tracks_pose_and_yaw() -> None:
 
     assert min(ranges) == pytest.approx(1.475, abs=0.001)
     assert all(0.12 <= distance <= 3.5 for distance in ranges)
+
+
+def test_square_room_raw_scan_uses_tb1_rear_facing_angle_zero() -> None:
+    ranges = square_room_scan_ranges((0.5, 0.0, 0.0))
+
+    # Raw -pi points along physical base_link +X and is normalized to bin 0.
+    assert ranges[0] == pytest.approx(1.475, abs=0.001)
+    # Raw angle 0 points along physical -X before the pi-radian correction.
+    assert ranges[180] == pytest.approx(2.475, abs=0.02)

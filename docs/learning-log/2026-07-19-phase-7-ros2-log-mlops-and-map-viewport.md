@@ -240,6 +240,55 @@ inside 51.25%여서 화면 변환이 아니라 AMCL pose 자체가 틀린 상태
 `(-0.817,-0.122,-0.905rad)`를 받았고 재검증 match 88.75%, inside 100%였다. 웹에서도 붉은
 LiDAR endpoint가 지도 벽과 다시 겹쳤으며 active command 없음과 e-stop을 유지했다.
 
+## 후속 물리 방향 시험: 센서 전방축 180° 불일치
+
+초기 위치를 다시 적용한 뒤 5cm 앞 목표는 Nav2의 10cm 위치 허용오차 안이라 실제 이동 없이
+성공했다. 15cm 앞 목표에서는 로컬 감시가 odom 각속도 0.323650rad/s를 검출해 즉시 e-stop으로
+취소했고, 사용자가 실제 로봇의 전방과 웹 삼각형 전방이 서로 반대라고 확인했다. 목표는 남지
+않았고 e-stop 활성, motion unarmed와 0속도를 유지한 채 추가 이동을 중단했다.
+
+정지 상태 진단에서 `base_link→base_scan` TF yaw는 0°였고 `/scan`과 `/scan_normalized`의
+frame도 `base_scan`이었다. 그러나 normalizer는 원본 angle에 외부각을 더하지 않았고 Gateway의
+`scan_sensor_yaw_rad`도 0이었다. 즉 UI 삼각형은 올바르게 `base_link +X`를 표시했지만 두 scan
+소비자는 LDS-02 원본 angle 0을 실제 차체 전방으로 잘못 가정했다. 이전의 180° 전역 정렬 결과는
+사용자 yaw 입력만의 문제가 아니라 matcher가 이 센서 축 오류를 pose 회전으로 보상한 결과로
+재분류했다.
+
+TB1 `/scan_normalized`에 π rad `angle_offset_rad`를 추가하고 Gateway raw scan overlay에도 같은
+π rad를 적용했다. 원본 `/scan`은 진단을 위해 변경하지 않았다. 보정 0의 호환 동작, π에서
+angle 0이 180번 bin으로 이동하는 동작, 비유한 offset 거부를 추가했으며 navigation agent
+106개와 Gateway 79개, 총 185개 회귀 테스트가 통과했다. 배포 뒤에도 e-stop에서 기존 pose를
+폐기하고 scan-map 정합·웹 삼각형·실제 차체 앞을 다시 확인한 다음에만 짧은 전진을 허용한다.
+
+첫 GitHub Actions 실행은 robotless navigation goal이 20초 지도 진척 감시에 걸려 실패했다.
+제품의 π 보정은 적용됐지만 fixture가 여전히 raw angle 0을 차체 전방으로 생성해, 가상 센서와
+차체 운동의 계약이 실제 TB1과 달랐기 때문이다. robotless fixture와 Dashboard mock도 raw
+angle 0이 물리 후방을 뜻하도록 π 센서 외부각을 반영하고, 비대칭 pose에서 raw -π가 전방 벽,
+raw 0이 후방 벽 거리를 내는 단위·운영 설정 테스트를 추가했다. 이는 안전 감시를 느슨하게 하지
+않고 테스트 장비가 제품의 물리 센서 계약을 그대로 재현하도록 고친 것이다.
+
+두 번째 GitHub Actions run `29691887157`은 Humble build, 운영 파일 검증, navigation·Zenoh
+action·task/fault robotless smoke와 전체 workspace test를 모두 통과했다. 관제 PC에서도
+Gateway 80개와 navigation agent 107개, 총 187개 패키지 테스트와 동일한 navigation smoke를
+통과했고, 최대 선속도 0.05m/s·최대 각속도 0.16154rad/s·종료 0속도를 확인했다.
+
+e-stop을 명시적으로 활성화한 뒤 TB1을 commit `6101ab9`로 배포했다. aarch64 TB1에서
+navigation agent 107개 테스트가 통과했고 실제 `/scan_normalized` node parameter는
+`angle_offset_rad=3.141592653589793`, 출력은 0~359° 360-bin이었다. Gateway에도 같은 π 설정을
+배포한 뒤 health와 TB1 online을 확인했다. 보정된 scan의 전역 정렬 후보는 score 0.88018,
+match 90.625%, inside 99.375%였고 pose `(-0.385,-0.270,0.131rad)`를 초기 위치로 적용했다.
+새 AMCL pose `(-0.405,-0.266,0.122rad)`를 다시 평가한 seed는 score 0.86184, match 90.625%,
+inside 100%였다. 이 시점에도 Nav2·localization ready, e-stop active, motion unarmed, active goal
+없음을 유지했다. 남은 물리 gate는 웹 삼각형과 실제 차체 앞의 일치 확인 및 짧은 전진 한 번이다.
+
+사용자 부재 전 웹에서 보낸 후속 목표 `(0.315,-0.535,3.136rad)`는 31.60초 뒤 지도 진척
+20초 감시에 의해 `FAILED`가 됐다. 종료 pose는 `(0.145,-0.422,-0.514rad)`, 남은 거리
+0.2648m, recovery 0회였고 최종 odom 속도는 0이었다. 목표 종료 뒤 e-stop이 해제되고
+motion armed가 유지된 것을 자동 점검에서 발견해 로컬 `/safety_watchdog/set_estop`을 즉시
+활성화했다. 응답은 `Emergency stop activated`였고 이후 e-stop active, motion unarmed,
+active command 없음과 0속도를 확인했다. 실제 방향 확인 없이 이 실패를 단순 tolerance나 감시
+완화로 숨기지 않고, 다음 단계에서 최종 yaw UX와 controller 연속성·정지 원인을 로그로 분리한다.
+
 ## 배운 점
 
 1. OccupancyGrid cell 수와 화면 canvas pixel 수는 같은 개념이 아니다.
@@ -258,3 +307,5 @@ LiDAR endpoint가 지도 벽과 다시 겹쳤으며 active command 없음과 e-s
    오류 탐지를 반복 검증하는 안전한 수용 방법이다.
 9. 지도 화살표를 그리는 수학이 맞아도 앞쪽 표식이 모호하면 작업자가 yaw를 반대로 입력할 수
    있으므로, 좌표 회귀 테스트와 명확한 방향 기호가 모두 필요하다.
+10. scan-map 정합 점수는 센서 외부각의 물리적 의미를 보장하지 않는다. frame 계약과 실제 차체
+    전방을 별도로 시험해야 matcher가 180° pose로 센서 축 오류를 숨기는 일을 막을 수 있다.

@@ -21,12 +21,15 @@ def normalize_samples(
     range_min: float,
     range_max: float,
     bin_count: int = DEFAULT_BIN_COUNT,
+    angle_offset_rad: float = 0.0,
 ) -> Tuple[list, list]:
-    """Project scan samples onto fixed full-circle bins using nearest angle."""
+    """Project scan samples onto fixed bins in the physical base convention."""
     if bin_count < 1:
         raise ValueError("bin_count must be at least 1")
     if angle_increment <= 0.0:
         raise ValueError("angle_increment must be positive")
+    if not math.isfinite(angle_offset_rad):
+        raise ValueError("angle_offset_rad must be finite")
 
     output_ranges = [math.inf] * bin_count
     output_intensities = [0.0] * bin_count
@@ -39,7 +42,7 @@ def normalize_samples(
             continue
 
         angle = angle_min + sample_index * angle_increment
-        normalized_angle = angle % math.tau
+        normalized_angle = (angle + angle_offset_rad) % math.tau
         bin_index = int(normalized_angle / bin_width + 0.5) % bin_count
 
         if sample_range < output_ranges[bin_index]:
@@ -60,12 +63,18 @@ class ScanNormalizer(Node):
         self.declare_parameter("input_topic", "/scan")
         self.declare_parameter("output_topic", NORMALIZED_SCAN_TOPIC)
         self.declare_parameter("bin_count", DEFAULT_BIN_COUNT)
+        self.declare_parameter("angle_offset_rad", 0.0)
 
         input_topic = str(self.get_parameter("input_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
         self._bin_count = int(self.get_parameter("bin_count").value)
+        self._angle_offset_rad = float(
+            self.get_parameter("angle_offset_rad").value
+        )
         if self._bin_count < 1:
             raise ValueError("bin_count must be at least 1")
+        if not math.isfinite(self._angle_offset_rad):
+            raise ValueError("angle_offset_rad must be finite")
 
         self._publisher = self.create_publisher(
             LaserScan,
@@ -80,7 +89,8 @@ class ScanNormalizer(Node):
         )
         self.get_logger().info(
             f"Normalizing {input_topic} to {output_topic} "
-            f"with {self._bin_count} bins"
+            f"with {self._bin_count} bins and "
+            f"{self._angle_offset_rad:.6f} rad angle offset"
         )
 
     def _on_scan(self, message: LaserScan) -> None:
@@ -105,6 +115,7 @@ class ScanNormalizer(Node):
             message.range_min,
             message.range_max,
             self._bin_count,
+            self._angle_offset_rad,
         )
         self._publisher.publish(output)
 

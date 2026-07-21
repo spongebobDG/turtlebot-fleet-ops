@@ -53,11 +53,12 @@ scan_normalizer
 처리 규칙은 다음과 같다.
 
 1. 원본 샘플의 실제 각도를 `angle_min + index * angle_increment`로 계산한다.
-2. 각도를 0~2π 범위로 감싼다.
-3. 가장 가까운 1도 bin에 측정값을 배치한다.
-4. 같은 bin에 둘 이상이 들어오면 더 가까운 거리를 선택한다.
-5. 관측되지 않은 bin과 유효 범위 밖 측정은 `+inf`로 둔다.
-6. 원본 `/scan`은 Robot Agent와 장애 분석을 위해 그대로 보존한다.
+2. TB1 LDS-02의 센서 전방축을 차체 `base_link +X`에 맞추는 π rad 외부각을 더한다.
+3. 각도를 0~2π 범위로 감싼다.
+4. 가장 가까운 1도 bin에 측정값을 배치한다.
+5. 같은 bin에 둘 이상이 들어오면 더 가까운 거리를 선택한다.
+6. 관측되지 않은 bin과 유효 범위 밖 측정은 `+inf`로 둔다.
+7. 원본 `/scan`은 Robot Agent와 장애 분석을 위해 그대로 보존한다.
 
 `+inf`는 가짜 거리나 0을 넣는 것보다 안전하다. 0은 로봇 바로 앞 장애물로 해석될 수
 있고, 임의 보간은 센서가 보지 않은 장애물 정보를 만들어 낼 수 있다.
@@ -69,9 +70,24 @@ scan_normalizer
 오류는 벽을 휘거나 겹치게 만든다. 각도 기준 재투영은 배열 위치와 물리 방향의 계약을
 유지한다.
 
+## 후속 현장 회귀: 고정 격자와 전방축은 서로 다른 문제다
+
+고정 360-bin만 검증한 뒤 웹 삼각형과 실제 로봇 전방이 반대라는 물리 관찰이 나왔다.
+`tf2_echo base_link base_scan`은 yaw 0°였고 normalizer도 원본 각도를 offset 없이 bin에 넣고
+있었다. 즉 배열 형상은 안정됐지만 “angle 0이 어느 물리 방향인가”라는 외부각 계약이 틀렸다.
+scan-map matcher는 잘못된 센서 축을 180° 돌아간 AMCL pose로도 높은 점수를 만들 수 있어
+정합률만으로 차체 전방의 의미까지 검증할 수 없었다.
+
+해결은 TB1 normalizer의 `angle_offset_rad`와 Gateway `scan_sensor_yaw_rad`를 모두 π로 고정하는
+것이다. Nav2·AMCL·SLAM은 `/scan_normalized`를 사용하고 웹은 보존된 raw `/scan`에 같은 외부각을
+적용한다. 보정값 0의 기존 동작, π의 180° bin 이동과 비유한값 거부를 단위 테스트로 고정했다.
+배포 뒤에는 e-stop 아래 초기 위치와 endpoint 정합을 새로 계산하고, 실제 차체 앞과 웹 삼각형이
+같은지 확인한 뒤에만 짧은 전진 시험을 한다.
+
 ## 검증 결과
 
-- 새 단위 테스트 7개 통과
+- 스캔 정규화 단위·운영 설정 테스트 19개 통과
+- navigation agent 106개와 Gateway 79개, 총 185개 ROS 회귀 테스트 통과
 - TB1 `fleet_navigation` 15개 테스트 통과
 - 실제 `/scan_normalized` 20개 모두 길이 360
 - 고정 `angle_min=0`, `angle_increment=1도`, `angle_max=359도`

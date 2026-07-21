@@ -28,6 +28,9 @@ from sensor_msgs.msg import LaserScan
 from std_srvs.srv import SetBool
 
 
+TB1_RAW_SCAN_YAW_OFFSET_RAD = math.pi
+
+
 def navigation_duration(target_x: float) -> float:
     """Return deterministic mock duration for success and cancel exercises."""
     return 30.0 if target_x >= 1.5 else 2.0
@@ -47,13 +50,14 @@ def square_room_scan_ranges(
     pose: Tuple[float, float, float],
     sample_count: int = 360,
     wall_coordinate: float = 1.975,
+    sensor_yaw_rad: float = TB1_RAW_SCAN_YAW_OFFSET_RAD,
 ) -> List[float]:
-    """Ray-cast an ideal local scan against the mock map boundary."""
+    """Ray-cast raw TB1 scan angles against the mock map boundary."""
     x_value, y_value, yaw = pose
     ranges = []
     increment = 2.0 * math.pi / max(1, sample_count - 1)
     for index in range(sample_count):
-        angle = yaw - math.pi + index * increment
+        angle = yaw - math.pi + index * increment + sensor_yaw_rad
         direction_x = math.cos(angle)
         direction_y = math.sin(angle)
         candidates = []

@@ -16,6 +16,9 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     nav2_launch = (
         PACKAGE_ROOT / "launch" / "tb1_nav2_navigation.launch.py"
     ).read_text()
+    scan_normalizer = (
+        PACKAGE_ROOT / "config" / "tb1_scan_normalizer.yaml"
+    ).read_text()
 
     assert "lease_timeout_sec: 2.0" in agent_config
     assert "nav2_unavailable_timeout_sec: 1.0" in agent_config
@@ -61,6 +64,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"use_composition": "False"' in launch
     assert '"use_respawn": "True"' in launch
     assert '"tb1_scan_normalizer.yaml"' in launch
+    assert "angle_offset_rad: 3.141592653589793" in scan_normalizer
 
 
 def test_mapping_supports_simulation_without_changing_real_default() -> None:
@@ -86,6 +90,16 @@ def test_mapping_supports_simulation_without_changing_real_default() -> None:
     assert 'declare_parameter("input_topic", "/motion/manual/cmd_vel")' in (
         supervised
     )
+
+
+def test_robotless_fixture_emulates_tb1_raw_scan_axis() -> None:
+    fixture = (
+        REPOSITORY_ROOT / "infra" / "navigation" / "robotless_fixture.py"
+    ).read_text()
+
+    assert "TB1_RAW_SCAN_YAW_OFFSET_RAD = math.pi" in fixture
+    assert "sensor_yaw_rad: float = TB1_RAW_SCAN_YAW_OFFSET_RAD" in fixture
+    assert "index * increment + sensor_yaw_rad" in fixture
 
 
 def test_mapping_and_navigation_systemd_profiles_are_mutually_exclusive(

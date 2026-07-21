@@ -108,7 +108,10 @@ ros2 launch navigation_agent tb1_mapping.launch.py
 
 launch는 원본 `/scan`을 360개 각도 bin의 `/scan_normalized`로 재투영하고 SLAM Toolbox에는
 정규화 토픽만 연결한다. 실제 LDS-02에서 관찰한 207~219개 가변 배열이 다시 SLAM 입력을
-깨뜨리지 않는지 먼저 확인한다.
+깨뜨리지 않는지 먼저 확인한다. TB1의 원본 LDS-02 angle 0은 실제 `base_link +X` 전방과
+반대이므로 정규화 설정의 `angle_offset_rad=π`가 각 샘플을 물리 차체 기준으로 회전시킨다.
+Gateway도 원본 `/scan` overlay에 같은 π를 적용한다. 한쪽만 바꾸면 지도 정합은 높아도 웹
+화살표와 실제 이동이 다시 반대가 될 수 있으므로 두 설정은 하나의 센서 외부각 계약이다.
 
 ```bash
 ros2 topic hz /scan_normalized
@@ -166,7 +169,8 @@ ros2 topic echo /fleet/navigation_status
 
 1. 지도에서 `초기 위치` 모드를 선택한다.
 2. 로봇의 대략 위치를 클릭하고 진행 방향으로 드래그한다. 붉은 LiDAR endpoint는 선택 후보를
-   따라 움직이므로 지도 벽과의 오차를 바로 볼 수 있다.
+   따라 움직이므로 지도 벽과의 오차를 바로 볼 수 있다. 원은 로봇 중심이고 드래그 끝의
+   삼각형은 실제 차체의 앞, 즉 `base_link +X`여야 한다.
 3. `LiDAR 자동 정렬`을 누르고 5~6초 기다린다. `정렬 일치`와 `지도 내부` 지표가 녹색으로
    표시되는지, 붉은 점이 지도 벽에 실제로 겹치는지 확인한다.
 4. `초기 위치 적용`을 누른다. 자동 정렬을 거치지 않았거나 match 35%·지도 내부 70% 기준을
@@ -178,6 +182,10 @@ ros2 topic echo /fleet/navigation_status
 7. 최소 LiDAR 거리가 0.19m 이상인지 확인한다. 이는 TB1 반경 0.14m에 요청한 외곽 여유
    0.05m를 더한 값이다. 현재 pose도 known free cell이어야 한다.
 8. `목적지 전송` 후 거리, 경과시간, 예상시간, recovery와 lease age를 관찰한다.
+
+스캔 외부각 설정을 변경하거나 navigation agent를 재시작한 뒤에는 이전 AMCL pose를 재사용하지
+않는다. e-stop을 유지하고 `LiDAR 자동 정렬`과 초기 위치 적용을 다시 수행한 다음, 삼각형 방향과
+실제 차체 앞이 같은지 작업자가 확인해야 한다. 그 확인 전에는 목적지를 보내지 않는다.
 
 로봇 상태 카드의 위치와 방향은 localization 이후 `navigation.current`의 `map` 좌표를 표시한다.
 아직 map pose가 없을 때만 `odom` 좌표로 fallback하며 카드 라벨에 사용 frame을 함께 표시한다.
