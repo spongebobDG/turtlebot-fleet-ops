@@ -20,7 +20,7 @@ TB1_ACCEPTANCE_DEPLOY_DRY_RUN
 3. Stop navigation/mapping, then all TB1 runtime services.
 4. Install pinned ROS/Nav2/SLAM, sysstat, and Zenoh dependencies.
 5. Build and test robot packages in isolated ROS domain 142.
-6. Install all seven TB1 user units.
+6. Install all eight TB1 user units, including the always-on profile manager.
 7. Start bringup/watchdog/agent/Zenoh only; leave mapping/Nav2 inactive.
 8. Run the connected acceptance preflight.
 EOF
@@ -81,6 +81,7 @@ systemctl --user stop tb1-navigation.service tb1-mapping.service \
 systemctl --user stop \
   tb1-zenoh-bridge.service \
   tb1-robot-agent.service \
+  tb1-profile-manager.service \
   tb1-safety-watchdog.service \
   tb1-bringup.service \
   2>/dev/null || true
@@ -174,6 +175,7 @@ systemctl --user enable --now \
   tb1-bringup.service \
   tb1-safety-watchdog.service \
   tb1-robot-agent.service \
+  tb1-profile-manager.service \
   tb1-zenoh-bridge.service
 
 for attempt in $(seq 1 60); do
@@ -182,6 +184,7 @@ for attempt in $(seq 1 60); do
     tb1-bringup.service \
     tb1-safety-watchdog.service \
     tb1-robot-agent.service \
+    tb1-profile-manager.service \
     tb1-zenoh-bridge.service; then
     break
   fi
@@ -191,6 +194,7 @@ for attempt in $(seq 1 60); do
       tb1-bringup.service \
       tb1-safety-watchdog.service \
       tb1-robot-agent.service \
+      tb1-profile-manager.service \
       tb1-zenoh-bridge.service >&2 || true
     exit 1
   fi

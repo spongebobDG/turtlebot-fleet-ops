@@ -4,8 +4,9 @@ import time
 from types import SimpleNamespace
 from typing import Callable, List
 
-from fleet_interfaces.msg import NavigationLease, NavigationStatus
+from fleet_interfaces.msg import NavigationLease, NavigationStatus, RobotStatus
 import rclpy
+from rclpy.clock import ClockType
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.task import Future
@@ -58,6 +59,14 @@ def test_gateway_publishes_half_second_leases_and_cancel_stops_them() -> None:
     robot_id = "lease-test-robot"
 
     try:
+        assert gateway._lease_clock.clock_type == ClockType.STEADY_TIME
+        status_message = RobotStatus()
+        status_message.header.stamp = gateway.get_clock().now().to_msg()
+        status_message.robot_id = "clock-test-robot"
+        gateway._status_callback(status_message)
+        clock_snapshot = gateway.registry.get("clock-test-robot")
+        assert clock_snapshot is not None
+        assert abs(clock_snapshot["clock_offset_sec"]) < 0.35
         _spin_until(
             executor,
             lambda: gateway._lease_publisher.get_subscription_count() > 0,
@@ -129,6 +138,25 @@ def test_gateway_publishes_half_second_leases_and_cancel_stops_them() -> None:
             assert robot_id not in gateway._active_navigation
             assert robot_id not in gateway._navigation_accepted_at
         assert unconfirmed_handle.cancel_calls == 1
+
+        gateway.registry.update(
+            {
+                "robot_id": robot_id,
+                "clock_offset_sec": 0.8,
+            }
+        )
+        clock_failure = gateway._clock_sync_failure(robot_id)
+        assert clock_failure is not None
+        assert clock_failure["status_code"] == 409
+        assert clock_failure["clock_offset_sec"] == 0.8
+
+        gateway.registry.update(
+            {
+                "robot_id": robot_id,
+                "clock_offset_sec": 0.05,
+            }
+        )
+        assert gateway._clock_sync_failure(robot_id) is None
     finally:
         probe.destroy_subscription(subscription)
         executor.remove_node(probe)

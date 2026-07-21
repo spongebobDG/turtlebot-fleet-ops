@@ -15,10 +15,13 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, LaserScan
 
 from robot_agent.model import (
+    CLEARANCE_BLOCKED,
+    CLEARANCE_CLEARED,
     HealthInput,
     HealthThresholds,
     UNKNOWN_VALUE,
     all_finite,
+    clearance_transition,
     evaluate_health,
     finite_or_unknown,
     normalize_battery_percent,
@@ -61,6 +64,8 @@ class RobotAgent(Node):
         self._scan_valid_points = 0
         self._scan_min_range = UNKNOWN_VALUE
         self._scan_valid = False
+        self._clearance_warning_active = False
+        self._clearance_recovery_count = 0
 
         self._last_health: Optional[Tuple[int, Tuple[str, ...]]] = None
 
@@ -108,6 +113,9 @@ class RobotAgent(Node):
         self.declare_parameter("battery_timeout_sec", 5.0)
         self.declare_parameter("odom_timeout_sec", 1.0)
         self.declare_parameter("scan_timeout_sec", 2.0)
+        self.declare_parameter("navigation_min_clearance_m", 0.19)
+        self.declare_parameter("clearance_log_hysteresis_m", 0.02)
+        self.declare_parameter("clearance_recovery_samples", 3)
         self.declare_parameter("low_battery_percent", 20.0)
         self.declare_parameter("high_cpu_percent", 90.0)
         self.declare_parameter("high_memory_percent", 90.0)
@@ -130,6 +138,15 @@ class RobotAgent(Node):
         )
         self._scan_timeout_sec = self._positive_float_parameter(
             "scan_timeout_sec"
+        )
+        self._navigation_min_clearance_m = self._positive_float_parameter(
+            "navigation_min_clearance_m"
+        )
+        self._clearance_log_hysteresis_m = self._nonnegative_float_parameter(
+            "clearance_log_hysteresis_m"
+        )
+        self._clearance_recovery_samples = self._positive_int_parameter(
+            "clearance_recovery_samples"
         )
         self._thresholds = HealthThresholds(
             low_battery_percent=float(
@@ -156,6 +173,18 @@ class RobotAgent(Node):
         value = float(self.get_parameter(name).value)
         if not math.isfinite(value) or value <= 0.0:
             raise ValueError(f"{name} must be a positive finite value")
+        return value
+
+    def _nonnegative_float_parameter(self, name: str) -> float:
+        value = float(self.get_parameter(name).value)
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError(f"{name} must be a non-negative finite value")
+        return value
+
+    def _positive_int_parameter(self, name: str) -> int:
+        value = self.get_parameter(name).value
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
         return value
 
     def _on_battery(self, message: BatteryState) -> None:
@@ -217,6 +246,33 @@ class RobotAgent(Node):
         self._scan_valid_points = count
         self._scan_min_range = nearest
         self._scan_valid = count > 0
+        self._log_clearance_transition()
+
+    def _log_clearance_transition(self) -> None:
+        active, recovery_count, transition = clearance_transition(
+            self._clearance_warning_active,
+            self._scan_valid,
+            float(self._scan_min_range),
+            self._navigation_min_clearance_m,
+            self._clearance_log_hysteresis_m,
+            self._clearance_recovery_count,
+            self._clearance_recovery_samples,
+        )
+        self._clearance_warning_active = active
+        self._clearance_recovery_count = recovery_count
+        if transition == CLEARANCE_BLOCKED:
+            self.get_logger().warning(
+                "OBSTACLE_CLEARANCE state=BLOCKED "
+                f"nearest={self._scan_min_range:.3f}m "
+                f"limit={self._navigation_min_clearance_m:.3f}m"
+            )
+        elif transition == CLEARANCE_CLEARED:
+            self.get_logger().info(
+                "OBSTACLE_CLEARANCE state=CLEARED "
+                f"nearest={self._scan_min_range:.3f}m "
+                f"recovery_limit="
+                f"{self._navigation_min_clearance_m + self._clearance_log_hysteresis_m:.3f}m"
+            )
 
     def _publish_status(self) -> None:
         now = time.monotonic()

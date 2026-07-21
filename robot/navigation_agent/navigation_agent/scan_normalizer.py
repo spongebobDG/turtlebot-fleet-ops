@@ -5,7 +5,12 @@ from typing import Sequence, Tuple
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import LaserScan
 
 
@@ -64,6 +69,7 @@ class ScanNormalizer(Node):
         self.declare_parameter("output_topic", NORMALIZED_SCAN_TOPIC)
         self.declare_parameter("bin_count", DEFAULT_BIN_COUNT)
         self.declare_parameter("angle_offset_rad", 0.0)
+        self.declare_parameter("publish_intensities", True)
 
         input_topic = str(self.get_parameter("input_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
@@ -71,15 +77,23 @@ class ScanNormalizer(Node):
         self._angle_offset_rad = float(
             self.get_parameter("angle_offset_rad").value
         )
+        self._publish_intensities = bool(
+            self.get_parameter("publish_intensities").value
+        )
         if self._bin_count < 1:
             raise ValueError("bin_count must be at least 1")
         if not math.isfinite(self._angle_offset_rad):
             raise ValueError("angle_offset_rad must be finite")
 
+        output_qos = QoSProfile(
+            depth=5,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
         self._publisher = self.create_publisher(
             LaserScan,
             output_topic,
-            qos_profile_sensor_data,
+            output_qos,
         )
         self._subscription = self.create_subscription(
             LaserScan,
@@ -107,7 +121,7 @@ class ScanNormalizer(Node):
         )
         output.range_min = message.range_min
         output.range_max = message.range_max
-        output.ranges, output.intensities = normalize_samples(
+        output.ranges, normalized_intensities = normalize_samples(
             message.ranges,
             message.intensities,
             message.angle_min,
@@ -117,6 +131,8 @@ class ScanNormalizer(Node):
             self._bin_count,
             self._angle_offset_rad,
         )
+        if self._publish_intensities:
+            output.intensities = normalized_intensities
         self._publisher.publish(output)
 
 

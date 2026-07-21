@@ -19,6 +19,19 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     scan_normalizer = (
         PACKAGE_ROOT / "config" / "tb1_scan_normalizer.yaml"
     ).read_text()
+    web_telemetry = (
+        PACKAGE_ROOT / "config" / "tb1_web_telemetry.yaml"
+    ).read_text()
+    web_telemetry_node = (
+        PACKAGE_ROOT / "navigation_agent" / "web_telemetry.py"
+    ).read_text()
+    robot_agent_launch = (
+        REPOSITORY_ROOT
+        / "robot"
+        / "robot_agent"
+        / "launch"
+        / "robot_agent.launch.py"
+    ).read_text()
 
     assert "lease_timeout_sec: 2.0" in agent_config
     assert "nav2_unavailable_timeout_sec: 1.0" in agent_config
@@ -35,25 +48,65 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "mode_service: /tb1/navigation/set_motion_mode" in agent_config
     assert "max_vel_x: 0.05" in nav2_rewrites
     assert "max_speed_xy: 0.05" in nav2_rewrites
-    assert "max_vel_theta: 0.3" in nav2_rewrites
-    assert "max_rotational_vel: 0.3" in nav2_rewrites
+    assert "max_vel_theta: 0.22" in nav2_rewrites
+    assert "max_rotational_vel: 0.22" in nav2_rewrites
+    assert "min_rotational_vel: 0.05" in nav2_rewrites
+    assert "min_vel_x: 0.02" in nav2_rewrites
+    assert "min_speed_xy: 0.02" in nav2_rewrites
+    assert "min_speed_theta: 0.05" in nav2_rewrites
     assert "base_frame_id: base_footprint" in nav2_rewrites
     assert "robot_base_frame: base_link" in nav2_rewrites
     assert "scan_topic: /scan_normalized" in nav2_rewrites
     assert "odom_topic: /odom" in nav2_rewrites
     assert "bt_loop_duration: 100" in nav2_rewrites
+    assert "default_server_timeout: 2000" in nav2_rewrites
+    assert "controller_frequency: 5.0" in nav2_rewrites
+    assert "debug_trajectory_details: false" in nav2_rewrites
+    assert "vx_samples: 10" in nav2_rewrites
+    assert "vtheta_samples: 20" in nav2_rewrites
+    assert "sim_time: 1.0" in nav2_rewrites
+    assert "acc_lim_x: 0.08" in nav2_rewrites
+    assert "acc_lim_theta: 0.6" in nav2_rewrites
+    assert "decel_lim_x: -0.12" in nav2_rewrites
+    assert "decel_lim_theta: -0.8" in nav2_rewrites
     assert "update_min_d: 0.05" in nav2_rewrites
     assert "update_min_a: 0.05" in nav2_rewrites
     assert "robot_radius: 0.14" in nav2_rewrites
+    assert "inflation_radius: 0.19" in nav2_rewrites
+    assert "cost_scaling_factor: 3.0" in nav2_rewrites
     assert "xy_goal_tolerance: 0.10" in nav2_rewrites
     assert "yaw_goal_tolerance: 0.15" in nav2_rewrites
+    assert '"smoothing_frequency": 20.0' in nav2_launch
+    assert '"max_velocity": [0.05, 0.0, 0.22]' in nav2_launch
+    assert '"max_accel": [0.08, 0.0, 0.6]' in nav2_launch
+    assert '"max_decel": [-0.12, 0.0, -0.8]' in nav2_launch
+    assert '"max_rotational_vel": 0.22' in nav2_launch
+    assert '"min_rotational_vel": 0.05' in nav2_launch
+    assert '"rotational_acc_lim": 0.6' in nav2_launch
+    assert '"nav2_controller::PoseProgressChecker"' in nav2_launch
+    assert '"progress_checker.required_movement_angle": 0.1' in nav2_launch
+    assert (
+        '"nav2_rotation_shim_controller::"' in nav2_launch
+        and '"RotationShimController"' in nav2_launch
+    )
+    assert '"FollowPath.primary_controller": (' in nav2_launch
+    assert '"dwb_core::DWBLocalPlanner"' in nav2_launch
+    assert '"FollowPath.angular_dist_threshold": 0.6' in nav2_launch
+    assert '"FollowPath.angular_disengage_threshold": 0.35' in nav2_launch
+    assert '"FollowPath.forward_sampling_distance": 0.15' in nav2_launch
+    assert '"FollowPath.rotate_to_heading_angular_vel": 0.18' in nav2_launch
+    assert '"FollowPath.max_angular_accel": 0.6' in nav2_launch
+    assert '"FollowPath.rotate_to_goal_heading": True' in nav2_launch
+    assert '"FollowPath.critics": [' in nav2_launch
+    assert '"RotateToGoal"' not in nav2_launch
+    assert '"GoalAlign"' not in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
     assert '"localization_launch.py"' in launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
     assert "SetRemap" not in launch
     assert '"bringup_launch.py"' not in launch
-    assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
-    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' in nav2_launch
+    assert nav2_launch.count('("cmd_vel", "cmd_vel_nav")') == 3
+    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' not in nav2_launch
     assert '("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC)' in nav2_launch
     assert '("/scan", "/scan_normalized")' in nav2_launch
     assert 'NAVIGATION_CMD_TOPIC = "/motion/navigation/cmd_vel"' in (
@@ -64,7 +117,17 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"use_composition": "False"' in launch
     assert '"use_respawn": "True"' in launch
     assert '"tb1_scan_normalizer.yaml"' in launch
+    assert 'executable="web_telemetry"' not in launch
+    assert '"tb1_web_telemetry.yaml"' in robot_agent_launch
+    assert 'executable="web_telemetry"' in robot_agent_launch
     assert "angle_offset_rad: 3.141592653589793" in scan_normalizer
+    assert "publish_intensities: false" in scan_normalizer
+    assert "publish_rate_hz: 2.0" in web_telemetry
+    assert "max_points: 90" in web_telemetry
+    assert "scan_topic: /scan" in web_telemetry
+    assert "sensor_yaw_rad: 3.141592653589793" in web_telemetry
+    assert "pose_timeout_sec: 1.0" in web_telemetry
+    assert "qos_profile_sensor_data" in web_telemetry_node
 
 
 def test_mapping_supports_simulation_without_changing_real_default() -> None:
@@ -74,6 +137,7 @@ def test_mapping_supports_simulation_without_changing_real_default() -> None:
     assert 'default_value="false"' in launch
     assert '"use_sim_time": use_sim_time' in launch
     assert '"tb1_scan_normalizer.yaml"' in launch
+    assert 'executable="web_telemetry"' not in launch
     slam_config = (PACKAGE_ROOT / "config" / "tb1_slam.yaml").read_text()
     assert "scan_topic: /scan_normalized" in slam_config
     assert "scan_queue_size: 10" in slam_config
@@ -146,7 +210,7 @@ def test_tb1_acceptance_tests_are_serialized_and_scoped() -> None:
 
     assert "--executor sequential" in deploy
     assert '--test-result-base "build/${package}"' in deploy
-    assert "Install all seven TB1 user units" in deploy
+    assert "Install all eight TB1 user units" in deploy
 
 
 def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
@@ -167,7 +231,7 @@ def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
     assert 'reason="navigation agent exited"' in navigation_launch
     assert "respawn=False" in navigation_launch
     assert "Restart=always" in navigation_unit
-    assert "try-restart tb1-zenoh-bridge.service" in navigation_unit
+    assert "try-restart tb1-zenoh-bridge.service" not in navigation_unit
     assert watchdog_launch.count("respawn=True") == 2
     assert watchdog_launch.count("respawn_delay=0.0") == 2
     assert 'package="safety_watchdog_guard"' in watchdog_launch
@@ -208,6 +272,6 @@ def test_only_watchdog_owns_the_real_velocity_topic() -> None:
     ) == 2
     assert "output_topic: /safety/cmd_vel_in" in navigation_config
     assert '"tb1_nav2_navigation.launch.py"' in navigation_launch
-    assert '("cmd_vel", "cmd_vel_nav")' in nav2_launch
-    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' in nav2_launch
+    assert nav2_launch.count('("cmd_vel", "cmd_vel_nav")') == 3
+    assert '("cmd_vel", NAVIGATION_CMD_TOPIC)' not in nav2_launch
     assert '("cmd_vel_smoothed", NAVIGATION_CMD_TOPIC)' in nav2_launch

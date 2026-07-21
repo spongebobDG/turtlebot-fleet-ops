@@ -5,3 +5,6 @@ scan_normalizer:
     bin_count: 360
     # The TB1 LDS-02 driver reports angle zero opposite base_link +X.
     angle_offset_rad: 3.141592653589793
+    # Nav2 does not consume intensities. Omitting them keeps LaserScan packets
+    # small enough for responsive transport across the robot/control bridge.
+    publish_intensities: false

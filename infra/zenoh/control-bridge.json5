@@ -2,6 +2,14 @@
   "plugins": {
     "ros2dds": {
       "nodename": "control_zenoh_bridge",
+      "queries_timeout": {
+        "services": [
+          ".*set_operating_profile$=50.0",
+          ".*set_initial_pose$=20.0",
+          ".*save_map$=100.0",
+          ".*=5.0"
+        ]
+      },
       "allow": {
         "publishers": [
           "^/fleet/navigation_lease$"
@@ -9,8 +17,10 @@
         "subscribers": [
           "^/fleet/robot_status$",
           "^/fleet/navigation_status$",
+          "^/fleet/mapping_status$",
           "^/fleet/safety_status$",
           "^/fleet/rosout$",
+          "^/fleet/web_telemetry$",
           "^/scan$",
           "^/scan_normalized$",
           "^/odom$",
@@ -32,6 +42,9 @@
           "^/safety_watchdog/set_estop$",
           "^/tb1/navigation/set_initial_pose$",
           "^/tb1/navigation/set_motion_mode$"
+          ,"^/tb1/navigation/manual_command$"
+          ,"^/tb1/navigation/set_operating_profile$"
+          ,"^/tb1/navigation/save_map$"
         ],
         "action_servers": [],
         "action_clients": [

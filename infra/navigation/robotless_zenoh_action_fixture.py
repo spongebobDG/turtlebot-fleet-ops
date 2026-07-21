@@ -6,7 +6,12 @@ from typing import Callable, Dict, List
 
 from action_msgs.msg import GoalStatus
 from fleet_interfaces.action import NavigateRobot
-from fleet_interfaces.msg import NavigationLease, NavigationStatus
+from fleet_interfaces.msg import (
+    MappingStatus,
+    NavigationLease,
+    NavigationStatus,
+)
+from fleet_interfaces.srv import ManualCommand, SaveMap, SetOperatingProfile
 import rclpy
 from rclpy.action import (
     ActionClient,
@@ -23,6 +28,10 @@ ROBOT_ID = "tb1"
 ACTION_NAME = "/tb1/navigation/navigate"
 LEASE_TOPIC = "/fleet/navigation_lease"
 STATUS_TOPIC = "/fleet/navigation_status"
+MAPPING_STATUS_TOPIC = "/fleet/mapping_status"
+MANUAL_SERVICE = "/tb1/navigation/manual_command"
+PROFILE_SERVICE = "/tb1/navigation/set_operating_profile"
+SAVE_MAP_SERVICE = "/tb1/navigation/save_map"
 
 
 class RobotSideFixture(Node):
@@ -34,6 +43,7 @@ class RobotSideFixture(Node):
         self._leases: Dict[str, float] = {}
         self._state = NavigationStatus.STATE_READY
         self._active_command = ""
+        self._profile = MappingStatus.PROFILE_NAVIGATION
         self._status_publisher = self.create_publisher(
             NavigationStatus,
             STATUS_TOPIC,
@@ -49,6 +59,29 @@ class RobotSideFixture(Node):
         self.create_timer(
             0.2,
             self._publish_status,
+            callback_group=callback_group,
+        )
+        self._mapping_publisher = self.create_publisher(
+            MappingStatus,
+            MAPPING_STATUS_TOPIC,
+            10,
+        )
+        self.create_service(
+            ManualCommand,
+            MANUAL_SERVICE,
+            self._manual_command,
+            callback_group=callback_group,
+        )
+        self.create_service(
+            SetOperatingProfile,
+            PROFILE_SERVICE,
+            self._set_profile,
+            callback_group=callback_group,
+        )
+        self.create_service(
+            SaveMap,
+            SAVE_MAP_SERVICE,
+            self._save_map,
             callback_group=callback_group,
         )
         self._action_server = ActionServer(
@@ -84,6 +117,36 @@ class RobotSideFixture(Node):
         message.active_command_id = self._active_command
         message.message = "Zenoh robot-side fixture"
         self._status_publisher.publish(message)
+        mapping = MappingStatus()
+        mapping.header.stamp = message.header.stamp
+        mapping.robot_id = ROBOT_ID
+        mapping.profile = self._profile
+        mapping.map_available = True
+        mapping.message = "Zenoh robot-side profile fixture"
+        self._mapping_publisher.publish(mapping)
+
+    @staticmethod
+    def _manual_command(request, response):
+        response.success = bool(request.session_id.strip())
+        response.message = "Manual command crossed Zenoh"
+        return response
+
+    def _set_profile(self, request, response):
+        self._profile = int(request.profile)
+        response.success = self._profile in {
+            MappingStatus.PROFILE_IDLE,
+            MappingStatus.PROFILE_MAPPING,
+            MappingStatus.PROFILE_NAVIGATION,
+        }
+        response.active_profile = self._profile
+        response.message = "Profile command crossed Zenoh"
+        self._publish_status()
+        return response
+
+    def _save_map(self, _request, response):
+        response.success = self._profile == MappingStatus.PROFILE_MAPPING
+        response.message = "Map save crossed Zenoh"
+        return response
 
     def _finish(
         self,
@@ -179,6 +242,7 @@ class ControlSideFixture(Node):
             10,
         )
         self._states: List[int] = []
+        self._mapping_profiles: List[int] = []
         self._feedback_counts: Dict[str, int] = {}
         self._leased_command = ""
         self.create_subscription(
@@ -186,6 +250,26 @@ class ControlSideFixture(Node):
             STATUS_TOPIC,
             lambda message: self._states.append(int(message.state)),
             10,
+        )
+        self.create_subscription(
+            MappingStatus,
+            MAPPING_STATUS_TOPIC,
+            lambda message: self._mapping_profiles.append(
+                int(message.profile)
+            ),
+            10,
+        )
+        self._manual_client = self.create_client(
+            ManualCommand,
+            MANUAL_SERVICE,
+        )
+        self._profile_client = self.create_client(
+            SetOperatingProfile,
+            PROFILE_SERVICE,
+        )
+        self._save_map_client = self.create_client(
+            SaveMap,
+            SAVE_MAP_SERVICE,
         )
         self.create_timer(0.1, self._publish_lease)
 
@@ -252,6 +336,48 @@ class ControlSideFixture(Node):
             10.0,
         )
 
+        for client in (
+            self._manual_client,
+            self._profile_client,
+            self._save_map_client,
+        ):
+            self._spin_until(client.service_is_ready, 30.0)
+
+        profile_request = SetOperatingProfile.Request()
+        profile_request.profile = (
+            SetOperatingProfile.Request.PROFILE_MAPPING
+        )
+        profile = self._wait_future(
+            self._profile_client.call_async(profile_request)
+        )
+        assert profile.success
+        assert profile.active_profile == MappingStatus.PROFILE_MAPPING
+        self._spin_until(
+            lambda: MappingStatus.PROFILE_MAPPING
+            in self._mapping_profiles,
+            5.0,
+        )
+
+        manual_request = ManualCommand.Request()
+        manual_request.session_id = "zenoh-manual"
+        manual_request.command.linear.x = 0.05
+        manual = self._wait_future(
+            self._manual_client.call_async(manual_request)
+        )
+        assert manual.success
+        manual_request.stop = True
+        stopped = self._wait_future(
+            self._manual_client.call_async(manual_request)
+        )
+        assert stopped.success
+
+        save_request = SaveMap.Request()
+        save_request.overwrite = True
+        saved = self._wait_future(
+            self._save_map_client.call_async(save_request)
+        )
+        assert saved.success
+
         success_handle = self._send_goal("zenoh-success")
         success = self._wait_future(success_handle.get_result_async())
         assert success.status == GoalStatus.STATUS_SUCCEEDED
@@ -288,6 +414,10 @@ class ControlSideFixture(Node):
         print(
             "PASS: Zenoh NavigateRobot goal, feedback, result, cancel, "
             "lease and status forwarding"
+        )
+        print(
+            "PASS: Zenoh manual, operating-profile, map-save and "
+            "MappingStatus forwarding"
         )
 
 

@@ -64,6 +64,64 @@ bash scripts/control-pc/train_ros2_log_baseline.sh \
   --until-epoch "$UNTIL_EPOCH"
 ```
 
+이미 정상·장애 상황이 섞인 실차 로그를 사용할 때는 scenario label을 활성화한다.
+
+```bash
+bash scripts/control-pc/train_ros2_log_baseline.sh --scenario-labels
+```
+
+scenario 학습은 오류를 정상 baseline에 섞는 방식이 아니다. `normal_idle`,
+`normal_navigation`, `normal_mapping` 창만 robust median/MAD 기준 학습에 사용하고,
+위치추정 대기·안전정지·통신 lease·Zenoh reply·장애물·Nav2 실패·CPU 지연·센서 stale·QoS·전원
+경고 창은 별도 검증 세트로 사용한다. 정상 창이 10개 이상이면 마지막 20%를 시간순 holdout으로
+남긴다. 승격 gate는 다음을 모두 요구한다.
+
+- 깨끗한 학습 창 5개·로그 20건 이상
+- holdout 정상 창 2개 이상과 정상 오탐률 10% 이하
+- 각 2개 이상의 표본이 있는 장애 상황 3종 이상
+- 전체 탐지율과 상황별 macro 탐지율 각각 60% 이상
+
+출력의 `SCENARIO_VALIDATION`, `SCENARIO_METRIC`, 단일 표본 warning을 검토한다. 특정 상황의
+표본이 많아 전체 탐지율을 끌어올려도 상황별 macro gate가 실패하면 승격하지 않는다.
+
+자동 규칙 라벨은 빠른 weak supervision용이며 독립적인 정답이 아니다. 실차에서 사람이 확인한
+구간은 다음처럼 immutable annotation으로 남긴다.
+
+```bash
+ros2 run fleet_gateway ros2_log_mlops \
+  --root ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs \
+  annotate-scenario \
+  --label obstacle_clearance \
+  --since-epoch "$SCENARIO_START" \
+  --until-epoch "$SCENARIO_END" \
+  --note "e-stop 상태에서 전방 판지 장애물과 LiDAR 최소거리를 육안 확인" \
+  --confirmed-by operator
+```
+
+주석 구간이 너무 넓거나 분 경계를 잘못 포함한 경우 기존 JSON을 수정하거나
+삭제하지 않는다. 정확한 구간으로 새 주석을 만들고 감사 이력이 남도록 기존 ID를
+대체한다.
+
+```bash
+ros2 run fleet_gateway ros2_log_mlops \
+  --root ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs \
+  annotate-scenario \
+  --label obstacle_clearance \
+  --since-epoch "$CORRECTED_START" \
+  --until-epoch "$CORRECTED_END" \
+  --note "분 경계를 제외한 실제 구조화 이벤트 구간으로 정정" \
+  --confirmed-by operator \
+  --supersedes-annotation-id scenario-OLD_ID
+```
+
+데이터셋 manifest의 `annotation_ids`에는 활성 정답만,
+`superseded_annotation_ids`에는 대체된 과거 정답이 남는다.
+
+`--scenario-labels` 학습은 `annotations/*.json`을 자동으로 불러온다. 겹치는 창에서는 사람 확인
+라벨을 검증 정답으로 사용하고 자동 라벨은 `auto_labels`에 보존한다. 사람 확인 정상 창 2개와
+장애 상황 3종 이상이 준비되기 전 모델은 화면에 `자동 규칙 라벨 · 현장 확인 진행 중`으로
+표시한다.
+
 스크립트는 일별 raw JSONL 중 명시한 `[since, until]` 구간만 60초 창으로 만들고 content hash가
 있는 dataset과 candidate model을 생성한다. 범위 밖 과거 사고·배포·초기 위치 대기 로그는
 삭제하지 않고 `excluded`와 `excluded_outside_range_count`로 manifest에 남는다. 출력의
@@ -111,6 +169,11 @@ status와 `/cmd_vel`을 교차 확인한다. 모델이 NORMAL이어도 watchdog 
 검증용 오류는 빈 공간에서 활성 목표가 없고 e-stop인 상태에서만 주입한다. 물리 안전 시험을
 로그 모델 검증 때문에 임의로 반복하지 않는다. 이미 기록된 오류 JSONL을 별도 test root에서
 offline 분석하는 방법을 우선한다.
+
+케이블 분리 시험이 정말 필요한 경우에도 TB1 전원을 끈 뒤 한 종류의 센서 커넥터만 분리하고,
+전원·모터·OpenCR 연결은 임의로 분리하지 않는다. Wi-Fi 단절은 케이블 대신 AP 차단 또는
+네트워크 인터페이스 비활성화로 재현하며, 먼저 e-stop·목표 없음·바퀴 정지를 확인한다. 저전압은
+인위적으로 만들지 않는다. 시험 시작·종료 epoch와 분리한 대상을 반드시 기록한다.
 
 Production 상태나 live status 파일을 바꾸지 않고 저장된 오류 구간을 재평가할 수 있다.
 

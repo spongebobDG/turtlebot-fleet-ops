@@ -89,8 +89,49 @@
     return Math.atan2(deltaY, deltaX);
   };
 
+  const hasSameGeometry = (first, second) => Boolean(
+    first
+    && second
+    && first.width === second.width
+    && first.height === second.height
+    && first.resolution === second.resolution
+    && first.origin
+    && second.origin
+    && first.origin.x === second.origin.x
+    && first.origin.y === second.origin.y
+    && first.origin.yaw === second.origin.yaw
+  );
+
+  const centerFreePose = (map) => {
+    validate(map, map.origin.x, map.origin.y);
+    if (!Array.isArray(map.data) || map.data.length !== map.width * map.height) {
+      return null;
+    }
+    const centerX = (map.width - 1) / 2;
+    const centerY = (map.height - 1) / 2;
+    let nearest = null;
+    for (let cellY = 0; cellY < map.height; cellY += 1) {
+      for (let cellX = 0; cellX < map.width; cellX += 1) {
+        if (map.data[cellY * map.width + cellX] !== 0) continue;
+        const distanceSquared = (cellX - centerX) ** 2 + (cellY - centerY) ** 2;
+        if (!nearest || distanceSquared < nearest.distanceSquared) {
+          nearest = { cellX, cellY, distanceSquared };
+        }
+      }
+    }
+    if (!nearest) return null;
+    const world = canvasToWorld(
+      map,
+      nearest.cellX + 0.5,
+      map.height - nearest.cellY - 0.5,
+    );
+    return { ...world, yaw: 0 };
+  };
+
   return {
     canvasToWorld,
+    centerFreePose,
+    hasSameGeometry,
     isFreePose,
     worldToCanvas,
     worldToCell,

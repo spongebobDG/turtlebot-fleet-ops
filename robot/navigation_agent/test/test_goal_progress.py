@@ -38,7 +38,7 @@ def test_material_distance_progress_resets_stall_window() -> None:
     assert "failed to make progress" in monitor.failure_reason(18.0).lower()
 
 
-def test_yaw_must_improve_toward_target_across_angle_wrap() -> None:
+def test_yaw_motion_is_progress_even_while_aligning_away_from_final_yaw() -> None:
     monitor = _monitor()
     target = math.radians(-179.0)
     assert not monitor.update(10.1, 0.0, math.radians(170.0), target, 0)
@@ -46,9 +46,11 @@ def test_yaw_must_improve_toward_target_across_angle_wrap() -> None:
 
     stalled = _monitor()
     assert not stalled.update(10.1, 0.0, 0.0, 1.0, 0)
-    assert not stalled.update(12.0, 0.0, -0.3, 1.0, 0)
+    assert stalled.update(12.0, 0.0, -0.3, 1.0, 0)
     assert not stalled.update(14.9, 0.0, -0.3, 1.0, 0)
-    assert "failed to make progress" in stalled.failure_reason(15.1).lower()
+    assert stalled.failure_reason(16.9) is None
+    assert not stalled.update(16.9, 0.0, -0.3, 1.0, 0)
+    assert "failed to make progress" in stalled.failure_reason(17.0).lower()
 
 
 def test_recovery_grants_a_new_progress_window() -> None:

@@ -1,0 +1,9 @@
+uint8 PROFILE_IDLE=0
+uint8 PROFILE_MAPPING=1
+uint8 PROFILE_NAVIGATION=2
+
+uint8 profile
+---
+bool success
+uint8 active_profile
+string message

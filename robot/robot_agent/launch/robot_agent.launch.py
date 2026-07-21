@@ -12,7 +12,11 @@ from launch_ros.actions import Node
 def generate_launch_description() -> LaunchDescription:
     """Create the TB1 Robot Agent launch description."""
     package_share = Path(get_package_share_directory("robot_agent"))
+    navigation_share = Path(get_package_share_directory("navigation_agent"))
     config_path = package_share / "config" / "tb1.yaml"
+    web_telemetry_config = (
+        navigation_share / "config" / "tb1_web_telemetry.yaml"
+    )
     use_sim_time = LaunchConfiguration("use_sim_time")
 
     return LaunchDescription(
@@ -34,6 +38,18 @@ def generate_launch_description() -> LaunchDescription:
                 executable="rosout_relay",
                 name="rosout_relay",
                 output="screen",
+            ),
+            Node(
+                package="navigation_agent",
+                executable="web_telemetry",
+                name="web_telemetry",
+                output="screen",
+                parameters=[
+                    str(web_telemetry_config),
+                    {"use_sim_time": use_sim_time},
+                ],
+                respawn=True,
+                respawn_delay=3.0,
             ),
         ]
     )

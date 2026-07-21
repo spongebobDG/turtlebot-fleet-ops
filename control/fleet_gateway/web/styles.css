@@ -140,6 +140,9 @@ h3 { font-size: 0.82rem; }
   padding: 0 2px 8px;
 }
 
+.profile-controls { display: flex; align-items: center; gap: 4px; }
+.profile-controls span { color: var(--muted); font-size: 0.58rem; font-weight: 800; }
+
 .robot-grid {
   min-height: 0;
   display: grid;
@@ -236,6 +239,36 @@ button:disabled { opacity: 0.42; cursor: not-allowed; }
   margin-bottom: 6px;
 }
 
+.map-live-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.map-live-state::before {
+  width: 6px;
+  height: 6px;
+  content: "";
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.map-live-state.active {
+  color: var(--mint);
+  border-color: rgba(88, 224, 174, 0.5);
+  background: rgba(88, 224, 174, 0.08);
+}
+
+.map-live-state.error { color: var(--yellow); }
+.map-frame.live-mapping { border-color: rgba(88, 224, 174, 0.45); }
+
 .map-viewport-controls {
   display: flex;
   align-items: center;
@@ -308,6 +341,7 @@ input {
 }
 .map-meta { color: #bed1cb; white-space: nowrap; }
 .scan-meta { color: #ff7b9b; text-align: right; }
+.pose-meta { color: #44b9ff; text-align: right; }
 .map-legend {
   display: flex;
   gap: 10px;
@@ -347,7 +381,8 @@ input {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
+  overflow: hidden;
 }
 
 .navigation-state strong { display: block; margin: 3px 0 2px; font-size: 1rem; }
@@ -358,7 +393,20 @@ input {
   font-size: 0.64rem;
   line-height: 1.25;
 }
-.pose-fields { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.navigation-state .workflow-hint {
+  max-height: none;
+  margin-top: 4px;
+  padding: 5px 6px;
+  color: #bed1cb;
+  background: rgba(88, 224, 174, 0.06);
+  border-left: 2px solid var(--mint);
+  border-radius: 0 5px 5px 0;
+  font-size: 0.58rem;
+}
+.pose-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.pose-fields input { width: 100%; padding: 5px 4px; }
+.heading-status { color: var(--yellow); font-size: 0.57rem; line-height: 1.25; }
+.heading-status.ready { color: var(--mint); }
 .alignment-tools { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); align-items: center; gap: 6px; }
 .alignment-tools[hidden] { display: none; }
 .alignment-tools button { padding: 7px 6px; font-size: 0.61rem; }
@@ -371,11 +419,29 @@ input {
 .navigation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: auto; }
 .navigation-actions .task-create { grid-column: 1 / -1; }
 
+.patrol-draft { padding: 6px; border: 1px solid var(--border); border-radius: 8px; }
+.patrol-draft[hidden] { display: none; }
+.patrol-draft p { margin-bottom: 5px; color: var(--muted); font-size: 0.58rem; }
+.patrol-draft > div { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.patrol-draft label { color: var(--muted); font-size: 0.55rem; }
+.patrol-draft button { width: calc(50% - 3px); margin-top: 5px; padding: 6px; }
+
+.manual-control { padding: 6px; border: 1px solid var(--border); border-radius: 8px; }
+.manual-title { display: flex; justify-content: space-between; color: var(--mint); font-size: 0.56rem; }
+.manual-pad { margin-top: 5px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+.manual-pad button { padding: 6px 2px; touch-action: none; user-select: none; }
+.manual-pad button.manual-active { color: #04130f; background: var(--mint); box-shadow: 0 0 0 2px rgba(104, 255, 201, 0.2); }
+.manual-pad .manual-stop { color: white; background: #9f252b; }
+.manual-control p { margin-top: 4px; color: var(--muted); font-size: 0.51rem; }
+body[data-map-mode="waypoint"] .navigation-metrics,
+body[data-map-mode="waypoint"] .manual-control,
+body[data-map-mode="waypoint"] .navigation-actions .task-create { display: none; }
+
 .operations-grid {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-rows: minmax(92px, 0.85fr) minmax(70px, 0.62fr) minmax(126px, 1.12fr) minmax(82px, 0.72fr);
+  grid-template-rows: minmax(88px, 0.72fr) minmax(64px, 0.5fr) minmax(106px, 0.88fr) minmax(220px, 1.8fr);
   gap: 7px;
 }
 
@@ -395,6 +461,51 @@ input {
 .mlops-summary span { display: block; color: var(--muted); font-size: 0.54rem; }
 .mlops-summary strong { display: block; overflow: hidden; margin-top: 1px; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
 .mlops-summary p { grid-column: 1 / -1; overflow: hidden; color: var(--muted); font-size: 0.57rem; text-overflow: ellipsis; white-space: nowrap; }
+.mlops-summary .incident-cause { color: var(--yellow); }
+.mlops-summary .incident-action { color: #bed1cb; }
+.mlops-summary .model-explanation {
+  color: #9fb4ae;
+  line-height: 1.35;
+  text-overflow: clip;
+  white-space: normal;
+}
+.incident-details {
+  grid-column: 1 / -1;
+  min-height: 0;
+  max-height: 250px;
+  display: grid;
+  gap: 5px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.incident-item {
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.022);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.incident-item summary { color: #eaf5f1; cursor: pointer; font-size: 0.61rem; font-weight: 800; }
+.incident-item summary span { display: inline; margin-right: 5px; color: var(--yellow); font-size: 0.49rem; }
+.incident-item.active summary span { color: var(--red); }
+.incident-item.historical summary span { color: var(--muted); }
+.incident-item.expected summary span { color: var(--mint); }
+.incident-item summary small { color: var(--muted); font-weight: 500; }
+.incident-item p {
+  display: block;
+  margin-top: 5px;
+  overflow: visible;
+  color: #bed1cb;
+  line-height: 1.35;
+  text-overflow: clip;
+  white-space: normal;
+}
+.incident-item section { margin-top: 6px; color: #bed1cb; font-size: 0.56rem; line-height: 1.35; }
+.incident-item ol, .incident-item ul { margin: 3px 0 0 16px; }
+.incident-item li { margin-top: 2px; }
+.incident-evidence { color: var(--muted); overflow-wrap: anywhere; }
+.incident-evidence time { color: var(--mint); }
+.incident-evidence b { color: var(--red); }
+.patrol-list { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border); }
 
 .operations-card {
   min-width: 0;

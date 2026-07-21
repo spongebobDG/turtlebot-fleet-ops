@@ -79,7 +79,7 @@ bash scripts/weekend/verify_workspace.sh
 ```
 
 첫 스크립트는 Ubuntu 22.04를 확인하고 ROS 2 Humble, 개발 도구와 workspace 의존성을
-설치한다. 두 번째 스크립트는 현재 5개 패키지를 빌드하고 전체 테스트, Linux 줄바꿈,
+설치한다. 두 번째 스크립트는 현재 ROS 2 패키지를 빌드하고 전체 테스트, Linux 줄바꿈,
 systemd unit, 운영 smoke, 실제 Nav2 stack smoke와 서로 다른 DDS domain 사이의 Zenoh
 action smoke를 수행한다. Windows 종합 부트스트랩은 이 경로를 호출한 뒤 관제 서비스를
 설치·활성화한다.
@@ -107,6 +107,13 @@ WSL은 마지막 Windows-side `wsl.exe` 클라이언트가 끝나면 systemd 서
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\control-pc\start_control_stack.ps1
 powershell -ExecutionPolicy Bypass -File scripts\control-pc\test_tb1_connection.ps1
+```
+
+실차 관제로 돌아갈 때는 다음 명령을 사용한다. 8000번 포트에서 `robotless-mock`이 실행 중이면
+정확히 그 mock을 종료한 뒤 production Gateway를 시작하고 브라우저를 연다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\control-pc\open_tb1_web_control.ps1
 ```
 
 두 번째 명령은 TB1이 없을 때 SSH와 Zenoh 포트만 WARN으로 남기고 PC 준비 상태를 판정한다.
@@ -167,6 +174,10 @@ bash scripts/weekend/smoke_test_mock.sh
 - `/tb1/navigation/navigate` custom Action과 Gateway lease
 - 작업 생성·실행·성공·취소·실패·재시도와 SQLite 감사 기록
 - Goal 실행 중 위치, 남은 거리와 lease age feedback
+- deadman manual session, 0.35초 로컬 timeout과 속도 상한
+- MAPPING/NAVIGATION 프로필, 지도 저장 서비스와 MappingStatus
+- 방향을 포함한 웨이포인트 순찰 생성·실행·취소
+- ROS 2 로그 incident의 원인·증거·권장 조치 API
 
 테스트 규칙:
 
@@ -179,6 +190,9 @@ bash scripts/weekend/smoke_test_mock.sh
 
 mock 프로세스는 OpenCR, LiDAR, `/cmd_vel`을 사용하지 않는다. 화면과 API에 나타난 성공은
 웹·ROS Action 수명주기 검증이며 실제 주행 성공으로 기록하지 않는다.
+
+Phase 8 실차 대기 항목과 3~4시간 예상 절차는
+[웹 수동 조종·순찰·매핑 운영 문서](tb1-web-patrol-mapping.md)에 정리돼 있다.
 
 ## 4. 기기 간 Git 인수인계
 

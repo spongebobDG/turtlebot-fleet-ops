@@ -51,6 +51,14 @@ def test_registry_merges_navigation_and_safety_status():
         {"robot_id": "tb1", "motion_armed": True},
         now=11.5,
     )
+    registry.update_mapping(
+        {"robot_id": "tb1", "profile": "NAVIGATION"},
+        now=11.75,
+    )
+    registry.update_map_pose(
+        {"robot_id": "tb1", "frame_id": "map", "x": 0.2, "y": 0.3},
+        now=11.9,
+    )
 
     robot = registry.get("tb1", now=12.0)
 
@@ -60,6 +68,10 @@ def test_registry_merges_navigation_and_safety_status():
     assert robot["safety"]["motion_armed"] is True
     assert robot["safety"]["status_age_sec"] == 0.5
     assert robot["safety"]["fresh"] is True
+    assert robot["mapping"]["profile"] == "NAVIGATION"
+    assert robot["mapping"]["status_age_sec"] == 0.25
+    assert robot["map_pose"]["frame_id"] == "map"
+    assert robot["map_pose"]["status_age_sec"] == pytest.approx(0.1)
 
 
 def test_registry_marks_auxiliary_status_stale_independently():
@@ -67,9 +79,11 @@ def test_registry_marks_auxiliary_status_stale_independently():
     registry.update({"robot_id": "tb1", "level": 0}, now=10.0)
     registry.update_navigation({"robot_id": "tb1"}, now=7.0)
     registry.update_safety({"robot_id": "tb1"}, now=8.0)
+    registry.update_mapping({"robot_id": "tb1"}, now=6.0)
 
     robot = registry.get("tb1", now=10.1)
 
     assert robot["online"] is True
     assert robot["navigation"]["fresh"] is False
     assert robot["safety"]["fresh"] is True
+    assert robot["mapping"]["fresh"] is False

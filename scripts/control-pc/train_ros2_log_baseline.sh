@@ -7,11 +7,16 @@ window_sec=60
 since_epoch=""
 until_epoch=""
 promote=false
+scenario_labels=false
 
 while (($# > 0)); do
   case "$1" in
     --promote)
       promote=true
+      shift
+      ;;
+    --scenario-labels)
+      scenario_labels=true
       shift
       ;;
     --window-sec)
@@ -55,6 +60,20 @@ range_arguments=()
 if [[ -n "${since_epoch}" ]]; then
   range_arguments+=(--since-epoch "${since_epoch}")
 fi
+scenario_arguments=()
+if [[ "${scenario_labels}" == "true" ]]; then
+  scenario_arguments+=(--scenario-labels)
+fi
+annotation_arguments=()
+if [[ "${scenario_labels}" == "true" ]]; then
+  mapfile -t annotation_files < <(
+    find "${mlops_root}/annotations" -maxdepth 1 -type f -name '*.json' \
+      -print 2>/dev/null | sort
+  )
+  for annotation_file in "${annotation_files[@]}"; do
+    annotation_arguments+=(--annotation "${annotation_file}")
+  done
+fi
 if [[ -n "${until_epoch}" ]]; then
   range_arguments+=(--until-epoch "${until_epoch}")
 fi
@@ -62,7 +81,8 @@ fi
 dataset_path="$(
   ros2 run fleet_gateway ros2_log_mlops --root "${mlops_root}" build-dataset \
     "${input_arguments[@]}" --window-sec "${window_sec}" \
-    "${range_arguments[@]}"
+    "${range_arguments[@]}" "${scenario_arguments[@]}" \
+    "${annotation_arguments[@]}"
 )"
 candidate_path="$(
   ros2 run fleet_gateway ros2_log_mlops --root "${mlops_root}" train \
@@ -84,6 +104,24 @@ print(
     f"excluded={model['quality'].get('excluded_outside_range_count', 0)} "
     f"gate_passed={str(quality['gate_passed']).lower()}"
 )
+validation = model.get("validation", {})
+print(
+    "SCENARIO_VALIDATION "
+    f"clean_windows={quality.get('training_eligible_window_count', quality['sample_count'])} "
+    f"clean_records={quality.get('training_record_count', quality['record_count'])} "
+    f"excluded_fault_windows={quality.get('excluded_scenario_window_count', 0)} "
+    f"fault_windows={validation.get('fault_window_count', 0)} "
+    f"detection_rate={validation.get('overall_detection_rate', 0.0):.3f} "
+    f"false_positive_rate={validation.get('baseline_false_positive_rate', 0.0):.3f}"
+)
+for label, metrics in validation.get("scenario_metrics", {}).items():
+    print(
+        "SCENARIO_METRIC "
+        f"label={label} windows={metrics['window_count']} "
+        f"detected={metrics['detected_count']} "
+        f"rate={metrics['detection_rate']:.3f} "
+        f"median_score={metrics['median_score']:.3f}"
+    )
 print(f"QUALITY_REASON={quality['reason']}")
 for warning in quality.get("warnings", []):
     print(f"QUALITY_WARNING={warning}")

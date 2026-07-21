@@ -94,6 +94,10 @@ curl http://127.0.0.1:8000/api/robots
   스크롤 없이 한 화면에 표시된다. 긴 기록만 각 카드 안에서 스크롤한다.
 - 개발자 도구에 정적 파일 404나 WebSocket 오류가 없다.
 
+목적지·수동 조종·순찰·매핑 프로필과 로그 원인 분석은
+[Phase 8 운영 절차](tb1-web-patrol-mapping.md)를 따른다. 목적지와 웨이포인트에는 위치뿐 아니라
+도착 방향이 필수이며, 수동 버튼은 누르고 있는 동안만 유효하다.
+
 ## 4. 비상정지 검증
 
 로봇 주변을 비우고 바퀴가 움직이지 않는 상태에서 웹의 비상정지 버튼을 누른다.
@@ -155,7 +159,7 @@ Gateway는 heartbeat 침묵만 볼 수 있으므로 전원 차단, 네트워크 
 
 | 종료한 대상 | 동작과 웹 기록 |
 | --- | --- |
-| 브라우저 탭 또는 새로고침 | 감사 이벤트를 만들지 않는다. Gateway가 살아 있으면 활성 목표와 lease는 계속된다. 종료 전 목표 취소 또는 비상정지를 사용한다. |
+| 브라우저 탭 또는 새로고침 | navigation 목표는 Gateway lease가 계속되므로 자동 취소되지 않는다. 반면 Phase 8 deadman 수동 명령은 TB1 로컬 authorization이 0.35초에 만료되어 정지한다. navigation은 종료 전 목표 취소 또는 비상정지를 사용한다. |
 | TB1 전원·Agent·통신 경로 | 마지막 heartbeat가 3초를 넘으면 `ROBOT_OFFLINE`, 복구되면 `ROBOT_ONLINE`이 기록된다. 원인 자체는 메시지만으로 구분하지 못한다. |
 | Zenoh 또는 Gateway | TB1에서 2초 lease가 만료돼 목표를 취소하고 정지한다. Gateway 재시작 뒤 비종료 작업은 `TASK_FAILED`와 `Fleet Gateway restarted; prior task will not resume`으로 닫힌다. |
 | 관제 PC 전원 | 꺼진 프로세스는 그 순간 중앙 로그를 쓸 수 없다. TB1 로컬 로그에는 lease 만료가 남고, 관제 복구 뒤 남은 작업은 실패 처리되며 자동 재개되지 않는다. |

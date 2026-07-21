@@ -58,6 +58,22 @@ def _robot() -> Dict[str, Any]:
     return payload
 
 
+def _ready_robot_snapshot() -> Optional[Dict[str, Any]]:
+    """Return the robot only after map and fresh LiDAR are API-visible."""
+    map_status, _ = _request("GET", "/api/robots/tb1/map")
+    scan_status, scan = _request("GET", "/api/robots/tb1/scan")
+    robot = _robot()
+    if (
+        map_status == 200
+        and scan_status == 200
+        and robot.get("online")
+        and scan.get("fresh")
+        and int(scan.get("valid_points", 0)) > 0
+    ):
+        return robot
+    return None
+
+
 def _wait_navigation_state(*states: str) -> Dict[str, Any]:
     def predicate() -> Optional[Dict[str, Any]]:
         robot = _robot()
@@ -88,13 +104,8 @@ def _start_goal(x_value: float) -> str:
 def main() -> None:
     """Exercise initial pose, success, cancel, and e-stop transitions."""
     _wait_for(
-        "Gateway, robot heartbeat, and map",
-        lambda: (
-            _robot()
-            if _request("GET", "/api/robots/tb1/map")[0] == 200
-            and _robot().get("online")
-            else None
-        ),
+        "Gateway, robot heartbeat, map, and fresh LiDAR",
+        _ready_robot_snapshot,
         timeout_sec=60.0,
     )
     status, payload = _request(

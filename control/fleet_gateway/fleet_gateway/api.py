@@ -4,7 +4,7 @@ import asyncio
 from contextlib import suppress
 import math
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -19,9 +19,10 @@ from fleet_gateway.pose_alignment import (
     alignment_is_acceptable,
     score_pose_alignment,
 )
-from fleet_gateway.log_mlops import status_from_path
+from fleet_gateway.log_mlops import incidents_from_path, status_from_path
 from fleet_gateway.operations import OperationsStore
 from fleet_gateway.task_manager import NavigationTaskManager
+from fleet_gateway.patrol_manager import PatrolManager
 
 
 class EStopController(Protocol):
@@ -61,6 +62,42 @@ class NavigationController(Protocol):
         """Cancel one matching navigation action."""
 
 
+class ManualController(Protocol):
+    """Robot-local leased manual control adapter."""
+
+    def start_manual(self, robot_id: str) -> Dict[str, Any]:
+        """Start one deadman manual session."""
+
+    def send_manual(
+        self,
+        robot_id: str,
+        session_id: str,
+        linear_x: float,
+        angular_z: float,
+    ) -> Dict[str, Any]:
+        """Refresh one manual session with a bounded command."""
+
+    def stop_manual(self, robot_id: str, session_id: str) -> Dict[str, Any]:
+        """Stop exactly one manual session."""
+
+    def manual_active(self, robot_id: str) -> bool:
+        """Return whether Gateway still owns a fresh manual session."""
+
+
+class ProfileController(Protocol):
+    """TB1 operating-profile and map-save adapter."""
+
+    def set_operating_profile(
+        self,
+        robot_id: str,
+        profile: str,
+    ) -> Dict[str, Any]:
+        """Engage e-stop and switch to IDLE, MAPPING or NAVIGATION."""
+
+    def save_map(self, robot_id: str, overwrite: bool) -> Dict[str, Any]:
+        """Engage e-stop and save the current map and pose graph."""
+
+
 class EStopRequest(BaseModel):
     """Emergency-stop HTTP request body."""
 
@@ -81,14 +118,45 @@ class NavigationGoalRequest(PoseRequest):
     confirm_warnings: bool = False
 
 
+class ManualSessionRequest(BaseModel):
+    """Warning acknowledgement for a new manual deadman session."""
+
+    confirm_warnings: bool = False
+
+
+class ManualVelocityRequest(BaseModel):
+    """Planar velocity for one already-owned manual session."""
+
+    linear_x: float
+    angular_z: float
+
+
+class SaveMapRequest(BaseModel):
+    """Explicit permission to replace fixed TB1 map artifacts."""
+
+    overwrite: bool = False
+
+
+class PatrolRequest(BaseModel):
+    """Ordered map-frame waypoints and finite repeat policy."""
+
+    waypoints: List[PoseRequest]
+    loops: int = 1
+    dwell_sec: float = 0.0
+    confirm_warnings: bool = False
+
+
 def create_app(
     registry: StatusRegistry,
     estop_controller: Optional[EStopController] = None,
     navigation_controller: Optional[NavigationController] = None,
+    manual_controller: Optional[ManualController] = None,
+    profile_controller: Optional[ProfileController] = None,
     map_registry: Optional[MapRegistry] = None,
     scan_registry: Optional[ScanRegistry] = None,
     operations_store: Optional[OperationsStore] = None,
     task_manager: Optional[NavigationTaskManager] = None,
+    patrol_manager: Optional[PatrolManager] = None,
     log_mlops_status_path: Optional[Path] = None,
     static_dir: Optional[Path] = None,
     websocket_interval_sec: float = 0.5,
@@ -141,6 +209,10 @@ def create_app(
     def ros2_log_mlops_status() -> Dict[str, Any]:
         return status_from_path(log_mlops_status_path)
 
+    @app.get("/api/mlops/ros2-logs/incidents")
+    def ros2_log_incidents() -> Dict[str, Any]:
+        return incidents_from_path(log_mlops_status_path)
+
     @app.get("/api/events")
     def list_events(
         robot_id: Optional[str] = None,
@@ -172,6 +244,19 @@ def create_app(
     def get_task(task_id: str) -> Dict[str, Any]:
         store = _operations_or_503(operations_store)
         return _task_or_404(store, task_id)
+
+    @app.get("/api/patrols")
+    def list_patrols(
+        robot_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        store = _operations_or_503(operations_store)
+        return {"patrols": store.list_patrols(robot_id, limit)}
+
+    @app.get("/api/patrols/{patrol_id}")
+    def get_patrol(patrol_id: str) -> Dict[str, Any]:
+        store = _operations_or_503(operations_store)
+        return _patrol_or_404(store, patrol_id)
 
     @app.get("/api/robots/{robot_id}")
     def get_robot(robot_id: str) -> Dict[str, Any]:
@@ -261,6 +346,8 @@ def create_app(
         _require_free_map_pose(map_registry, robot_id, request.x, request.y)
         _require_online_and_no_error(robot)
         _require_no_active_goal(robot)
+        _require_no_active_patrol(operations_store, robot_id)
+        _require_no_active_manual(manual_controller, robot_id)
         if scan_registry is not None:
             occupancy_map, scan = _alignment_inputs(
                 map_registry,
@@ -288,6 +375,7 @@ def create_app(
                         "run LiDAR auto alignment first"
                     ),
                 )
+        _require_navigation_profile(robot)
         if navigation_controller is None:
             raise HTTPException(
                 status_code=503,
@@ -323,6 +411,8 @@ def create_app(
         _validate_pose_request(request)
         _require_free_map_pose(map_registry, robot_id, request.x, request.y)
         _require_goal_ready(robot, request.confirm_warnings)
+        _require_no_active_patrol(operations_store, robot_id)
+        _require_no_active_manual(manual_controller, robot_id)
         _require_free_current_pose(map_registry, robot_id, robot)
         if navigation_controller is None:
             raise HTTPException(
@@ -382,6 +472,172 @@ def create_app(
         return accepted
 
     @app.post(
+        "/api/robots/{robot_id}/manual/sessions",
+        status_code=202,
+    )
+    async def start_manual_session(
+        robot_id: str,
+        request: ManualSessionRequest,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        _require_manual_ready(robot, request.confirm_warnings)
+        _require_no_active_patrol(operations_store, robot_id)
+        if manual_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Manual controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            manual_controller.start_manual,
+            robot_id,
+        )
+        accepted = _require_controller_success(result)
+        if operations_store is not None:
+            operations_store.record_event(
+                robot_id,
+                "MANUAL",
+                "MANUAL_SESSION_STARTED",
+                accepted.get("message", "Manual session started"),
+                details={"session_id": accepted.get("session_id")},
+            )
+        return accepted
+
+    @app.put(
+        "/api/robots/{robot_id}/manual/sessions/{session_id}",
+        status_code=202,
+    )
+    async def send_manual_command(
+        robot_id: str,
+        session_id: str,
+        request: ManualVelocityRequest,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        _require_manual_ready(robot, True)
+        _validate_manual_velocity(request)
+        if manual_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Manual controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            manual_controller.send_manual,
+            robot_id,
+            session_id,
+            request.linear_x,
+            request.angular_z,
+        )
+        return _require_controller_success(result)
+
+    @app.delete(
+        "/api/robots/{robot_id}/manual/sessions/{session_id}",
+        status_code=202,
+    )
+    async def stop_manual_session(
+        robot_id: str,
+        session_id: str,
+    ) -> Dict[str, Any]:
+        _robot_or_404(registry, robot_id)
+        if manual_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Manual controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            manual_controller.stop_manual,
+            robot_id,
+            session_id,
+        )
+        accepted = _require_controller_success(result)
+        if operations_store is not None:
+            operations_store.record_event(
+                robot_id,
+                "MANUAL",
+                "MANUAL_SESSION_STOPPED",
+                accepted.get("message", "Manual session stopped"),
+            )
+        return accepted
+
+    @app.post(
+        "/api/robots/{robot_id}/profiles/{profile}",
+        status_code=202,
+    )
+    async def set_operating_profile(
+        robot_id: str,
+        profile: str,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        _require_online_and_no_error(robot)
+        normalized = profile.strip().upper()
+        if normalized not in {"IDLE", "MAPPING", "NAVIGATION"}:
+            raise HTTPException(status_code=422, detail="Unknown profile")
+        if profile_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Operating-profile controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            profile_controller.set_operating_profile,
+            robot_id,
+            normalized,
+        )
+        if result.get("estop_engaged") and patrol_manager is not None:
+            patrol_manager.stop_for_safety(
+                robot_id,
+                "Operating profile change engaged e-stop",
+            )
+        accepted = _require_controller_success(result)
+        if operations_store is not None:
+            operations_store.record_event(
+                robot_id,
+                "PROFILE",
+                f"PROFILE_{normalized}_REQUESTED",
+                accepted.get("message", "Profile transition accepted"),
+                severity="WARN",
+            )
+        return accepted
+
+    @app.post(
+        "/api/robots/{robot_id}/mapping/save",
+        status_code=202,
+    )
+    async def save_mapping(
+        robot_id: str,
+        request: SaveMapRequest,
+    ) -> Dict[str, Any]:
+        robot = _robot_or_404(registry, robot_id)
+        _require_online_and_no_error(robot)
+        mapping = robot.get("mapping") or {}
+        if not mapping.get("fresh", False):
+            raise HTTPException(status_code=409, detail="Profile status is stale")
+        if mapping.get("profile") != "MAPPING":
+            raise HTTPException(status_code=409, detail="MAPPING profile required")
+        if profile_controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Operating-profile controller is unavailable",
+            )
+        result = await run_in_threadpool(
+            profile_controller.save_map,
+            robot_id,
+            request.overwrite,
+        )
+        if result.get("estop_engaged") and patrol_manager is not None:
+            patrol_manager.stop_for_safety(
+                robot_id,
+                "Map save engaged e-stop",
+            )
+        accepted = _require_controller_success(result)
+        if operations_store is not None:
+            operations_store.record_event(
+                robot_id,
+                "MAPPING",
+                "MAP_SAVED",
+                accepted.get("message", "Map saved"),
+                details={"overwrite": request.overwrite},
+            )
+        return accepted
+
+    @app.post(
         "/api/robots/{robot_id}/tasks",
         status_code=201,
     )
@@ -401,6 +657,69 @@ def create_app(
             request.confirm_warnings,
         )
 
+    @app.post(
+        "/api/robots/{robot_id}/patrols",
+        status_code=201,
+    )
+    def create_patrol(
+        robot_id: str,
+        request: PatrolRequest,
+    ) -> Dict[str, Any]:
+        _robot_or_404(registry, robot_id)
+        _validate_patrol_request(request)
+        for point in request.waypoints:
+            _validate_pose_request(point)
+            _require_free_map_pose(
+                map_registry,
+                robot_id,
+                point.x,
+                point.y,
+            )
+        manager = _patrol_manager_or_503(patrol_manager)
+        return manager.create(
+            robot_id,
+            [point.dict() for point in request.waypoints],
+            request.loops,
+            request.dwell_sec,
+            request.confirm_warnings,
+        )
+
+    @app.post("/api/patrols/{patrol_id}/run", status_code=202)
+    async def run_patrol(patrol_id: str) -> Dict[str, Any]:
+        store = _operations_or_503(operations_store)
+        patrol = _patrol_or_404(store, patrol_id)
+        robot = _robot_or_404(registry, patrol["robot_id"])
+        _require_goal_ready(robot, patrol["confirm_warnings"])
+        _require_no_active_manual(
+            manual_controller,
+            patrol["robot_id"],
+        )
+        _require_free_current_pose(map_registry, patrol["robot_id"], robot)
+        for point in patrol["waypoints"]:
+            _require_free_map_pose(
+                map_registry,
+                patrol["robot_id"],
+                point["x"],
+                point["y"],
+            )
+        manager = _patrol_manager_or_503(patrol_manager)
+        try:
+            result = await run_in_threadpool(manager.run, patrol_id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return _require_patrol_operation_success(result)
+
+    @app.delete("/api/patrols/{patrol_id}", status_code=202)
+    async def cancel_patrol(patrol_id: str) -> Dict[str, Any]:
+        store = _operations_or_503(operations_store)
+        _patrol_or_404(store, patrol_id)
+        manager = _patrol_manager_or_503(patrol_manager)
+        try:
+            result = await run_in_threadpool(manager.cancel, patrol_id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return _require_patrol_operation_success(result)
+
     @app.post("/api/tasks/{task_id}/run", status_code=202)
     async def run_navigation_task(task_id: str) -> Dict[str, Any]:
         store = _operations_or_503(operations_store)
@@ -414,6 +733,8 @@ def create_app(
             target["y"],
         )
         _require_goal_ready(robot, task["confirm_warnings"])
+        _require_no_active_patrol(operations_store, task["robot_id"])
+        _require_no_active_manual(manual_controller, task["robot_id"])
         _require_free_current_pose(map_registry, task["robot_id"], robot)
         manager = _task_manager_or_503(task_manager)
         try:
@@ -473,6 +794,11 @@ def create_app(
                 status_code=503,
                 detail=result.get("message", "Emergency-stop request failed"),
             )
+        if request.engaged and patrol_manager is not None:
+            patrol_manager.stop_for_safety(
+                robot_id,
+                "Emergency stop engaged",
+            )
         if operations_store is not None:
             event_type = "ESTOP_ENGAGED" if request.engaged else "ESTOP_RELEASED"
             operations_store.record_event(
@@ -497,13 +823,17 @@ def create_app(
                     )
                 except asyncio.TimeoutError:
                     continue
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, KeyError):
+            # Starlette 0.20 can raise KeyError when a browser process exits
+            # abruptly and sends a websocket.disconnect message without code.
             return
 
     resolved_static = Path(static_dir) if static_dir is not None else None
     if resolved_static is not None and resolved_static.is_dir():
         allowed_assets = {
             "app.js",
+            "diagnostics_view.js",
+            "manual_keys.js",
             "map_math.js",
             "map_viewport.js",
             "robot_display.js",
@@ -591,6 +921,99 @@ def _require_goal_ready(
         raise HTTPException(status_code=409, detail="Emergency stop is active")
     if safety and not safety.get("motion_armed", False):
         raise HTTPException(status_code=409, detail="Motion is not armed")
+    _require_navigation_profile(robot)
+
+
+def _require_navigation_profile(robot: Dict[str, Any]) -> None:
+    mapping = robot.get("mapping") or {}
+    if not mapping.get("fresh", False):
+        raise HTTPException(status_code=409, detail="Profile status is stale")
+    if mapping.get("transitioning", False):
+        raise HTTPException(status_code=409, detail="Profile is transitioning")
+    if mapping.get("profile") != "NAVIGATION":
+        raise HTTPException(status_code=409, detail="NAVIGATION profile required")
+
+
+def _require_manual_ready(
+    robot: Dict[str, Any],
+    confirm_warnings: bool,
+) -> None:
+    _require_online_and_no_error(robot)
+    if int(robot.get("level", 0)) == 1 and not confirm_warnings:
+        faults = robot.get("fault_codes", [])
+        detail = "Robot warnings require confirmation"
+        if faults:
+            detail += f": {', '.join(faults)}"
+        raise HTTPException(status_code=409, detail=detail)
+    _require_no_active_goal(robot)
+    safety = robot.get("safety") or {}
+    if not safety.get("fresh", False):
+        raise HTTPException(status_code=409, detail="Safety status is stale")
+    if safety.get("estop_active", False):
+        raise HTTPException(status_code=409, detail="Emergency stop is active")
+    if not safety.get("motion_armed", False):
+        raise HTTPException(status_code=409, detail="Motion is not armed")
+    mapping = robot.get("mapping") or {}
+    if not mapping.get("fresh", False):
+        raise HTTPException(status_code=409, detail="Profile status is stale")
+    if mapping.get("transitioning", False):
+        raise HTTPException(status_code=409, detail="Profile is transitioning")
+    if mapping.get("profile") not in {"MAPPING", "NAVIGATION"}:
+        raise HTTPException(status_code=409, detail="Motion profile is IDLE")
+
+
+def _require_no_active_patrol(
+    store: Optional[OperationsStore],
+    robot_id: str,
+) -> None:
+    if store is None:
+        return
+    if any(
+        patrol["state"] in {"STARTING", "ACTIVE"}
+        for patrol in store.list_patrols(robot_id, 500)
+    ):
+        raise HTTPException(status_code=409, detail="A patrol is active")
+
+
+def _require_no_active_manual(
+    controller: Optional[ManualController],
+    robot_id: str,
+) -> None:
+    checker = getattr(controller, "manual_active", None)
+    if callable(checker) and checker(robot_id):
+        raise HTTPException(status_code=409, detail="A manual session is active")
+
+
+def _validate_manual_velocity(request: ManualVelocityRequest) -> None:
+    values = (request.linear_x, request.angular_z)
+    if not all(math.isfinite(value) for value in values):
+        raise HTTPException(
+            status_code=422,
+            detail="Manual velocity must be finite",
+        )
+    if abs(request.linear_x) > 0.05 or abs(request.angular_z) > 0.3:
+        raise HTTPException(
+            status_code=422,
+            detail="Manual velocity exceeds 0.05 m/s or 0.3 rad/s",
+        )
+
+
+def _validate_patrol_request(request: PatrolRequest) -> None:
+    if not 2 <= len(request.waypoints) <= 20:
+        raise HTTPException(
+            status_code=422,
+            detail="Patrol requires 2 to 20 waypoints",
+        )
+    if not 1 <= request.loops <= 100:
+        raise HTTPException(status_code=422, detail="loops must be 1 to 100")
+    if (
+        not math.isfinite(request.dwell_sec)
+        or not 0.0 <= request.dwell_sec <= 300.0
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="dwell_sec must be between 0 and 300",
+        )
 
 
 def _require_free_map_pose(
@@ -679,11 +1102,29 @@ def _task_manager_or_503(
     return manager
 
 
+def _patrol_manager_or_503(
+    manager: Optional[PatrolManager],
+) -> PatrolManager:
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Patrol manager unavailable")
+    return manager
+
+
 def _task_or_404(store: OperationsStore, task_id: str) -> Dict[str, Any]:
     task = store.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Unknown task")
     return task
+
+
+def _patrol_or_404(
+    store: OperationsStore,
+    patrol_id: str,
+) -> Dict[str, Any]:
+    patrol = store.get_patrol(patrol_id)
+    if patrol is None:
+        raise HTTPException(status_code=404, detail="Unknown patrol")
+    return patrol
 
 
 def _require_task_operation_success(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -692,4 +1133,13 @@ def _require_task_operation_success(result: Dict[str, Any]) -> Dict[str, Any]:
     raise HTTPException(
         status_code=int(result["status_code"]),
         detail=result.get("message", "Task operation failed"),
+    )
+
+
+def _require_patrol_operation_success(result: Dict[str, Any]) -> Dict[str, Any]:
+    if result.get("state") != "FAILED" or "status_code" not in result:
+        return result
+    raise HTTPException(
+        status_code=int(result["status_code"]),
+        detail=result.get("message", "Patrol operation failed"),
     )

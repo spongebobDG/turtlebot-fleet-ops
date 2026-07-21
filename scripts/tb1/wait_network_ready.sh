@@ -13,14 +13,23 @@ while true; do
         | awk 'NR == 1 {print $4}'
     )"
   fi
-  if [[ -n "${default_route}" && -n "${interface}" && -n "${address}" ]]; then
-    echo "TB1_NETWORK_READY interface=${interface} address=${address}"
+  ntp_synchronized="$(
+    timedatectl show --property=NTPSynchronized --value 2>/dev/null \
+      || true
+  )"
+  if [[
+    -n "${default_route}" &&
+    -n "${interface}" &&
+    -n "${address}" &&
+    "${ntp_synchronized}" == "yes"
+  ]]; then
+    echo "TB1_NETWORK_TIME_READY interface=${interface} address=${address} ntp=yes"
     exit 0
   fi
 
   now="${SECONDS}"
   if (( now >= reported_at )); then
-    echo "Waiting for a default route and global IPv4 address..." >&2
+    echo "Waiting for IPv4 and NTP synchronization (ntp=${ntp_synchronized:-unknown})..." >&2
     reported_at=$((now + 10))
   fi
   sleep 1

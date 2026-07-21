@@ -7,12 +7,18 @@ from typing import List, Optional, Tuple
 
 from fleet_interfaces.action import NavigateRobot
 from fleet_interfaces.msg import (
+    MappingStatus,
     NavigationLease,
     NavigationStatus,
     RobotStatus,
     SafetyStatus,
 )
-from fleet_interfaces.srv import SetInitialPose
+from fleet_interfaces.srv import (
+    ManualCommand,
+    SaveMap,
+    SetInitialPose,
+    SetOperatingProfile,
+)
 from nav_msgs.msg import OccupancyGrid
 import rclpy
 from rclpy.action import (
@@ -111,6 +117,12 @@ class MockRobotNode(Node):
         self._started_at = time.monotonic()
         self._navigation_started_at = 0.0
         self._distance_remaining = math.nan
+        self._profile = MappingStatus.PROFILE_NAVIGATION
+        self._manual_session = ""
+        self._manual_command_at = 0.0
+        self._manual_linear = 0.0
+        self._manual_angular = 0.0
+        self._last_motion_update = time.monotonic()
 
         latched_qos = QoSProfile(
             depth=1,
@@ -131,6 +143,11 @@ class MockRobotNode(Node):
             SafetyStatus,
             "/fleet/safety_status",
             10,
+        )
+        self._mapping_publisher = self.create_publisher(
+            MappingStatus,
+            "/fleet/mapping_status",
+            latched_qos,
         )
         self._map_publisher = self.create_publisher(
             OccupancyGrid,
@@ -161,6 +178,24 @@ class MockRobotNode(Node):
             self._set_initial_pose,
             callback_group=self._callback_group,
         )
+        self._manual_service = self.create_service(
+            ManualCommand,
+            "/tb1/navigation/manual_command",
+            self._manual_command_callback,
+            callback_group=self._callback_group,
+        )
+        self._profile_service = self.create_service(
+            SetOperatingProfile,
+            "/tb1/navigation/set_operating_profile",
+            self._set_profile,
+            callback_group=self._callback_group,
+        )
+        self._save_map_service = self.create_service(
+            SaveMap,
+            "/tb1/navigation/save_map",
+            self._save_map,
+            callback_group=self._callback_group,
+        )
         self._action_server = ActionServer(
             self,
             NavigateRobot,
@@ -186,6 +221,9 @@ class MockRobotNode(Node):
             self._estop_active = bool(request.data)
             self._motion_armed = not self._estop_active
             if self._estop_active:
+                self._manual_session = ""
+                self._manual_linear = 0.0
+                self._manual_angular = 0.0
                 self._message = "Mock emergency stop active"
             elif self._localization_ready:
                 self._state = NavigationStatus.STATE_READY
@@ -195,6 +233,75 @@ class MockRobotNode(Node):
         response.success = True
         response.message = self._message
         self._publish_state()
+        return response
+
+    def _manual_command_callback(self, request, response):
+        with self._lock:
+            if request.stop:
+                if request.session_id != self._manual_session:
+                    response.message = "No matching mock manual session"
+                    return response
+                self._manual_session = ""
+                self._manual_linear = 0.0
+                self._manual_angular = 0.0
+                response.success = True
+                response.message = "Mock manual session stopped"
+                return response
+            if self._estop_active or not self._motion_armed:
+                response.message = "Mock e-stop is active"
+                return response
+            if self._profile not in {
+                MappingStatus.PROFILE_MAPPING,
+                MappingStatus.PROFILE_NAVIGATION,
+            }:
+                response.message = "Mock profile is IDLE"
+                return response
+            if self._manual_session not in {"", request.session_id}:
+                response.message = "Another mock manual session is active"
+                return response
+            self._manual_session = request.session_id
+            self._manual_command_at = time.monotonic()
+            self._manual_linear = max(
+                -0.05, min(0.05, float(request.command.linear.x))
+            )
+            self._manual_angular = max(
+                -0.3, min(0.3, float(request.command.angular.z))
+            )
+        response.success = True
+        response.message = "Mock manual command accepted"
+        return response
+
+    def _set_profile(self, request, response):
+        with self._lock:
+            if not self._estop_active:
+                response.message = "Mock profile switch requires e-stop"
+                response.active_profile = self._profile
+                return response
+            self._profile = int(request.profile)
+            self._active_command = ""
+            self._manual_session = ""
+            self._state = NavigationStatus.STATE_IDLE
+            if self._profile == MappingStatus.PROFILE_MAPPING:
+                self._localization_ready = False
+                self._message = "Mock MAPPING profile active"
+            elif self._profile == MappingStatus.PROFILE_NAVIGATION:
+                self._message = "Mock NAVIGATION profile active; set initial pose"
+            else:
+                self._message = "Mock IDLE profile active"
+        response.success = True
+        response.active_profile = self._profile
+        response.message = self._message
+        self._publish_state()
+        return response
+
+    def _save_map(self, _request, response):
+        with self._lock:
+            response.success = self._profile == MappingStatus.PROFILE_MAPPING
+        response.message = (
+            "Mock map and pose graph saved"
+            if response.success
+            else "Mock MAPPING profile required"
+        )
         return response
 
     def _set_initial_pose(self, request, response):
@@ -370,6 +477,22 @@ class MockRobotNode(Node):
         stamp = self.get_clock().now().to_msg()
         now = time.monotonic()
         with self._lock:
+            elapsed = min(0.5, max(0.0, now - self._last_motion_update))
+            self._last_motion_update = now
+            if (
+                self._manual_session
+                and now - self._manual_command_at <= 0.35
+                and not self._estop_active
+            ):
+                x_value, y_value, yaw_value = self._pose
+                yaw_value += self._manual_angular * elapsed
+                x_value += self._manual_linear * math.cos(yaw_value) * elapsed
+                y_value += self._manual_linear * math.sin(yaw_value) * elapsed
+                self._pose = (x_value, y_value, yaw_value)
+            elif self._manual_session:
+                self._manual_session = ""
+                self._manual_linear = 0.0
+                self._manual_angular = 0.0
             estop = self._estop_active
             armed = self._motion_armed
             localization = self._localization_ready
@@ -379,6 +502,7 @@ class MockRobotNode(Node):
             command = self._active_command
             message_text = self._message
             distance = self._distance_remaining
+            profile = self._profile
             lease_age = (
                 now - self._lease_received_at
                 if command and self._lease_command == command
@@ -443,11 +567,20 @@ class MockRobotNode(Node):
         safety.motion_armed = armed
         self._safety_publisher.publish(safety)
 
+        mapping = MappingStatus()
+        mapping.header.stamp = stamp
+        mapping.robot_id = self._robot_id
+        mapping.profile = profile
+        mapping.transitioning = False
+        mapping.map_available = True
+        mapping.message = message_text
+        self._mapping_publisher.publish(mapping)
+
         navigation = NavigationStatus()
         navigation.header.stamp = stamp
         navigation.robot_id = self._robot_id
         navigation.state = state
-        navigation.nav2_ready = True
+        navigation.nav2_ready = profile == MappingStatus.PROFILE_NAVIGATION
         navigation.localization_ready = localization
         navigation.safety_ready = armed and not estop
         navigation.active_command_id = command

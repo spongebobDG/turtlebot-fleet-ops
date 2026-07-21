@@ -19,11 +19,14 @@ grep -Fq "After=fleet-gateway.service" \
   "${units_dir}/fleet-log-mlops.service"
 grep -Fq "ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/scripts/tb1/wait_network_ready.sh" \
   "${units_dir}/tb1-network-ready.service"
+grep -Fq "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" \
+  "${units_dir}/tb1-profile-manager.service"
 for unit in \
   tb1-bringup.service \
   tb1-safety-watchdog.service \
   tb1-robot-agent.service \
   tb1-zenoh-bridge.service \
+  tb1-profile-manager.service \
   tb1-mapping.service \
   tb1-navigation.service; do
   grep -Eq '^After=.*tb1-network-ready\.service' "${units_dir}/${unit}"
@@ -39,6 +42,7 @@ for unit in \
   tb1-mapping.service \
   tb1-navigation.service \
   tb1-zenoh-bridge.service \
+  tb1-profile-manager.service \
   fleet-control-zenoh.service \
   fleet-gateway.service \
   fleet-log-mlops.service; do
@@ -46,4 +50,4 @@ for unit in \
   grep -Eq '^RestartSec=[1-9][0-9]*$' "${units_dir}/${unit}"
 done
 
-echo "SYSTEMD_UNIT_VALIDATION_OK restart_units=7 network_gate=1"
+echo "SYSTEMD_UNIT_VALIDATION_OK restart_units=8 network_gate=1"

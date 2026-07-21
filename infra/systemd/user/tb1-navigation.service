@@ -10,7 +10,6 @@ Environment=ROS_DISTRO=humble
 Environment=ROS_DOMAIN_ID=42
 ExecStartPre=/usr/bin/test -r %h/.local/share/turtlebot-fleet-ops/maps/tb1/map.yaml
 ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/infra/navigation/start-tb1-navigation.sh
-ExecStartPost=/usr/bin/systemctl --user try-restart tb1-zenoh-bridge.service
 Restart=always
 RestartSec=3
 KillSignal=SIGINT

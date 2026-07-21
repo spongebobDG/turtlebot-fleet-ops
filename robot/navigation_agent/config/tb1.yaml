@@ -41,3 +41,25 @@ motion_arbiter:
     input_timeout_sec: 0.5
     authorization_timeout_sec: 0.5
     publish_rate_hz: 20.0
+
+manual_control:
+  ros__parameters:
+    command_service: /tb1/navigation/manual_command
+    manual_output_topic: /motion/manual/cmd_vel
+    motion_mode_service: /tb1/navigation/set_motion_mode
+    command_timeout_sec: 0.35
+    publish_rate_hz: 20.0
+    max_linear_x: 0.05
+    max_angular_z: 0.3
+
+profile_manager:
+  ros__parameters:
+    robot_id: tb1
+    status_topic: /fleet/mapping_status
+    profile_service: /tb1/navigation/set_operating_profile
+    save_map_service: /tb1/navigation/save_map
+    mapping_unit: tb1-mapping.service
+    navigation_unit: tb1-navigation.service
+    map_file: ~/.local/share/turtlebot-fleet-ops/maps/tb1/map.yaml
+    save_map_script: ~/turtlebot-fleet-ops/infra/navigation/save-tb1-map.sh
+    status_rate_hz: 1.0

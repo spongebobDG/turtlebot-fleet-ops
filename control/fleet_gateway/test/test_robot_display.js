@@ -5,6 +5,28 @@ const test = require("node:test");
 
 const { selectDisplayPose } = require("../web/robot_display.js");
 
+test("dashboard position prefers a fresh TF map pose while mapping", () => {
+  const pose = selectDisplayPose({
+    map_pose: {
+      frame_id: "map",
+      fresh: true,
+      x: 0.42,
+      y: -0.18,
+      yaw: 1.2,
+    },
+    navigation: {
+      current: { frame_id: "map", x: -0.13, y: -0.42, yaw: -0.18 },
+    },
+  });
+
+  assert.deepEqual(pose, {
+    frame_id: "map",
+    x: 0.42,
+    y: -0.18,
+    yaw: 1.2,
+  });
+});
+
 test("dashboard position prefers the map-frame navigation pose", () => {
   const pose = selectDisplayPose({
     navigation: {

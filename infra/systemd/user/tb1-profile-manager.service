@@ -1,0 +1,19 @@
+[Unit]
+Description=TB1 fail-closed mapping and navigation profile manager
+After=tb1-network-ready.service tb1-bringup.service tb1-safety-watchdog.service
+Wants=tb1-network-ready.service tb1-bringup.service tb1-safety-watchdog.service
+
+[Service]
+Type=simple
+Environment=ROS_DISTRO=humble
+Environment=ROS_DOMAIN_ID=42
+Environment=ROS_LOCALHOST_ONLY=0
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ExecStart=/usr/bin/bash -lc 'source /opt/ros/humble/setup.bash && source %h/turtlebot-fleet-ops/install/setup.bash && exec ros2 run navigation_agent profile_manager_node --ros-args --params-file %h/turtlebot-fleet-ops/robot/navigation_agent/config/tb1.yaml'
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,22 +1,35 @@
 """ROS subscriptions and command clients used by the fleet gateway."""
 
+from collections import deque
+from functools import partial
+import json
 import math
+from queue import Full
 import threading
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 import uuid
 
 from fleet_interfaces.action import NavigateRobot
 from fleet_interfaces.msg import (
+    MappingStatus,
     NavigationLease,
     NavigationStatus,
     RobotStatus,
     SafetyStatus,
 )
-from fleet_interfaces.srv import SetInitialPose
+from fleet_interfaces.srv import (
+    ManualCommand,
+    SaveMap,
+    SetInitialPose,
+    SetOperatingProfile,
+)
+from geometry_msgs.msg import Twist
 from nav_msgs.msg import OccupancyGrid
+import rclpy
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -24,12 +37,33 @@ from rclpy.qos import (
     ReliabilityPolicy,
     qos_profile_sensor_data,
 )
+from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import String
 from std_srvs.srv import SetBool
+from tf2_ros import Buffer, TransformException, TransformListener
 
 from fleet_gateway.map_registry import MapRegistry, map_message_to_dict
 from fleet_gateway.registry import StatusRegistry
 from fleet_gateway.scan_registry import ScanRegistry, scan_message_to_dict
+
+
+def update_clock_offset_estimate(
+    samples: Any,
+    observed_timestamp: float,
+    robot_timestamp: float,
+    observed_monotonic: float,
+    window_sec: float,
+) -> Tuple[float, float, float]:
+    """Separate a clock-offset lower bound from positive transport delay."""
+    raw_delta = float(observed_timestamp) - float(robot_timestamp)
+    samples.append((float(observed_monotonic), raw_delta))
+    cutoff = float(observed_monotonic) - float(window_sec)
+    while samples and samples[0][0] < cutoff:
+        samples.popleft()
+    clock_offset = min(value for _, value in samples)
+    transport_delay = max(0.0, raw_delta - clock_offset)
+    return clock_offset, transport_delay, raw_delta
 
 
 def _stamp_to_dict(stamp: Any) -> Dict[str, int]:
@@ -38,6 +72,53 @@ def _stamp_to_dict(stamp: Any) -> Dict[str, int]:
 
 def _duration_to_seconds(duration: Any) -> float:
     return float(duration.sec) + float(duration.nanosec) / 1_000_000_000.0
+
+
+def transform_message_to_pose_dict(
+    robot_id: str,
+    message: Any,
+) -> Dict[str, Any]:
+    """Convert a map-to-base transform into the web pose contract."""
+    transform = message.transform
+    return {
+        "robot_id": robot_id,
+        "frame_id": str(message.header.frame_id),
+        "stamp": _stamp_to_dict(message.header.stamp),
+        "x": float(transform.translation.x),
+        "y": float(transform.translation.y),
+        "yaw": _quaternion_to_yaw(
+            transform.rotation.z,
+            transform.rotation.w,
+        ),
+    }
+
+
+def web_telemetry_message_to_dict(
+    message: Any,
+    expected_robot_id: str,
+) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    """Parse one reliable robot-side web telemetry envelope."""
+    try:
+        payload = json.loads(str(message.data))
+    except (TypeError, ValueError) as error:
+        raise ValueError("web telemetry must be valid JSON") from error
+    if not isinstance(payload, Mapping) or payload.get("version") != 1:
+        raise ValueError("web telemetry version is unsupported")
+    robot_id = str(payload.get("robot_id", "")).strip()
+    if robot_id != expected_robot_id:
+        raise ValueError("web telemetry robot_id does not match its topic")
+    scan = payload.get("scan")
+    if not isinstance(scan, Mapping):
+        raise ValueError("web telemetry scan is missing")
+    map_pose = payload.get("map_pose")
+    if map_pose is not None and not isinstance(map_pose, Mapping):
+        raise ValueError("web telemetry map_pose must be an object or null")
+    normalized_scan = dict(scan)
+    normalized_scan["robot_id"] = robot_id
+    normalized_pose = None if map_pose is None else dict(map_pose)
+    if normalized_pose is not None:
+        normalized_pose["robot_id"] = robot_id
+    return normalized_scan, normalized_pose
 
 
 def status_message_to_dict(message: RobotStatus) -> Dict[str, Any]:
@@ -153,6 +234,40 @@ def safety_status_to_dict(message: SafetyStatus) -> Dict[str, Any]:
     }
 
 
+def mapping_status_to_dict(message: MappingStatus) -> Dict[str, Any]:
+    """Convert robot-local operating-profile state for the web snapshot."""
+    names = {
+        MappingStatus.PROFILE_IDLE: "IDLE",
+        MappingStatus.PROFILE_MAPPING: "MAPPING",
+        MappingStatus.PROFILE_NAVIGATION: "NAVIGATION",
+    }
+    return {
+        "robot_id": message.robot_id,
+        "profile": names.get(int(message.profile), "UNKNOWN"),
+        "profile_code": int(message.profile),
+        "transitioning": bool(message.transitioning),
+        "map_available": bool(message.map_available),
+        "message": message.message,
+    }
+
+
+def _map_save_completed_after_response_loss(
+    previous_message: str,
+    observed: Optional[Dict[str, Any]],
+) -> bool:
+    """Accept only a newly observed robot-local validated save result."""
+    mapping = (observed or {}).get("mapping") or {}
+    message = str(mapping.get("message") or "")
+    return bool(
+        mapping.get("fresh")
+        and mapping.get("profile") == "MAPPING"
+        and message != previous_message
+        and message.startswith(
+            "Map and pose graph saved and validated; completion_ns="
+        )
+    )
+
+
 def _pose_to_dict(message: Any) -> Dict[str, Any]:
     orientation = message.pose.orientation
     return {
@@ -180,6 +295,181 @@ def _finite_or_none(value: float) -> Any:
 def _nonnegative_or_none(value: float) -> Any:
     number = _finite_or_none(value)
     return number if number is not None and number >= 0.0 else None
+
+
+def _put_telemetry_snapshot(
+    output_queue: Any,
+    kind: str,
+    robot_id: str,
+    snapshot: Dict[str, Any],
+) -> None:
+    try:
+        output_queue.put_nowait((kind, robot_id, snapshot))
+    except Full:
+        # A fresh future sample is preferable to blocking ROS callbacks.
+        pass
+
+
+class _FleetScanProcessNode(Node):
+    """Receive only LiDAR data in an isolated DDS participant."""
+
+    def __init__(
+        self,
+        configuration: Dict[str, List[Any]],
+        output_queue: Any,
+    ) -> None:
+        super().__init__("fleet_gateway_scan")
+        self._output_queue = output_queue
+        self._scan_sent_at: Dict[str, float] = {}
+        robot_ids = configuration["robot_ids"]
+        scan_topics = configuration["scan_topics"]
+        scan_sensor_x = configuration["scan_sensor_x"]
+        scan_sensor_y = configuration["scan_sensor_y"]
+        scan_sensor_yaw = configuration["scan_sensor_yaw"]
+        self._scan_subscriptions = [
+            self.create_subscription(
+                LaserScan,
+                scan_topic,
+                partial(
+                    self._scan_callback,
+                    robot_id,
+                    float(sensor_x),
+                    float(sensor_y),
+                    float(sensor_yaw),
+                ),
+                qos_profile_sensor_data,
+            )
+            for robot_id, scan_topic, sensor_x, sensor_y, sensor_yaw in zip(
+                robot_ids,
+                scan_topics,
+                scan_sensor_x,
+                scan_sensor_y,
+                scan_sensor_yaw,
+            )
+        ]
+
+    def _scan_callback(
+        self,
+        robot_id: str,
+        sensor_x: float,
+        sensor_y: float,
+        sensor_yaw: float,
+        message: LaserScan,
+    ) -> None:
+        now = time.monotonic()
+        if now - self._scan_sent_at.get(robot_id, 0.0) < 0.2:
+            return
+        try:
+            snapshot = scan_message_to_dict(
+                message,
+                sensor_x,
+                sensor_y,
+                sensor_yaw,
+            )
+        except ValueError as error:
+            self.get_logger().error(f"Rejected {robot_id} scan: {error}")
+            return
+        self._scan_sent_at[robot_id] = now
+        _put_telemetry_snapshot(
+            self._output_queue,
+            "scan",
+            robot_id,
+            snapshot,
+        )
+
+
+class _FleetPoseProcessNode(Node):
+    """Resolve map-frame robot poses in an isolated DDS participant."""
+
+    def __init__(
+        self,
+        configuration: Dict[str, List[Any]],
+        output_queue: Any,
+    ) -> None:
+        super().__init__("fleet_gateway_pose")
+        self._output_queue = output_queue
+        robot_ids = configuration["robot_ids"]
+        target_frames = configuration["map_pose_target_frames"]
+        source_frames = configuration["map_pose_source_frames"]
+        self._map_pose_frames = list(zip(
+            robot_ids,
+            target_frames,
+            source_frames,
+        ))
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(
+            self._tf_buffer,
+            self,
+            spin_thread=False,
+        )
+        self._map_pose_timer = self.create_timer(
+            0.2,
+            self._update_map_poses,
+        )
+
+    def _update_map_poses(self) -> None:
+        for robot_id, target_frame, source_frame in self._map_pose_frames:
+            try:
+                transform = self._tf_buffer.lookup_transform(
+                    str(target_frame),
+                    str(source_frame),
+                    Time(),
+                )
+            except TransformException:
+                continue
+            _put_telemetry_snapshot(
+                self._output_queue,
+                "map_pose",
+                robot_id,
+                transform_message_to_pose_dict(robot_id, transform),
+            )
+
+
+def _run_telemetry_node(
+    node_type: Any,
+    configuration: Dict[str, List[Any]],
+    output_queue: Any,
+    stop_event: Any,
+) -> None:
+    rclpy.init(args=[])
+    node = node_type(configuration, output_queue)
+    try:
+        while rclpy.ok() and not stop_event.is_set():
+            rclpy.spin_once(node, timeout_sec=0.2)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def run_scan_process(
+    configuration: Dict[str, List[Any]],
+    output_queue: Any,
+    stop_event: Any,
+) -> None:
+    """Run the LiDAR receiver in its own DDS participant."""
+    _run_telemetry_node(
+        _FleetScanProcessNode,
+        configuration,
+        output_queue,
+        stop_event,
+    )
+
+
+def run_pose_process(
+    configuration: Dict[str, List[Any]],
+    output_queue: Any,
+    stop_event: Any,
+) -> None:
+    """Run the TF pose resolver in its own DDS participant."""
+    _run_telemetry_node(
+        _FleetPoseProcessNode,
+        configuration,
+        output_queue,
+        stop_event,
+    )
 
 
 class FleetGatewayNode(Node):
@@ -216,6 +506,13 @@ class FleetGatewayNode(Node):
             10,
             callback_group=self._callback_group,
         )
+        self._mapping_subscription = self.create_subscription(
+            MappingStatus,
+            str(self.get_parameter("mapping_status_topic").value),
+            self._mapping_status_callback,
+            10,
+            callback_group=self._callback_group,
+        )
         self._lease_publisher = self.create_publisher(
             NavigationLease,
             str(self.get_parameter("navigation_lease_topic").value),
@@ -228,23 +525,45 @@ class FleetGatewayNode(Node):
         initial_pose_names = list(
             self.get_parameter("initial_pose_services").value
         )
+        manual_command_names = list(
+            self.get_parameter("manual_command_services").value
+        )
+        profile_names = list(
+            self.get_parameter("operating_profile_services").value
+        )
+        save_map_names = list(self.get_parameter("save_map_services").value)
         map_topics = list(self.get_parameter("map_topics").value)
+        web_telemetry_topics = list(
+            self.get_parameter("web_telemetry_topics").value
+        )
         scan_topics = list(self.get_parameter("scan_topics").value)
         scan_sensor_x = list(self.get_parameter("scan_sensor_x_m").value)
         scan_sensor_y = list(self.get_parameter("scan_sensor_y_m").value)
         scan_sensor_yaw = list(
             self.get_parameter("scan_sensor_yaw_rad").value
         )
+        map_pose_target_frames = list(
+            self.get_parameter("map_pose_target_frames").value
+        )
+        map_pose_source_frames = list(
+            self.get_parameter("map_pose_source_frames").value
+        )
         self._validate_aligned_lists(
             robot_ids,
             estop_names,
             action_names,
             initial_pose_names,
+            manual_command_names,
+            profile_names,
+            save_map_names,
             map_topics,
+            web_telemetry_topics,
             scan_topics,
             scan_sensor_x,
             scan_sensor_y,
             scan_sensor_yaw,
+            map_pose_target_frames,
+            map_pose_source_frames,
         )
         self._estop_clients = {
             robot_id: self.create_client(
@@ -271,6 +590,30 @@ class FleetGatewayNode(Node):
             )
             for robot_id, service_name in zip(robot_ids, initial_pose_names)
         }
+        self._manual_command_clients = {
+            robot_id: self.create_client(
+                ManualCommand,
+                service_name,
+                callback_group=self._callback_group,
+            )
+            for robot_id, service_name in zip(robot_ids, manual_command_names)
+        }
+        self._profile_clients = {
+            robot_id: self.create_client(
+                SetOperatingProfile,
+                service_name,
+                callback_group=self._callback_group,
+            )
+            for robot_id, service_name in zip(robot_ids, profile_names)
+        }
+        self._save_map_clients = {
+            robot_id: self.create_client(
+                SaveMap,
+                service_name,
+                callback_group=self._callback_group,
+            )
+            for robot_id, service_name in zip(robot_ids, save_map_names)
+        }
         map_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -280,50 +623,78 @@ class FleetGatewayNode(Node):
             self.create_subscription(
                 OccupancyGrid,
                 map_topic,
-                lambda message, identifier=robot_id: self._map_callback(
-                    identifier,
-                    message,
-                ),
+                partial(self._map_callback, robot_id),
                 map_qos,
                 callback_group=self._callback_group,
             )
             for robot_id, map_topic in zip(robot_ids, map_topics)
         ]
-        self._scan_subscriptions = [
+        reliable_qos = QoSProfile(
+            depth=5,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self._web_telemetry_subscriptions = [
             self.create_subscription(
-                LaserScan,
-                scan_topic,
-                lambda message, identifier=robot_id, x=sensor_x,
-                y=sensor_y, yaw=sensor_yaw: self._scan_callback(
-                    identifier,
-                    message,
-                    float(x),
-                    float(y),
-                    float(yaw),
-                ),
-                qos_profile_sensor_data,
+                String,
+                telemetry_topic,
+                partial(self._web_telemetry_callback, robot_id),
+                reliable_qos,
                 callback_group=self._callback_group,
             )
-            for robot_id, scan_topic, sensor_x, sensor_y, sensor_yaw in zip(
+            for robot_id, telemetry_topic in zip(
                 robot_ids,
-                scan_topics,
-                scan_sensor_x,
-                scan_sensor_y,
-                scan_sensor_yaw,
+                web_telemetry_topics,
             )
         ]
+        self.telemetry_configuration = {
+            "robot_ids": robot_ids,
+            "map_topics": map_topics,
+            "scan_topics": scan_topics,
+            "scan_sensor_x": scan_sensor_x,
+            "scan_sensor_y": scan_sensor_y,
+            "scan_sensor_yaw": scan_sensor_yaw,
+            "map_pose_target_frames": map_pose_target_frames,
+            "map_pose_source_frames": map_pose_source_frames,
+        }
 
         self._navigation_lock = threading.RLock()
+        self._manual_lock = threading.RLock()
+        self._manual_sessions: Dict[str, Tuple[str, float]] = {}
+        self._pending_manual: Dict[str, str] = {}
         self._active_navigation: Dict[str, Tuple[str, Any]] = {}
         self._confirmed_navigation: Dict[str, str] = {}
         self._navigation_accepted_at: Dict[str, float] = {}
+        self._lease_publish_counts: Dict[Tuple[str, str], int] = {}
         self._pending_navigation = set()
         self._estop_engaged = {robot_id: False for robot_id in robot_ids}
+        self._clock_skew_log_at: Dict[str, float] = {}
+        self._status_delay_log_at: Dict[str, float] = {}
+        self._clock_offset_samples = {
+            robot_id: deque() for robot_id in robot_ids
+        }
         lease_interval = float(
             self.get_parameter("lease_publish_interval_sec").value
         )
         if not math.isfinite(lease_interval) or lease_interval <= 0.0:
             raise ValueError("lease_publish_interval_sec must be positive")
+        self._lease_publish_interval_sec = lease_interval
+        self._max_clock_skew_sec = float(
+            self.get_parameter("max_clock_skew_sec").value
+        )
+        if (
+            not math.isfinite(self._max_clock_skew_sec)
+            or self._max_clock_skew_sec <= 0.0
+        ):
+            raise ValueError("max_clock_skew_sec must be positive")
+        self._clock_offset_window_sec = float(
+            self.get_parameter("clock_offset_window_sec").value
+        )
+        if (
+            not math.isfinite(self._clock_offset_window_sec)
+            or self._clock_offset_window_sec <= 0.0
+        ):
+            raise ValueError("clock_offset_window_sec must be positive")
         self._navigation_confirmation_timeout_sec = float(
             self.get_parameter(
                 "navigation_confirmation_timeout_sec"
@@ -336,10 +707,13 @@ class FleetGatewayNode(Node):
             raise ValueError(
                 "navigation_confirmation_timeout_sec must be positive"
             )
+        self._lease_clock = Clock(clock_type=ClockType.STEADY_TIME)
+        self._last_lease_timer_tick = time.monotonic()
         self._lease_timer = self.create_timer(
             lease_interval,
             self._publish_navigation_leases,
             callback_group=self._callback_group,
+            clock=self._lease_clock,
         )
         self.get_logger().info(
             f"Listening for fleet status on {topic}; "
@@ -353,6 +727,7 @@ class FleetGatewayNode(Node):
             "/fleet/navigation_status",
         )
         self.declare_parameter("safety_status_topic", "/fleet/safety_status")
+        self.declare_parameter("mapping_status_topic", "/fleet/mapping_status")
         self.declare_parameter(
             "navigation_lease_topic",
             "/fleet/navigation_lease",
@@ -362,6 +737,8 @@ class FleetGatewayNode(Node):
         self.declare_parameter("web_port", 8000)
         self.declare_parameter("lease_publish_interval_sec", 0.5)
         self.declare_parameter("navigation_confirmation_timeout_sec", 2.0)
+        self.declare_parameter("max_clock_skew_sec", 0.35)
+        self.declare_parameter("clock_offset_window_sec", 10.0)
         self.declare_parameter("robot_ids", ["tb1"])
         self.declare_parameter(
             "estop_services",
@@ -375,11 +752,32 @@ class FleetGatewayNode(Node):
             "initial_pose_services",
             ["/tb1/navigation/set_initial_pose"],
         )
+        self.declare_parameter(
+            "manual_command_services",
+            ["/tb1/navigation/manual_command"],
+        )
+        self.declare_parameter(
+            "operating_profile_services",
+            ["/tb1/navigation/set_operating_profile"],
+        )
+        self.declare_parameter(
+            "save_map_services",
+            ["/tb1/navigation/save_map"],
+        )
         self.declare_parameter("map_topics", ["/map"])
+        self.declare_parameter(
+            "web_telemetry_topics",
+            ["/fleet/web_telemetry"],
+        )
         self.declare_parameter("scan_topics", ["/scan"])
         self.declare_parameter("scan_sensor_x_m", [-0.032])
         self.declare_parameter("scan_sensor_y_m", [0.0])
         self.declare_parameter("scan_sensor_yaw_rad", [0.0])
+        self.declare_parameter("map_pose_target_frames", ["map"])
+        self.declare_parameter(
+            "map_pose_source_frames",
+            ["base_footprint"],
+        )
 
     @staticmethod
     def _validate_aligned_lists(*values: List[Any]) -> None:
@@ -397,7 +795,59 @@ class FleetGatewayNode(Node):
         return int(self.get_parameter("web_port").value)
 
     def _status_callback(self, message: RobotStatus) -> None:
-        self.registry.update(status_message_to_dict(message))
+        status = status_message_to_dict(message)
+        robot_timestamp = (
+            float(message.header.stamp.sec)
+            + float(message.header.stamp.nanosec) / 1_000_000_000.0
+        )
+        if math.isfinite(robot_timestamp) and robot_timestamp > 0.0:
+            observed_timestamp = self.get_clock().now().nanoseconds / 1e9
+            now = time.monotonic()
+            samples = self._clock_offset_samples.setdefault(
+                message.robot_id,
+                deque(),
+            )
+            clock_offset, transport_delay, raw_delta = (
+                update_clock_offset_estimate(
+                    samples,
+                    observed_timestamp,
+                    robot_timestamp,
+                    now,
+                    self._clock_offset_window_sec,
+                )
+            )
+            status["clock_offset_sec"] = round(clock_offset, 6)
+            status["status_transport_delay_sec"] = round(
+                transport_delay,
+                6,
+            )
+            if (
+                abs(clock_offset) > self._max_clock_skew_sec
+                and now - self._clock_skew_log_at.get(message.robot_id, 0.0)
+                >= 30.0
+            ):
+                self._clock_skew_log_at[message.robot_id] = now
+                self.get_logger().error(
+                    "CLOCK_SKEW "
+                    f"robot={message.robot_id} "
+                    f"control_minus_robot={clock_offset:.3f}s "
+                    f"limit={self._max_clock_skew_sec:.3f}s; "
+                    "navigation will be blocked until time sync recovers"
+                )
+            if (
+                transport_delay > self._max_clock_skew_sec
+                and now - self._status_delay_log_at.get(message.robot_id, 0.0)
+                >= 30.0
+            ):
+                self._status_delay_log_at[message.robot_id] = now
+                self.get_logger().warning(
+                    "STATUS_TRANSPORT_DELAY "
+                    f"robot={message.robot_id} raw_delta={raw_delta:.3f}s "
+                    f"clock_estimate={clock_offset:.3f}s "
+                    f"excess_delay={transport_delay:.3f}s; "
+                    "check robot CPU and ROS/Zenoh callback latency"
+                )
+        self.registry.update(status)
 
     def _navigation_status_callback(self, message: NavigationStatus) -> None:
         self.registry.update_navigation(navigation_status_to_dict(message))
@@ -415,13 +865,22 @@ class FleetGatewayNode(Node):
                 self._active_navigation.pop(robot_id, None)
                 self._confirmed_navigation.pop(robot_id, None)
                 self._navigation_accepted_at.pop(robot_id, None)
+                publish_count = self._lease_publish_counts.pop(
+                    (robot_id, command_id),
+                    0,
+                )
                 self.get_logger().warning(
-                    f"Stopped stale lease {command_id} after {robot_id} "
-                    "reported no matching active goal"
+                    "Navigation lease stopped reason=status_mismatch "
+                    f"robot={robot_id} command={command_id} "
+                    f"published={publish_count} reported_state="
+                    f"{int(message.state)} reported_command={reported_command or '-'}"
                 )
 
     def _safety_status_callback(self, message: SafetyStatus) -> None:
         self.registry.update_safety(safety_status_to_dict(message))
+
+    def _mapping_status_callback(self, message: MappingStatus) -> None:
+        self.registry.update_mapping(mapping_status_to_dict(message))
 
     def _map_callback(self, robot_id: str, message: OccupancyGrid) -> None:
         try:
@@ -429,26 +888,23 @@ class FleetGatewayNode(Node):
         except ValueError as error:
             self.get_logger().error(f"Rejected {robot_id} map: {error}")
 
-    def _scan_callback(
+    def _web_telemetry_callback(
         self,
         robot_id: str,
-        message: LaserScan,
-        sensor_x: float,
-        sensor_y: float,
-        sensor_yaw: float,
+        message: String,
     ) -> None:
         try:
-            self.scan_registry.update(
+            scan, map_pose = web_telemetry_message_to_dict(
+                message,
                 robot_id,
-                scan_message_to_dict(
-                    message,
-                    sensor_x,
-                    sensor_y,
-                    sensor_yaw,
-                ),
             )
+            self.scan_registry.update(robot_id, scan)
+            if map_pose is not None:
+                self.registry.update_map_pose(map_pose)
         except ValueError as error:
-            self.get_logger().error(f"Rejected {robot_id} scan: {error}")
+            self.get_logger().error(
+                f"Rejected {robot_id} web telemetry: {error}"
+            )
 
     def set_estop(self, robot_id: str, engaged: bool) -> Dict[str, Any]:
         """Call a robot watchdog service from the HTTP worker thread."""
@@ -493,12 +949,328 @@ class FleetGatewayNode(Node):
             with self._navigation_lock:
                 self._estop_engaged[robot_id] = bool(engaged)
             if engaged:
+                self._stop_manual_for_estop(robot_id)
                 cancel_result = self._cancel_active_for_estop(robot_id)
                 if cancel_result.get("command_id"):
                     result["message"] += "; navigation lease stopped"
         elif engaged:
             self._engage_gateway_estop(robot_id)
         return result
+
+    def _clock_sync_failure(
+        self,
+        robot_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Fail closed when recent robot time differs from control time."""
+        observed = self.registry.get(robot_id)
+        if observed is None or not observed.get("online"):
+            return None
+        raw_offset = observed.get("clock_offset_sec")
+        try:
+            offset = float(raw_offset)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(offset) or abs(offset) <= self._max_clock_skew_sec:
+            return None
+        self.get_logger().error(
+            "CLOCK_SKEW command rejected "
+            f"robot={robot_id} control_minus_robot={offset:.3f}s "
+            f"limit={self._max_clock_skew_sec:.3f}s"
+        )
+        return {
+            "success": False,
+            "status_code": 409,
+            "robot_id": robot_id,
+            "clock_offset_sec": round(offset, 6),
+            "message": (
+                "Control PC and robot clocks differ too much for safe motion; "
+                "synchronize Windows, WSL, and TB1 time before retrying"
+            ),
+        }
+
+    def start_manual(self, robot_id: str) -> Dict[str, Any]:
+        """Create a short-lived robot-local manual driving session."""
+        clock_failure = self._clock_sync_failure(robot_id)
+        if clock_failure is not None:
+            return clock_failure
+        session_id = uuid.uuid4().hex
+        with self._navigation_lock:
+            if self._estop_engaged.get(robot_id, False):
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "Emergency stop is active",
+                }
+            if (
+                robot_id in self._active_navigation
+                or robot_id in self._pending_navigation
+            ):
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "A navigation goal is active",
+                }
+            with self._manual_lock:
+                active = self._manual_sessions.get(robot_id)
+                if (
+                    robot_id in self._pending_manual
+                    or (
+                        active
+                        and time.monotonic() - active[1] <= 0.5
+                    )
+                ):
+                    return {
+                        "success": False,
+                        "status_code": 409,
+                        "message": "Another manual session is active",
+                    }
+                self._manual_sessions.pop(robot_id, None)
+                self._pending_manual[robot_id] = session_id
+        result = self._call_manual(robot_id, session_id, 0.0, 0.0, False)
+        with self._navigation_lock, self._manual_lock:
+            self._pending_manual.pop(robot_id, None)
+            if result.get("success") and not self._estop_engaged.get(
+                robot_id,
+                False,
+            ):
+                self._manual_sessions[robot_id] = (
+                    session_id,
+                    time.monotonic(),
+                )
+                result["session_id"] = session_id
+                return result
+        if result.get("success"):
+            self._call_manual(robot_id, session_id, 0.0, 0.0, True)
+            return {
+                "success": False,
+                "status_code": 409,
+                "message": "Emergency stop interrupted manual start",
+            }
+        return result
+
+    def manual_active(self, robot_id: str) -> bool:
+        """Report fresh Gateway ownership of a manual session."""
+        with self._manual_lock:
+            if robot_id in self._pending_manual:
+                return True
+            active = self._manual_sessions.get(robot_id)
+            if active is None:
+                return False
+            if time.monotonic() - active[1] <= 0.5:
+                return True
+            self._manual_sessions.pop(robot_id, None)
+            return False
+
+    def send_manual(
+        self,
+        robot_id: str,
+        session_id: str,
+        linear_x: float,
+        angular_z: float,
+    ) -> Dict[str, Any]:
+        """Refresh one exact manual session with a bounded command."""
+        with self._manual_lock:
+            active = self._manual_sessions.get(robot_id)
+            if active is None or active[0] != session_id:
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "No matching manual session",
+                }
+        result = self._call_manual(
+            robot_id,
+            session_id,
+            max(-0.05, min(0.05, float(linear_x))),
+            max(-0.3, min(0.3, float(angular_z))),
+            False,
+        )
+        if result.get("success"):
+            with self._manual_lock:
+                if self._manual_sessions.get(robot_id, ("", 0.0))[0] == session_id:
+                    self._manual_sessions[robot_id] = (
+                        session_id,
+                        time.monotonic(),
+                    )
+        return result
+
+    def stop_manual(self, robot_id: str, session_id: str) -> Dict[str, Any]:
+        """Stop exactly one manual session and remove Gateway ownership."""
+        with self._manual_lock:
+            active = self._manual_sessions.get(robot_id)
+            if active is None or active[0] != session_id:
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "No matching manual session",
+                }
+            self._manual_sessions.pop(robot_id, None)
+        return self._call_manual(robot_id, session_id, 0.0, 0.0, True)
+
+    def _stop_manual_for_estop(self, robot_id: str) -> None:
+        with self._manual_lock:
+            active = self._manual_sessions.pop(robot_id, None)
+            pending = self._pending_manual.pop(robot_id, None)
+        session_id = active[0] if active is not None else pending
+        if session_id:
+            self._call_manual(robot_id, session_id, 0.0, 0.0, True)
+
+    def _call_manual(
+        self,
+        robot_id: str,
+        session_id: str,
+        linear_x: float,
+        angular_z: float,
+        stop: bool,
+    ) -> Dict[str, Any]:
+        client = self._manual_command_clients.get(robot_id)
+        if client is None or not client.wait_for_service(timeout_sec=0.5):
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Manual-control service is unavailable",
+            }
+        request = ManualCommand.Request()
+        request.session_id = session_id
+        request.command = Twist()
+        request.command.linear.x = linear_x
+        request.command.angular.z = angular_z
+        request.stop = bool(stop)
+        try:
+            response = self._future_result(client.call_async(request), 1.0)
+        except Exception:  # noqa: B902
+            response = None
+        if response is None:
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Manual-control service timed out",
+            }
+        return {
+            "success": bool(response.success),
+            "status_code": 202 if response.success else 409,
+            "robot_id": robot_id,
+            "message": response.message,
+        }
+
+    def set_operating_profile(
+        self,
+        robot_id: str,
+        profile: str,
+    ) -> Dict[str, Any]:
+        """Engage e-stop, then ask TB1 to switch its systemd profile."""
+        estop = self.set_estop(robot_id, True)
+        if not estop.get("success"):
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Cannot switch profile without confirmed e-stop",
+            }
+        codes = {
+            "IDLE": SetOperatingProfile.Request.PROFILE_IDLE,
+            "MAPPING": SetOperatingProfile.Request.PROFILE_MAPPING,
+            "NAVIGATION": SetOperatingProfile.Request.PROFILE_NAVIGATION,
+        }
+        client = self._profile_clients.get(robot_id)
+        if client is None or not client.wait_for_service(timeout_sec=1.0):
+            return {
+                "success": False,
+                "status_code": 503,
+                "estop_engaged": True,
+                "message": "Operating-profile service is unavailable",
+            }
+        request = SetOperatingProfile.Request()
+        request.profile = codes[profile]
+        try:
+            response = self._future_result(client.call_async(request), 45.0)
+        except Exception:  # noqa: B902
+            response = None
+        if response is None:
+            observed = self.registry.get(robot_id)
+            mapping = (observed or {}).get("mapping") or {}
+            if mapping.get("fresh") and mapping.get("profile") == profile:
+                return {
+                    "success": True,
+                    "status_code": 202,
+                    "robot_id": robot_id,
+                    "profile": profile,
+                    "estop_engaged": True,
+                    "message": (
+                        "Profile transition confirmed by status after "
+                        "the Zenoh bridge reconnected; e-stop remains active"
+                    ),
+                }
+            return {
+                "success": False,
+                "status_code": 503,
+                "estop_engaged": True,
+                "message": "Operating-profile service timed out",
+            }
+        return {
+            "success": bool(response.success),
+            "status_code": 202 if response.success else 409,
+            "robot_id": robot_id,
+            "profile": profile,
+            "estop_engaged": True,
+            "message": response.message,
+        }
+
+    def save_map(self, robot_id: str, overwrite: bool) -> Dict[str, Any]:
+        """Stop motion and save the fixed TB1 map and pose graph."""
+        estop = self.set_estop(robot_id, True)
+        if not estop.get("success"):
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Cannot save map without confirmed e-stop",
+            }
+        client = self._save_map_clients.get(robot_id)
+        if client is None or not client.wait_for_service(timeout_sec=1.0):
+            return {
+                "success": False,
+                "status_code": 503,
+                "estop_engaged": True,
+                "message": "Map-save service is unavailable",
+            }
+        observed_before = self.registry.get(robot_id)
+        previous_message = str(
+            ((observed_before or {}).get("mapping") or {}).get("message")
+            or ""
+        )
+        request = SaveMap.Request()
+        request.overwrite = bool(overwrite)
+        try:
+            response = self._future_result(client.call_async(request), 95.0)
+        except Exception:  # noqa: B902
+            response = None
+        if response is None:
+            observed = self.registry.get(robot_id)
+            if _map_save_completed_after_response_loss(
+                previous_message,
+                observed,
+            ):
+                return {
+                    "success": True,
+                    "status_code": 202,
+                    "robot_id": robot_id,
+                    "estop_engaged": True,
+                    "message": (
+                        "Map save confirmed by validated robot status after "
+                        "the Zenoh service response was lost"
+                    ),
+                }
+            return {
+                "success": False,
+                "status_code": 503,
+                "estop_engaged": True,
+                "message": "Map-save service timed out",
+            }
+        return {
+            "success": bool(response.success),
+            "status_code": 202 if response.success else 409,
+            "robot_id": robot_id,
+            "estop_engaged": True,
+            "message": response.message,
+        }
 
     def set_initial_pose(
         self,
@@ -551,6 +1323,9 @@ class FleetGatewayNode(Node):
         confirm_warnings: bool,
     ) -> Dict[str, Any]:
         """Submit a robot-local action and begin its fleet lease."""
+        clock_failure = self._clock_sync_failure(robot_id)
+        if clock_failure is not None:
+            return clock_failure
         client = self._navigation_clients.get(robot_id)
         if client is None or not client.wait_for_server(timeout_sec=1.0):
             return {
@@ -573,6 +1348,12 @@ class FleetGatewayNode(Node):
                     "success": False,
                     "status_code": 409,
                     "message": "Cancel the active navigation goal first",
+                }
+            if self.manual_active(robot_id):
+                return {
+                    "success": False,
+                    "status_code": 409,
+                    "message": "A manual session is active",
                 }
             self._pending_navigation.add(robot_id)
         command_id = uuid.uuid4().hex
@@ -614,6 +1395,7 @@ class FleetGatewayNode(Node):
                 self._active_navigation[robot_id] = (command_id, handle)
                 self._confirmed_navigation.pop(robot_id, None)
                 self._navigation_accepted_at[robot_id] = time.monotonic()
+                self._lease_publish_counts[(robot_id, command_id)] = 0
         if estop_engaged:
             try:
                 self._future_result(handle.cancel_goal_async(), 3.0)
@@ -630,6 +1412,11 @@ class FleetGatewayNode(Node):
             )
         )
         self._publish_one_lease(robot_id, command_id)
+        self.get_logger().info(
+            "Navigation lease started "
+            f"robot={robot_id} command={command_id} interval="
+            f"{self._lease_publish_interval_sec:.3f}s clock=STEADY_TIME"
+        )
         return {
             "success": True,
             "robot_id": robot_id,
@@ -655,6 +1442,14 @@ class FleetGatewayNode(Node):
             self._active_navigation.pop(robot_id, None)
             self._confirmed_navigation.pop(robot_id, None)
             self._navigation_accepted_at.pop(robot_id, None)
+            publish_count = self._lease_publish_counts.pop(
+                (robot_id, command_id),
+                0,
+            )
+        self.get_logger().info(
+            "Navigation lease stopped reason=user_cancel "
+            f"robot={robot_id} command={command_id} published={publish_count}"
+        )
         try:
             response = self._future_result(
                 active[1].cancel_goal_async(),
@@ -699,6 +1494,14 @@ class FleetGatewayNode(Node):
             self._navigation_accepted_at.pop(robot_id, None)
         if active is None:
             return {"success": False, "message": "No active navigation"}
+        publish_count = self._lease_publish_counts.pop(
+            (robot_id, active[0]),
+            0,
+        )
+        self.get_logger().warning(
+            "Navigation lease stopped reason=estop "
+            f"robot={robot_id} command={active[0]} published={publish_count}"
+        )
         try:
             response = self._future_result(
                 active[1].cancel_goal_async(),
@@ -726,6 +1529,8 @@ class FleetGatewayNode(Node):
 
     def _publish_navigation_leases(self) -> None:
         now = time.monotonic()
+        timer_gap = now - self._last_lease_timer_tick
+        self._last_lease_timer_tick = now
         unconfirmed = []
         with self._navigation_lock:
             for robot_id, accepted_at in list(
@@ -745,6 +1550,17 @@ class FleetGatewayNode(Node):
                 (robot_id, active[0])
                 for robot_id, active in self._active_navigation.items()
             ]
+        if (
+            commands
+            and timer_gap
+            > max(1.0, self._lease_publish_interval_sec * 2.5)
+        ):
+            self.get_logger().error(
+                "Navigation lease timer gap "
+                f"{timer_gap:.3f}s expected="
+                f"{self._lease_publish_interval_sec:.3f}s "
+                f"active_commands={len(commands)}"
+            )
         for robot_id, active in unconfirmed:
             try:
                 active[1].cancel_goal_async()
@@ -754,6 +1570,7 @@ class FleetGatewayNode(Node):
                 f"Stopped unconfirmed navigation lease {active[0]} for "
                 f"{robot_id}"
             )
+            self._lease_publish_counts.pop((robot_id, active[0]), None)
         for robot_id, command_id in commands:
             self._publish_one_lease(robot_id, command_id)
 
@@ -763,18 +1580,36 @@ class FleetGatewayNode(Node):
         lease.robot_id = robot_id
         lease.command_id = command_id
         self._lease_publisher.publish(lease)
+        with self._navigation_lock:
+            key = (robot_id, command_id)
+            if key in self._lease_publish_counts:
+                self._lease_publish_counts[key] += 1
 
     def _on_navigation_result(self, robot_id: str, command_id: str, future) -> None:
+        result_status: Any = "exception"
         try:
-            future.result()
+            result = future.result()
+            result_status = getattr(result, "status", "unknown")
         except Exception as error:  # noqa: B902 - ROS future boundary
             self.get_logger().error(f"Navigation result failed: {error}")
+        removed = False
         with self._navigation_lock:
             active = self._active_navigation.get(robot_id)
             if active is not None and active[0] == command_id:
                 self._active_navigation.pop(robot_id, None)
                 self._confirmed_navigation.pop(robot_id, None)
                 self._navigation_accepted_at.pop(robot_id, None)
+                removed = True
+            publish_count = self._lease_publish_counts.pop(
+                (robot_id, command_id),
+                0,
+            )
+        self.get_logger().info(
+            "Navigation lease stopped reason=action_result "
+            f"robot={robot_id} command={command_id} "
+            f"result_status={result_status} published={publish_count} "
+            f"removed_active={str(removed).lower()}"
+        )
 
     @staticmethod
     def _future_result(future, timeout_sec: float):
