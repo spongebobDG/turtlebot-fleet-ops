@@ -147,7 +147,7 @@ class MapPointRequest(BaseModel):
 class MapAnnotationRequest(BaseModel):
     """Editable semantic object drawn over the immutable occupancy map."""
 
-    type: str
+    type: str  # noqa: A003 - public JSON contract uses "type"
     name: str = ""
     points: List[MapPointRequest] = Field(default_factory=list)
     pose: Optional[PoseRequest] = None
@@ -362,7 +362,7 @@ def create_app(
     def list_map_annotations(robot_id: str) -> Dict[str, Any]:
         _robot_or_404(registry, robot_id)
         store = _map_annotations_or_503(map_annotation_store)
-        annotations = store.list(robot_id)
+        annotations = store.list_for_robot(robot_id)
         return {
             "robot_id": robot_id,
             "annotations": annotations,
@@ -1374,7 +1374,7 @@ def _publish_map_annotation_snapshot(
     try:
         return controller.publish_map_annotations(
             robot_id,
-            store.list(robot_id),
+            store.list_for_robot(robot_id),
         )
     except (RuntimeError, ValueError) as error:
         return {"success": False, "message": str(error)}

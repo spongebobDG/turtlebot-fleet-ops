@@ -143,7 +143,7 @@ def main(args: Optional[List[str]] = None) -> None:
     for robot_id in node.configured_robot_ids:
         node.publish_map_annotations(
             robot_id,
-            map_annotation_store.list(robot_id),
+            map_annotation_store.list_for_robot(robot_id),
         )
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)

@@ -32,7 +32,7 @@ class MapAnnotationStore:
         self._document: Dict[str, Any] = {"version": 1, "robots": {}}
         self._load()
 
-    def list(self, robot_id: str) -> List[Dict[str, Any]]:
+    def list_for_robot(self, robot_id: str) -> List[Dict[str, Any]]:
         """Return annotations for one robot in creation order."""
         with self._lock:
             records = self._document["robots"].get(robot_id, [])
@@ -43,7 +43,7 @@ class MapAnnotationStore:
         return next(
             (
                 record
-                for record in self.list(robot_id)
+                for record in self.list_for_robot(robot_id)
                 if record["annotation_id"] == annotation_id
             ),
             None,
@@ -91,7 +91,7 @@ class MapAnnotationStore:
 
     def blocked_reason(self, robot_id: str, x: float, y: float) -> str:
         """Return the first active hard-policy violation at a map point."""
-        for record in self.list(robot_id):
+        for record in self.list_for_robot(robot_id):
             reason = annotation_blocks_point(record, x, y)
             if reason:
                 return reason
@@ -121,7 +121,7 @@ class MapAnnotationStore:
         return any(
             record.get("enabled", True)
             and record.get("type") in HARD_BLOCK_TYPES
-            for record in self.list(robot_id)
+            for record in self.list_for_robot(robot_id)
         )
 
     def _load(self) -> None:

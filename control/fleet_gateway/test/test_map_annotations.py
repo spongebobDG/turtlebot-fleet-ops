@@ -44,7 +44,7 @@ def test_store_persists_hard_policies_and_charging_destinations(tmp_path):
         occupancy_map(),
     )
 
-    reloaded = MapAnnotationStore(path).list("tb1")
+    reloaded = MapAnnotationStore(path).list_for_robot("tb1")
 
     assert [item["annotation_id"] for item in reloaded] == [
         wall["annotation_id"],
