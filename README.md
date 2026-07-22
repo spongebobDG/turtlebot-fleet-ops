@@ -2,9 +2,11 @@
 
 [![ROS 2 CI](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/workflows/ros2-ci.yml/badge.svg)](https://github.com/spongebobDG/turtlebot-fleet-ops/actions/workflows/ros2-ci.yml)
 
-TurtleBot3 Burger 한 대를 대상으로 **ROS 2 bringup → 센서 복구 → Nav2 → 웹 관제 → 안전 정지 → 작업·장애 복구**를 실제 로봇에서 연결한 시스템 소프트웨어 프로젝트입니다.
+TurtleBot3 Burger 한 대를 대상으로 **ROS 2 bringup → 센서 복구 → Nav2 → 웹 관제 → 의미 기반 공간정책 → 안전 정지 → 로컬 AI 장애 진단**을 실제 로봇 운영 흐름으로 연결한 시스템 소프트웨어 프로젝트입니다.
 
-> A real-hardware ROS 2 systems project covering TurtleBot3 integration, navigation, safe motion, fleet monitoring, and evidence-driven debugging.
+> A real-hardware ROS 2 systems project covering safe navigation, semantic map policies, fleet operations, and evidence-grounded local AI diagnostics.
+
+<img src="screenshot/웹관제 화면.png" alt="TurtleBot Fleet Ops dashboard showing the live map, robot status, operations, and ROS 2 log diagnostics" width="100%">
 
 전체 지원 포트폴리오: [ROS 2 Robot Systems Software Portfolio](https://github.com/spongebobDG/robotics-software-portfolio)
 
@@ -17,6 +19,8 @@ TurtleBot3 Burger 한 대를 대상으로 **ROS 2 bringup → 센서 복구 → 
 | 대표 장애 해결 | `/scan` 무수신을 물리 계층까지 좁혀 LDS-02 TX 이탈 발견·복구 |
 | 안전 검증 | deadman·Gateway·Zenoh 단절 후 **0.301–0.305초** 내 최종 0, 자동 재개 없음 |
 | 장시간 검증 | 600초 순찰 **11 loops**, CPU 66.1–73.6%, memory 27.1–27.3%, fault 0 |
+| 공간정책 | 웹에서 가상벽·금지·개인정보 보호구역·충전 위치를 편집하고 목표·순찰·WASD를 서버에서 재검증 |
+| 장애 진단 | 규칙 + Production 통계 모델 + 로컬 Qwen3 자문을 분리하고 근거 ID·점검 순서를 구조화 |
 
 ### 바로 볼 증거
 
@@ -24,12 +28,25 @@ TurtleBot3 Burger 한 대를 대상으로 **ROS 2 bringup → 센서 복구 → 
 - [watchdog neutral re-arm 정책](docs/case-studies/safety-watchdog-neutral-rearm.md)
 - [SLAM Toolbox variable scan 정규화](docs/case-studies/slam-toolbox-variable-scan-normalization.md)
 - [Phase 8 실기기 순찰·매핑·진단 검증](docs/learning-log/2026-07-20-phase-8-web-patrol-mapping-diagnostics.md)
+- [의미 기반 지도 정책 설계와 배포 상태](docs/design/semantic-map-zones.md)
+- [실차 구동 명령과 운영 절차](docs/setup/tb1-operation-command-guide.md)
+- [프로젝트 결과 보고서 PDF](output/pdf/turtlebot_fleet_ops_project_report_ko.pdf)
 
 ### 범위
 
 - 완료·실측 결과는 현재 `tb1` 한 대에 한정합니다.
 - TB2 자동 할당과 다중 로봇 운영은 후속 범위입니다.
 - OpenCR을 통해 DYNAMIXEL을 사용하지만 DYNAMIXEL SDK 직접 구현 프로젝트는 아닙니다.
+- 목적지·순찰·WASD의 Gateway 공간정책 차단은 구현·검증했으며, TB1 측 Nav2 Keepout Filter의 최종 실차 배포 검증은 후속 범위입니다.
+
+## 면접용 핵심 차별점
+
+1. **지도 위 표시가 실제 제어 정책이 된다.** 운영자가 그린 가상벽과 구역을 목적지, 순찰, 충전 이동, WASD 예측 위치에 동일하게 적용하고 Gateway가 서버에서 다시 검증한다.
+2. **물리적 장애물과 개인정보 정책을 구분한다.** 개인정보 보호구역은 진입 차단뿐 아니라 `NO_CAPTURE_NO_STORAGE` 메타데이터를 가져 향후 카메라·마이크·저장 정책과 연결할 수 있다.
+3. **안전 제어와 AI의 권한을 분리한다.** 규칙 엔진과 Production 통계 모델이 판정 근거를 만들고, 로컬 Qwen3는 선택 사건을 설명하는 읽기 전용 자문만 수행한다. AI 장애가 로봇 제어를 막거나 임의 명령을 만들지 않는다.
+4. **성공 장면보다 실패 복구를 증거로 남긴다.** LiDAR 배선, 센서 축, 위치 정합, 통신 단절, 정체와 재시작 문제를 재현하고 측정값·테스트·운영 문서로 연결했다.
+
+> 핵심 한 문장: 운영자가 지도 위에 정의한 공간정책을 수동조종과 자율주행에 일관되게 강제하고, 발생한 문제를 외부 전송 없이 근거 기반 로컬 AI가 설명하는 로봇 운영 플랫폼입니다.
 
 <details>
 <summary>상세 개발 상태와 Phase별 기록 펼치기</summary>
