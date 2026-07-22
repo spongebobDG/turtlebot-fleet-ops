@@ -32,6 +32,17 @@ TurtleBot3 Burger 한 대를 대상으로 **ROS 2 bringup → 센서 복구 → 
 - [실차 구동 명령과 운영 절차](docs/setup/tb1-operation-command-guide.md)
 - [프로젝트 결과 보고서 PDF](output/pdf/turtlebot_fleet_ops_project_report_ko.pdf)
 
+### 실차 데모 영상 · 총 3분 14초
+
+| 권장 순서 | 영상 | 길이 | 확인할 수 있는 내용 |
+|---:|---|---:|---|
+| 1 | [새 지도 그리기](screenshot/새맵그리기.mp4) | 1:37 | 웹 관제의 수동 조종과 실시간 SLAM 지도 생성 흐름 |
+| 2 | [위치 초기화와 Goal 이동](screenshot/위치초기화goal이동.mp4) | 0:57 | 생성한 지도에서 초기 위치를 설정하고 목적지를 전송하는 흐름 |
+| 3 | [비상정지](screenshot/비상정지.mp4) | 0:16 | 주행 중 웹 비상정지 조작과 로봇 정지 |
+| 4 | [로컬 AI 로그 분석](screenshot/로컬ai로그분석.mp4) | 0:24 | ROS 2 사건을 선택해 로컬 AI의 근거 기반 진단 보고서를 확인하는 흐름 |
+
+> 영상은 실제 TB1과 웹 관제를 함께 녹화한 원본이며 Git LFS로 관리합니다. 시연 범위와 아직 남은 Nav2 Keepout 실차 배포 항목은 아래 `범위`에 구분해 적었습니다.
+
 ### 범위
 
 - 완료·실측 결과는 현재 `tb1` 한 대에 한정합니다.
