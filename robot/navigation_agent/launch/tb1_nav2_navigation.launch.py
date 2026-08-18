@@ -19,6 +19,7 @@ def generate_launch_description() -> LaunchDescription:
     params_file = LaunchConfiguration("params_file")
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
+    lifecycle_bond_timeout = LaunchConfiguration("lifecycle_bond_timeout")
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
     configured_params = ParameterFile(
@@ -69,6 +70,11 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("params_file"),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("autostart", default_value="true"),
+            DeclareLaunchArgument(
+                "lifecycle_bond_timeout",
+                default_value="15.0",
+                description="Seconds to wait for lifecycle bonds under TB1 load",
+            ),
             DeclareLaunchArgument("use_respawn", default_value="true"),
             DeclareLaunchArgument("log_level", default_value="info"),
             Node(
@@ -221,6 +227,7 @@ def generate_launch_description() -> LaunchDescription:
                     {"use_sim_time": use_sim_time},
                     {"autostart": autostart},
                     {"node_names": lifecycle_nodes},
+                    {"bond_timeout": lifecycle_bond_timeout},
                 ],
             ),
         ]

@@ -104,7 +104,16 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"RotateToGoal"' not in nav2_launch
     assert '"GoalAlign"' not in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
-    assert '"localization_launch.py"' in launch
+    assert 'name="lifecycle_manager_localization"' in launch
+    assert 'default_value="15.0"' in launch
+    assert '{"bond_timeout": lifecycle_bond_timeout}' in launch
+    assert 'package="nav2_map_server"' in launch
+    assert 'package="nav2_amcl"' in launch
+
+    navigation_launch = (
+        PACKAGE_ROOT / "launch" / "tb1_nav2_navigation.launch.py"
+    ).read_text(encoding="utf-8")
+    assert '{"bond_timeout": lifecycle_bond_timeout}' in navigation_launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
     assert "SetRemap" not in launch
     assert '"bringup_launch.py"' not in launch
@@ -127,8 +136,7 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     ).read_text()
     assert 'LaunchConfiguration("use_sim_time")' in launch
     assert 'default_value="false"' in launch
-    assert '"use_composition": "False"' in launch
-    assert '"use_respawn": "True"' in launch
+    assert launch.count("respawn=True") >= 3
     assert '"tb1_scan_normalizer.yaml"' in launch
     assert 'executable="web_telemetry"' not in launch
     assert '"tb1_web_telemetry.yaml"' in robot_agent_launch
