@@ -127,6 +127,28 @@ W/A/S/D 또는 버튼을 누르는 동안에만 100ms마다 lease를 갱신한�
 첫 갱신 뒤에는 0.35초 command lease가 즉시 적용되고, 키를 놓거나 창이 blur/pagehide 되면
 zero와 session DELETE를 전송한다. 각 구간 뒤 `/map`, pose graph, odom과 최종 e-stop을
 확인한다.
+
+반복 매핑 실험은 관제 PC 실행기를 사용한다. 실행기는 CSV 수집, scan·profile 사전 검사,
+odom 목표 제어, 예측 정지, session 정리, e-stop과 목표 오차 자동 채점을 하나의 fail-closed
+절차로 묶는다.
+
+```powershell
+.\scripts\control-pc\run_tb1_web_mapping_experiment.ps1 `
+  -ExperimentName "tb1-mapping-forward-05" `
+  -Mode translate `
+  -Target 0.05 `
+  -Speed 0.02
+
+.\scripts\control-pc\run_tb1_web_mapping_experiment.ps1 `
+  -ExperimentName "tb1-mapping-rotate-30" `
+  -Mode rotate `
+  -Target 0.5235987756 `
+  -Speed 0.10
+```
+
+성공 결과는 `TB1_MAPPING_RESULT`의 `passed=true`이며, 생성된 CSV에 odom·scan·safety·fault가
+10Hz로 남는다. 목표의 90% 미만, 허용 overshoot 초과, active fault 또는 최종 e-stop 검증
+실패는 프로세스 종료 코드 1로 처리한다.
 `scan_queue_size=10`과 `minimum_travel_distance=0.05`는 실제 TB1에서 검증한 기준값이다.
 지도 loop closure가 안정된 뒤 저장한다.
 
