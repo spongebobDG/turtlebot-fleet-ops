@@ -247,6 +247,26 @@ def test_tb1_acceptance_tests_are_serialized_and_scoped() -> None:
     assert "NEEDRESTART_MODE=a" in deploy
 
 
+def test_tb1_acceptance_rejects_power_and_live_lidar_faults() -> None:
+    preflight = (
+        REPOSITORY_ROOT / "scripts" / "tb1" / "preflight_acceptance.sh"
+    ).read_text()
+    evidence = (
+        REPOSITORY_ROOT
+        / "scripts"
+        / "tb1"
+        / "collect_acceptance_evidence.sh"
+    ).read_text()
+
+    assert "vcgencmd get_throttled" in preflight
+    assert "current_throttle != 0" in preflight
+    assert "LDS-02 publishes live /scan data" in preflight
+    assert "ros2 topic echo /scan --once" in preflight
+    assert "--kill-after=2" in preflight
+    assert "vcgencmd measure_clock core" in evidence
+    assert "ros2 topic echo /scan --once" in evidence
+
+
 def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:
     units = REPOSITORY_ROOT / "infra" / "systemd" / "user"
     navigation_unit = (units / "tb1-navigation.service").read_text()
