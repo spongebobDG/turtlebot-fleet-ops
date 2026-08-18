@@ -235,6 +235,8 @@ def test_tb1_acceptance_tests_are_serialized_and_scoped() -> None:
     assert "--executor sequential" in deploy
     assert '--test-result-base "build/${package}"' in deploy
     assert "Install all eight TB1 user units" in deploy
+    assert "DEBIAN_FRONTEND=noninteractive" in deploy
+    assert "NEEDRESTART_MODE=a" in deploy
 
 
 def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:

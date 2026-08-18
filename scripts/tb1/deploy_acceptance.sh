@@ -93,7 +93,10 @@ deployment_failed() {
 trap deployment_failed ERR
 
 sudo apt-get update
-sudo apt-get install -y \
+sudo env \
+  DEBIAN_FRONTEND=noninteractive \
+  NEEDRESTART_MODE=a \
+  apt-get install -y \
   dbus-user-session \
   curl \
   jq \
