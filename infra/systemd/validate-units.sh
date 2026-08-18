@@ -5,7 +5,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 units_dir="${repo_root}/infra/systemd/user"
 
-systemd-analyze verify "${units_dir}"/*.service
+systemd-analyze verify "${units_dir}"/*.service "${units_dir}"/*.timer
 
 grep -Fq "Conflicts=tb1-navigation.service" \
   "${units_dir}/tb1-mapping.service"
@@ -17,6 +17,13 @@ grep -Fq "After=fleet-control-zenoh.service" \
   "${units_dir}/fleet-gateway.service"
 grep -Fq "After=fleet-gateway.service" \
   "${units_dir}/fleet-log-mlops.service"
+grep -Fq "After=fleet-log-mlops.service" \
+  "${units_dir}/fleet-mlops-evaluate.service"
+grep -Fq -- "--apply" "${units_dir}/fleet-mlops-prune.service"
+for timer in fleet-mlops-evaluate.timer fleet-mlops-prune.timer; do
+  grep -Eq '^OnCalendar=' "${units_dir}/${timer}"
+  grep -Fq "Persistent=true" "${units_dir}/${timer}"
+done
 grep -Fq "ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/scripts/tb1/wait_network_ready.sh" \
   "${units_dir}/tb1-network-ready.service"
 grep -Fq "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" \
@@ -54,4 +61,4 @@ for unit in \
   grep -Eq '^RestartSec=[1-9][0-9]*$' "${units_dir}/${unit}"
 done
 
-echo "SYSTEMD_UNIT_VALIDATION_OK restart_units=8 network_gate=1"
+echo "SYSTEMD_UNIT_VALIDATION_OK restart_units=8 network_gate=1 mlops_timers=2"

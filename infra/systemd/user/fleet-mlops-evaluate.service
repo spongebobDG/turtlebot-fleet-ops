@@ -1,0 +1,11 @@
+[Unit]
+Description=Build and evaluate a ROS 2 log model candidate
+After=fleet-log-mlops.service
+Wants=fleet-log-mlops.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/turtlebot-fleet-ops/control.env
+ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/scripts/control-pc/evaluate_ros2_log_candidate.sh
+Nice=10
+IOSchedulingClass=idle

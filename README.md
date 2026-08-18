@@ -48,7 +48,7 @@ TurtleBot3 Burger 한 대를 대상으로 **ROS 2 bringup → 센서 복구 → 
 - 완료·실측 결과는 현재 `tb1` 한 대에 한정합니다.
 - TB2 자동 할당과 다중 로봇 운영은 후속 범위입니다.
 - OpenCR을 통해 DYNAMIXEL을 사용하지만 DYNAMIXEL SDK 직접 구현 프로젝트는 아닙니다.
-- 목적지·순찰·WASD의 Gateway 공간정책 차단은 구현·검증했으며, TB1 측 Nav2 Keepout Filter의 최종 실차 배포 검증은 후속 범위입니다.
+- 목적지·순찰·WASD의 Gateway 공간정책 차단과 TB1 mask 적용 ACK를 구현·검증했으며, Keepout 경계의 최종 저속 실주행 검증은 현장 안전 확인 후 수행합니다.
 
 ## 면접용 핵심 차별점
 

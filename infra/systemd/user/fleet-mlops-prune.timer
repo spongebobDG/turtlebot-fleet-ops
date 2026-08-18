@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily ROS 2 raw log retention
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+Unit=fleet-mlops-prune.service
+
+[Install]
+WantedBy=timers.target

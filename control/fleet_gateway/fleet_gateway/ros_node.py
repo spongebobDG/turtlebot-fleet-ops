@@ -2,6 +2,7 @@
 
 from collections import deque
 from functools import partial
+import hashlib
 import json
 import math
 from queue import Full
@@ -46,6 +47,20 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from fleet_gateway.map_registry import MapRegistry, map_message_to_dict
 from fleet_gateway.registry import StatusRegistry
 from fleet_gateway.scan_registry import ScanRegistry, scan_message_to_dict
+
+
+def _map_annotation_snapshot_id(
+    robot_id: str,
+    annotations: List[Dict[str, Any]],
+) -> str:
+    """Return a stable identifier for one desired semantic-map snapshot."""
+    canonical = json.dumps(
+        {"robot_id": robot_id, "annotations": annotations},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def update_clock_offset_estimate(
@@ -536,6 +551,9 @@ class FleetGatewayNode(Node):
         annotation_topics = list(
             self.get_parameter("map_annotation_topics").value
         )
+        annotation_status_topics = list(
+            self.get_parameter("map_annotation_status_topics").value
+        )
         web_telemetry_topics = list(
             self.get_parameter("web_telemetry_topics").value
         )
@@ -561,6 +579,7 @@ class FleetGatewayNode(Node):
             save_map_names,
             map_topics,
             annotation_topics,
+            annotation_status_topics,
             web_telemetry_topics,
             scan_topics,
             scan_sensor_x,
@@ -630,6 +649,20 @@ class FleetGatewayNode(Node):
                 annotation_topics,
             )
         }
+        self._map_annotation_status: Dict[str, Dict[str, Any]] = {}
+        self._annotation_status_subscriptions = [
+            self.create_subscription(
+                String,
+                status_topic,
+                partial(self._map_annotation_status_callback, robot_id),
+                map_qos,
+                callback_group=self._callback_group,
+            )
+            for robot_id, status_topic in zip(
+                robot_ids,
+                annotation_status_topics,
+            )
+        ]
         self._map_subscriptions = [
             self.create_subscription(
                 OccupancyGrid,
@@ -782,6 +815,10 @@ class FleetGatewayNode(Node):
             ["/tb1/map_annotations"],
         )
         self.declare_parameter(
+            "map_annotation_status_topics",
+            ["/tb1/map_annotations/status"],
+        )
+        self.declare_parameter(
             "web_telemetry_topics",
             ["/fleet/web_telemetry"],
         )
@@ -828,11 +865,13 @@ class FleetGatewayNode(Node):
                 "robot_id": robot_id,
                 "message": "No map annotation topic configured",
             }
+        snapshot_id = _map_annotation_snapshot_id(robot_id, annotations)
         message = String()
         message.data = json.dumps(
             {
                 "version": 1,
                 "robot_id": robot_id,
+                "snapshot_id": snapshot_id,
                 "annotations": annotations,
             },
             ensure_ascii=False,
@@ -843,8 +882,56 @@ class FleetGatewayNode(Node):
             "success": True,
             "robot_id": robot_id,
             "annotation_count": len(annotations),
-            "message": "Map policies published to the robot",
+            "snapshot_id": snapshot_id,
+            "message": "Map policies published; awaiting robot application",
         }
+
+    def map_annotation_status(
+        self,
+        robot_id: str,
+        annotations: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Compare the desired snapshot with the robot's applied-mask ACK."""
+        expected = _map_annotation_snapshot_id(robot_id, annotations)
+        observed = self._map_annotation_status.get(robot_id)
+        if observed is None:
+            return {
+                "state": "WAITING_FOR_ROBOT",
+                "applied": False,
+                "expected_snapshot_id": expected,
+            }
+        result = dict(observed)
+        result["expected_snapshot_id"] = expected
+        result["applied"] = (
+            result.get("state") == "APPLIED"
+            and result.get("snapshot_id") == expected
+        )
+        if not result["applied"] and result.get("state") == "APPLIED":
+            result["state"] = "PENDING"
+        return result
+
+    def _map_annotation_status_callback(
+        self,
+        expected_robot_id: str,
+        message: String,
+    ) -> None:
+        try:
+            payload = json.loads(message.data)
+            if payload.get("version") != 1:
+                raise ValueError("unsupported status version")
+            if payload.get("robot_id") != expected_robot_id:
+                raise ValueError("status robot_id mismatch")
+            if not isinstance(payload.get("snapshot_id"), str):
+                raise ValueError("snapshot_id is missing")
+            if payload.get("state") not in {"WAITING_FOR_MAP", "APPLIED"}:
+                raise ValueError("invalid application state")
+        except (AttributeError, json.JSONDecodeError, TypeError, ValueError) as error:
+            self.get_logger().error(
+                f"Rejected map annotation status for {expected_robot_id}: {error}"
+            )
+            return
+        payload["received_at"] = time.time()
+        self._map_annotation_status[expected_robot_id] = payload
 
     def _status_callback(self, message: RobotStatus) -> None:
         status = status_message_to_dict(message)

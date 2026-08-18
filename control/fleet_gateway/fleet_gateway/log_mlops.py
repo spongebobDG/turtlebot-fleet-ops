@@ -15,7 +15,7 @@ import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 
-PIPELINE_VERSION = "1.3"
+PIPELINE_VERSION = "1.4"
 ACTIVE_INCIDENT_WINDOW_SEC = 120.0
 INCIDENT_DEDUP_WINDOW_SEC = 5.0
 FRESH_EVIDENCE_WINDOW_SEC = 120.0
@@ -1557,7 +1557,11 @@ def build_dataset(
                 ),
             }
         )
-    payload["dataset_hash"] = content_hash(payload)
+    # created_at is audit metadata, not dataset content. Excluding it makes a
+    # rebuild from identical records and parameters produce the same hash.
+    payload["dataset_hash"] = content_hash(
+        {key: value for key, value in payload.items() if key != "created_at"}
+    )
     return payload
 
 
@@ -1785,13 +1789,32 @@ def train_model(
             "operator-confirmed normal and fault scenario coverage is pending"
         )
     timestamp = trained_at or utc_now()
-    dataset_hash = str(dataset.get("dataset_hash") or content_hash(dataset))
+    dataset_hash = str(
+        dataset.get("dataset_hash")
+        or content_hash(
+            {
+                key: value
+                for key, value in dataset.items()
+                if key not in {"created_at", "dataset_hash"}
+            }
+        )
+    )
     model_id = (
         "ros2-log-mad-"
         f"{timestamp.replace(':', '').replace('+00:00', 'Z')}-"
         f"{dataset_hash[:8]}"
     )
-    return {
+    promotion_reasons = []
+    if not scenario_labeled:
+        promotion_reasons.append("scenario-labeled validation is required")
+    if validation_strength != "operator_confirmed":
+        promotion_reasons.append(
+            "operator-confirmed normal and fault coverage is required"
+        )
+    if not gate_passed:
+        promotion_reasons.append("quality gate did not pass")
+    promotion_ready = not promotion_reasons
+    model = {
         "pipeline_version": PIPELINE_VERSION,
         "model_type": (
             "robust_median_mad_scenario_validated"
@@ -1853,7 +1876,14 @@ def train_model(
                 else "scenario validation gate failed"
             ),
         },
+        "promotion": {
+            "ready": promotion_ready,
+            "requires_manual_approval": True,
+            "reasons": promotion_reasons,
+        },
     }
+    model["artifact_hash"] = artifact_hash(model)
+    return model
 
 
 def score_features(
@@ -1994,6 +2024,22 @@ def content_hash(payload: Mapping[str, Any]) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def artifact_hash(payload: Mapping[str, Any]) -> str:
+    """Hash an artifact while excluding its self-referential hash field."""
+    return content_hash(
+        {key: value for key, value in payload.items() if key != "artifact_hash"}
+    )
+
+
+def verify_artifact_hash(payload: Mapping[str, Any]) -> None:
+    """Reject a missing or modified versioned artifact."""
+    recorded = str(payload.get("artifact_hash") or "")
+    if not recorded:
+        raise ValueError("artifact hash is missing")
+    if recorded != artifact_hash(payload):
+        raise ValueError("artifact hash does not match its content")
 
 
 def write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -2162,20 +2208,91 @@ def pipeline_paths(root: Path) -> Dict[str, Path]:
         "models": root / "models",
         "annotations": root / "annotations",
         "production": root / "registry" / "production.json",
+        "previous": root / "registry" / "previous.json",
+        "history": root / "registry" / "history",
+        "reports": root / "reports",
         "status": root / "status" / "latest.json",
     }
 
 
-def promote_model(root: Path, candidate_path: Path) -> Dict[str, Any]:
-    """Promote only a candidate that passed the recorded quality gate."""
-    model = read_json(candidate_path)
+def promote_model(
+    root: Path,
+    candidate_path: Path,
+    approved_by: str,
+) -> Dict[str, Any]:
+    """Promote one reviewed, immutable and operator-confirmed candidate."""
+    paths = pipeline_paths(root)
+    resolved_candidate = candidate_path.expanduser().resolve()
+    if resolved_candidate.parent != paths["models"].resolve():
+        raise ValueError("candidate must be an artifact in the models directory")
+    model = read_json(resolved_candidate)
+    if model.get("pipeline_version") != PIPELINE_VERSION:
+        raise ValueError("candidate pipeline version is not current")
+    if model.get("stage") != "candidate":
+        raise ValueError("only a candidate-stage model can be promoted")
+    verify_artifact_hash(model)
     if not model.get("quality", {}).get("gate_passed", False):
         raise ValueError("candidate model did not pass the quality gate")
+    if not model.get("promotion", {}).get("ready", False):
+        reasons = "; ".join(model.get("promotion", {}).get("reasons", []))
+        raise ValueError(f"candidate is not ready for promotion: {reasons}")
+    approver = approved_by.strip()
+    if not approver:
+        raise ValueError("promotion approver is required")
+
+    promoted_at = utc_now()
     production = dict(model)
+    production["candidate_artifact_hash"] = model["artifact_hash"]
     production["stage"] = "production"
-    production["promoted_at"] = utc_now()
-    write_json(pipeline_paths(root)["production"], production)
+    production["promoted_at"] = promoted_at
+    production["approved_by"] = approver
+    production["artifact_hash"] = artifact_hash(production)
+
+    if paths["production"].is_file():
+        previous = read_json(paths["production"])
+        write_json(paths["previous"], previous)
+    write_json(paths["production"], production)
+    history_name = _registry_history_name(production, promoted_at)
+    write_json(paths["history"] / history_name, production)
     return production
+
+
+def rollback_model(root: Path, approved_by: str) -> Dict[str, Any]:
+    """Atomically reactivate the immediately previous Production model."""
+    paths = pipeline_paths(root)
+    if not paths["previous"].is_file():
+        raise ValueError("previous Production model is unavailable")
+    previous = read_json(paths["previous"])
+    if previous.get("artifact_hash"):
+        verify_artifact_hash(previous)
+    if previous.get("stage") != "production":
+        raise ValueError("previous registry artifact is not Production")
+    approver = approved_by.strip()
+    if not approver:
+        raise ValueError("rollback approver is required")
+
+    current = read_json(paths["production"]) if paths["production"].is_file() else None
+    rolled_back_at = utc_now()
+    production = dict(previous)
+    production["stage"] = "production"
+    production["promoted_at"] = rolled_back_at
+    production["rollback_from_model_id"] = (
+        current.get("model_id") if current is not None else None
+    )
+    production["rollback_approved_by"] = approver
+    production["artifact_hash"] = artifact_hash(production)
+    if current is not None:
+        write_json(paths["previous"], current)
+    write_json(paths["production"], production)
+    history_name = _registry_history_name(production, rolled_back_at)
+    write_json(paths["history"] / history_name, production)
+    return production
+
+
+def _registry_history_name(model: Mapping[str, Any], timestamp: str) -> str:
+    model_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(model["model_id"]))
+    stamp = timestamp.replace(":", "").replace("+00:00", "Z")
+    return f"{model_id}-{stamp}.json"
 
 
 def _percentile(values: Sequence[float], quantile: float) -> float:
@@ -2258,7 +2375,15 @@ def run_command(arguments: Namespace) -> int:
         print(target)
         return 0
     if arguments.command == "promote":
-        model = promote_model(root, Path(arguments.input).expanduser())
+        model = promote_model(
+            root,
+            Path(arguments.input).expanduser(),
+            arguments.approved_by,
+        )
+        print(f"{paths['production']} {model['model_id']}")
+        return 0
+    if arguments.command == "rollback":
+        model = rollback_model(root, arguments.approved_by)
         print(f"{paths['production']} {model['model_id']}")
         return 0
     if arguments.command == "replay":
@@ -2339,6 +2464,9 @@ def build_parser() -> ArgumentParser:
     train.add_argument("--input", required=True)
     promote = subparsers.add_parser("promote")
     promote.add_argument("--input", required=True)
+    promote.add_argument("--approved-by", required=True)
+    rollback = subparsers.add_parser("rollback")
+    rollback.add_argument("--approved-by", required=True)
     replay = subparsers.add_parser("replay")
     replay.add_argument("--input", required=True, action="append")
     replay.add_argument("--since-epoch", required=True, type=float)

@@ -116,6 +116,13 @@ class MapAnnotationController(Protocol):
     ) -> Dict[str, Any]:
         """Publish one complete, replace-all annotation snapshot."""
 
+    def map_annotation_status(
+        self,
+        robot_id: str,
+        annotations: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Return closed-loop robot application status for the snapshot."""
+
 
 class EStopRequest(BaseModel):
     """Emergency-stop HTTP request body."""
@@ -371,6 +378,11 @@ def create_app(
                 and item.get("type")
                 in {"virtual_wall", "keepout", "privacy"}
                 for item in annotations
+            ),
+            "application": _map_annotation_application(
+                map_annotation_controller,
+                robot_id,
+                annotations,
             ),
         }
 
@@ -1378,6 +1390,17 @@ def _publish_map_annotation_snapshot(
         )
     except (RuntimeError, ValueError) as error:
         return {"success": False, "message": str(error)}
+
+
+def _map_annotation_application(
+    controller: Optional[MapAnnotationController],
+    robot_id: str,
+    annotations: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Expose explicit pending state when no robot-side ACK is available."""
+    if controller is None or not hasattr(controller, "map_annotation_status"):
+        return {"state": "UNAVAILABLE", "applied": False}
+    return controller.map_annotation_status(robot_id, annotations)
 
 
 def _require_allowed_map_pose(

@@ -28,6 +28,8 @@ fleet_gateway:
       - /map
     map_annotation_topics:
       - /tb1/map_annotations
+    map_annotation_status_topics:
+      - /tb1/map_annotations/status
     web_telemetry_topics:
       - /fleet/web_telemetry
     scan_topics:

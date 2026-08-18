@@ -46,7 +46,9 @@ collector 재시작 때는 당일·전일 raw JSONL에서 최근 lookback 창을
 | Build | 일별 JSONL | 60초 time-window dataset | 특징 이름·window·record count·SHA-256 기록 |
 | Train | dataset artifact | median/MAD candidate | model type·dataset hash·학습 시각·품질 지표 기록 |
 | Validate | candidate metrics | gate pass/fail·warning | 최소 5개 window, 20개 record와 timestamp·logger·작업 대표성 검토 |
-| Promote | gate-pass candidate | Production registry | 명시적 승격 시각과 stage 기록 |
+| Schedule | 최근 7일 raw·annotation | candidate evaluation report | 매주 실행, Production 자동 변경 금지 |
+| Promote | 검토한 exact candidate | Production registry | artifact hash·사람 확인 coverage·명시적 승인 기록 |
+| Rollback | previous Production | Production registry | current·previous·history를 원자적으로 교체 |
 | Infer | 최근 5분 특징 | score·threshold·원인 상위 3개 | 원자적 `status/latest.json` 게시 |
 | Monitor | status REST | NORMAL/ANOMALY/ERROR | 모델·점수·임계값·기여 특징을 UI에 표시 |
 
@@ -54,6 +56,9 @@ Build 단계는 raw 전체를 지우거나 덮어쓰지 않고 검증한 `[since
 선택할 수 있다. dataset manifest와 candidate quality에는 두 경계와
 `excluded_outside_range_count`를 함께 기록한다. 따라서 사고·배포·초기 위치 대기 구간을
 정상 baseline에서 제외하면서도 원시 로그와 선택 근거를 감사할 수 있다.
+dataset hash는 동일 데이터 재생성 시 같아야 하므로 `created_at` 같은 실행별 감사 metadata는 hash
+대상에서 제외한다. candidate와 Production은 self hash를 가지며 신규 승격 때 파일 수정 여부를
+검사한다.
 
 ## 특징과 모델 선택
 

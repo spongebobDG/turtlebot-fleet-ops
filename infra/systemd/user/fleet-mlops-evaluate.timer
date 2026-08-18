@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly ROS 2 log candidate evaluation
+
+[Timer]
+OnCalendar=Sun *-*-* 03:20:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=fleet-mlops-evaluate.service
+
+[Install]
+WantedBy=timers.target

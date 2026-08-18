@@ -27,6 +27,12 @@ install -m 0644 \
   infra/systemd/user/fleet-control-zenoh.service \
   infra/systemd/user/fleet-gateway.service \
   infra/systemd/user/fleet-log-mlops.service \
+  infra/systemd/user/fleet-mlops-evaluate.service \
+  infra/systemd/user/fleet-mlops-prune.service \
+  "${HOME}/.config/systemd/user/"
+install -m 0644 \
+  infra/systemd/user/fleet-mlops-evaluate.timer \
+  infra/systemd/user/fleet-mlops-prune.timer \
   "${HOME}/.config/systemd/user/"
 
 control_env="${HOME}/.config/turtlebot-fleet-ops/control.env"
@@ -57,6 +63,7 @@ upsert_env FLEET_LOG_MLOPS_ROOT \
   "${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs"
 upsert_env FLEET_LOG_MLOPS_STATUS \
   "${HOME}/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/status/latest.json"
+default_env FLEET_LOG_MLOPS_EVALUATION_LOOKBACK_DAYS 7
 default_env FLEET_LOG_AI_ENABLED 0
 default_env FLEET_LOG_AI_BASE_URL http://127.0.0.1:11434
 default_env FLEET_LOG_AI_MODEL qwen3:8b
@@ -79,6 +86,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now \
   fleet-control-zenoh.service \
   fleet-gateway.service \
-  fleet-log-mlops.service
+  fleet-log-mlops.service \
+  fleet-mlops-evaluate.timer \
+  fleet-mlops-prune.timer
 
 echo "CONTROL_PC_SERVICES_INSTALLED robot=${robot_address}"

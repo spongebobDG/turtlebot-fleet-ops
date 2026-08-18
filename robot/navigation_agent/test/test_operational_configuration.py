@@ -122,6 +122,9 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
         "/tb1/map_annotations/filter_info"
     ) == 2
     assert 'executable="map_annotation_filter"' in launch
+    assert '"/tb1/map_annotations/status"' in (
+        PACKAGE_ROOT / "navigation_agent" / "map_annotation_filter.py"
+    ).read_text()
     assert 'LaunchConfiguration("use_sim_time")' in launch
     assert 'default_value="false"' in launch
     assert '"use_composition": "False"' in launch

@@ -11,6 +11,7 @@ from std_msgs.msg import String
 
 from fleet_gateway.map_registry import map_message_to_dict
 from fleet_gateway.ros_node import (
+    _map_annotation_snapshot_id,
     _map_save_completed_after_response_loss,
     navigation_status_to_dict,
     safety_status_to_dict,
@@ -19,6 +20,18 @@ from fleet_gateway.ros_node import (
     update_clock_offset_estimate,
     web_telemetry_message_to_dict,
 )
+
+
+def test_map_annotation_snapshot_id_is_order_independent_for_keys():
+    first = [{"type": "keepout", "points": [{"x": 1.0, "y": 2.0}]}]
+    second = [{"points": [{"y": 2.0, "x": 1.0}], "type": "keepout"}]
+
+    assert _map_annotation_snapshot_id("tb1", first) == (
+        _map_annotation_snapshot_id("tb1", second)
+    )
+    assert _map_annotation_snapshot_id("tb1", first) != (
+        _map_annotation_snapshot_id("tb2", first)
+    )
 
 
 def test_map_save_response_loss_requires_a_new_validated_status():

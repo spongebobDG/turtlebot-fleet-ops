@@ -17,8 +17,10 @@ from fleet_gateway.log_mlops import (
     parse_log_line,
     pipeline_paths,
     promote_model,
+    read_json,
     read_recent_jsonl,
     replay_jsonl_range,
+    rollback_model,
     run_command,
     score_features,
     status_from_path,
@@ -45,6 +47,59 @@ def healthy_training_records():
         start = epoch + minute * 60
         records.extend(record(start + offset) for offset in range(10))
     return records
+
+
+def promotion_ready_model(trained_at="2026-07-20T00:00:00+00:00"):
+    epoch = 1_700_000_040
+    records = []
+    for minute in range(12):
+        records.extend(
+            record(epoch + minute * 60 + offset)
+            for offset in range(10)
+        )
+    fault_messages = [
+        "watchdog input timeout triggered safety stop",
+        "received NO reply; cannot reply to client",
+        "Collision Ahead",
+        "control loop missed its desired rate",
+        "ODOM_STALE, BATTERY_STALE",
+    ]
+    for index, message in enumerate(fault_messages * 2, start=12):
+        records.extend(
+            record(epoch + index * 60 + offset, "ERROR", message)
+            for offset in range(5)
+        )
+    annotations = [
+        create_scenario_annotation(
+            "normal_navigation",
+            epoch + minute * 60,
+            epoch + (minute + 1) * 60,
+            f"confirmed normal window {minute}",
+            created_at=f"2026-07-20T00:0{minute}:00+00:00",
+        )
+        for minute in range(2)
+    ]
+    annotations.extend(
+        create_scenario_annotation(
+            label,
+            epoch + minute * 60,
+            epoch + (minute + 1) * 60,
+            f"confirmed fault {label}",
+            created_at=f"2026-07-20T00:{minute}:00+00:00",
+        )
+        for minute, label in (
+            (12, "safety_stop"),
+            (13, "connectivity_reply"),
+            (14, "obstacle_clearance"),
+        )
+    )
+    dataset = build_dataset(
+        records,
+        include_scenarios=True,
+        annotations=annotations,
+        created_at="2026-07-20T00:30:00+00:00",
+    )
+    return train_model(dataset, trained_at=trained_at)
 
 
 def test_parses_journal_json_and_ros2_console_lines():
@@ -83,6 +138,20 @@ def test_dataset_is_windowed_and_content_addressed():
     assert len(dataset["rows"]) == 6
     assert dataset["rows"][0]["features"]["line_count"] == 10.0
     assert len(dataset["dataset_hash"]) == 64
+
+
+def test_dataset_hash_excludes_creation_time():
+    first = build_dataset(
+        healthy_training_records(),
+        created_at="2026-07-19T00:00:00+00:00",
+    )
+    second = build_dataset(
+        healthy_training_records(),
+        created_at="2026-07-20T00:00:00+00:00",
+    )
+
+    assert first["created_at"] != second["created_at"]
+    assert first["dataset_hash"] == second["dataset_hash"]
 
 
 def test_dataset_discards_nonpositive_and_nonfinite_timestamps():
@@ -317,21 +386,60 @@ def test_model_promotion_rejects_failed_gate_and_publishes_atomically(
 ):
     dataset = build_dataset([record(1), record(2)])
     rejected_model = train_model(dataset)
-    rejected_path = tmp_path / "rejected.json"
+    paths = pipeline_paths(tmp_path)
+    rejected_path = paths["models"] / "rejected.json"
     write_json(rejected_path, rejected_model)
 
     with pytest.raises(ValueError, match="quality gate"):
-        promote_model(tmp_path, rejected_path)
+        promote_model(tmp_path, rejected_path, "operator")
 
-    accepted = train_model(build_dataset(healthy_training_records()))
-    accepted_path = tmp_path / "accepted.json"
+    accepted = promotion_ready_model()
+    accepted_path = paths["models"] / "accepted.json"
     write_json(accepted_path, accepted)
-    production = promote_model(tmp_path, accepted_path)
+    production = promote_model(tmp_path, accepted_path, "operator")
 
-    published = pipeline_paths(tmp_path)["production"]
+    published = paths["production"]
     assert published.is_file()
     assert production["stage"] == "production"
+    assert production["approved_by"] == "operator"
     assert status_from_path(published)["model_id"] == accepted["model_id"]
+    assert list(paths["history"].glob("*.json"))
+
+
+def test_promotion_rejects_weak_or_modified_candidates(tmp_path):
+    paths = pipeline_paths(tmp_path)
+    weak = train_model(build_dataset(healthy_training_records()))
+    weak_path = paths["models"] / "weak.json"
+    write_json(weak_path, weak)
+
+    with pytest.raises(ValueError, match="not ready for promotion"):
+        promote_model(tmp_path, weak_path, "operator")
+
+    ready = promotion_ready_model()
+    ready["threshold"] += 1
+    modified_path = paths["models"] / "modified.json"
+    write_json(modified_path, ready)
+    with pytest.raises(ValueError, match="artifact hash"):
+        promote_model(tmp_path, modified_path, "operator")
+
+
+def test_rollback_reactivates_previous_production(tmp_path):
+    paths = pipeline_paths(tmp_path)
+    first = promotion_ready_model("2026-07-20T00:00:00+00:00")
+    second = promotion_ready_model("2026-07-21T00:00:00+00:00")
+    first_path = paths["models"] / "first.json"
+    second_path = paths["models"] / "second.json"
+    write_json(first_path, first)
+    write_json(second_path, second)
+
+    promote_model(tmp_path, first_path, "operator-a")
+    promote_model(tmp_path, second_path, "operator-b")
+    rolled_back = rollback_model(tmp_path, "operator-a")
+
+    assert rolled_back["model_id"] == first["model_id"]
+    assert rolled_back["rollback_from_model_id"] == second["model_id"]
+    assert rolled_back["rollback_approved_by"] == "operator-a"
+    assert read_json(paths["previous"])["model_id"] == second["model_id"]
 
 
 def test_scoring_is_deterministic_and_missing_status_is_visible(tmp_path):

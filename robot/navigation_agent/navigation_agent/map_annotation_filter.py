@@ -1,5 +1,6 @@
 """Compile web-authored semantic map policies into a Nav2 keepout mask."""
 
+import hashlib
 import json
 import math
 from typing import Any, List, Mapping, Sequence, Tuple
@@ -61,6 +62,10 @@ class MapAnnotationFilter(Node):
             "filter_info_topic",
             "/tb1/map_annotations/filter_info",
         )
+        self.declare_parameter(
+            "status_topic",
+            "/tb1/map_annotations/status",
+        )
         self._robot_id = str(self.get_parameter("robot_id").value)
         self._mask_topic = str(self.get_parameter("mask_topic").value)
         qos = QoSProfile(
@@ -78,6 +83,11 @@ class MapAnnotationFilter(Node):
             str(self.get_parameter("filter_info_topic").value),
             qos,
         )
+        self._status_publisher = self.create_publisher(
+            String,
+            str(self.get_parameter("status_topic").value),
+            qos,
+        )
         self._map_subscription = self.create_subscription(
             OccupancyGrid,
             str(self.get_parameter("map_topic").value),
@@ -92,6 +102,7 @@ class MapAnnotationFilter(Node):
         )
         self._map = None
         self._annotations: List[Mapping[str, Any]] = []
+        self._snapshot_id = ""
         self._publish_info()
 
     def _on_map(self, message: OccupancyGrid) -> None:
@@ -112,6 +123,11 @@ class MapAnnotationFilter(Node):
             self.get_logger().error(f"Rejected map annotations: {error}")
             return
         self._annotations = annotations
+        self._snapshot_id = str(payload.get("snapshot_id") or "")
+        if not self._snapshot_id:
+            self._snapshot_id = _snapshot_id(self._robot_id, annotations)
+        if self._map is None:
+            self._publish_status("WAITING_FOR_MAP", blocked_cells=0)
         self._publish_mask()
 
     def _publish_info(self) -> None:
@@ -124,6 +140,27 @@ class MapAnnotationFilter(Node):
         message.filter_mask_topic = self._mask_topic
         self._info_publisher.publish(message)
 
+    def _publish_status(self, state: str, blocked_cells: int) -> None:
+        if not self._snapshot_id:
+            return
+        message = String()
+        message.data = json.dumps(
+            {
+                "version": 1,
+                "robot_id": self._robot_id,
+                "snapshot_id": self._snapshot_id,
+                "state": state,
+                "annotation_count": len(self._annotations),
+                "blocked_cells": blocked_cells,
+                "map_frame": (
+                    self._map.header.frame_id if self._map is not None else ""
+                ),
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        self._status_publisher.publish(message)
+
     def _publish_mask(self) -> None:
         if self._map is None:
             return
@@ -135,6 +172,7 @@ class MapAnnotationFilter(Node):
         self._mask_publisher.publish(mask)
         self._publish_info()
         blocked = sum(value == 100 for value in mask.data)
+        self._publish_status("APPLIED", blocked_cells=blocked)
         self.get_logger().info(
             "Published semantic keepout mask "
             f"annotations={len(self._annotations)} blocked_cells={blocked}"
@@ -229,6 +267,19 @@ def _quaternion_yaw(z: float, w: float) -> float:
         2.0 * normalized_w * normalized_z,
         1.0 - 2.0 * normalized_z * normalized_z,
     )
+
+
+def _snapshot_id(
+    robot_id: str,
+    annotations: Sequence[Mapping[str, Any]],
+) -> str:
+    canonical = json.dumps(
+        {"robot_id": robot_id, "annotations": annotations},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def main(args: Any = None) -> None:
