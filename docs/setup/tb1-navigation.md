@@ -121,8 +121,10 @@ ros2 topic info /cmd_vel --verbose
 
 잔류 키 입력을 막기 위해 일반 teleop 대신
 [보호 이동 기반 매핑 절차](tb1-supervised-mapping.md)의 dry-run, 5cm 직진과 30도 회전을
-반복한다. `supervised_motion`은 `/motion/manual/cmd_vel`만 발행하고 arbiter와 기존
-watchdog을 거친다. 각 구간 뒤 `/map`, pose graph, odom과 최종 e-stop을 확인한다.
+반복한다. `supervised_motion`은 IDLE 프로필에서 `/safety/cmd_vel_in`을 단독 소유하고
+기존 watchdog을 거친다. 원본 `/scan`의 TB1 LDS-02 축 오프셋도 자체 보정하므로
+Nav2·SLAM용 scan normalizer가 꺼진 상태에서도 전방 여유를 올바르게 검사한다. 각 구간 뒤
+`/map`, pose graph, odom과 최종 e-stop을 확인한다.
 `scan_queue_size=10`과 `minimum_travel_distance=0.05`는 실제 TB1에서 검증한 기준값이다.
 지도 loop closure가 안정된 뒤 저장한다.
 

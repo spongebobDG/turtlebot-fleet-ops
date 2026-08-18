@@ -285,6 +285,25 @@ def test_supervised_motion_rejects_low_clearance() -> None:
         rclpy.shutdown()
 
 
+def test_dry_run_rejects_low_clearance_before_estop_release() -> None:
+    rclpy.init()
+    watchdog, robot, executor, thread = _start_fake_graph()
+    robot.scan_range = 0.20
+    parameters = _motion_parameters()
+    parameters.append(Parameter("dry_run", value=True))
+    motion = SupervisedMotion(parameter_overrides=parameters)
+    try:
+        assert motion.run_once() is False
+        assert watchdog.estop_active is True
+        assert watchdog.release_count == 0
+        assert robot.x == 0.0
+        assert robot.y == 0.0
+    finally:
+        motion.destroy_node()
+        _stop_fake_graph(watchdog, robot, executor, thread)
+        rclpy.shutdown()
+
+
 def _enable_checkpoint(parameters, path, reset=False) -> None:
     for index, parameter in enumerate(parameters):
         if parameter.name == "pose_checkpoint_enabled":
@@ -380,7 +399,6 @@ def test_dry_run_can_reset_pose_checkpoint_without_motion(tmp_path) -> None:
 def test_failed_motion_leaves_checkpoint_blocked(tmp_path) -> None:
     rclpy.init()
     watchdog, robot, executor, thread = _start_fake_graph()
-    robot.scan_range = 0.20
     path = tmp_path / "pose.json"
     save_pose_checkpoint(
         path,
@@ -389,6 +407,11 @@ def test_failed_motion_leaves_checkpoint_blocked(tmp_path) -> None:
     parameters = _motion_parameters()
     _enable_checkpoint(parameters, path)
     motion = SupervisedMotion(parameter_overrides=parameters)
+
+    def fail_after_estop_release():
+        raise RuntimeError("injected motion failure")
+
+    motion._execute = fail_after_estop_release
     try:
         assert motion.run_once() is False
         assert watchdog.estop_active is True

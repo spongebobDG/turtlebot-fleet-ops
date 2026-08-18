@@ -172,8 +172,13 @@ def test_mapping_supports_simulation_without_changing_real_default() -> None:
     assert "supervised_motion = navigation_agent.supervised_motion:main" in (
         setup
     )
-    assert 'declare_parameter("input_topic", "/motion/manual/cmd_vel")' in (
+    assert 'declare_parameter("input_topic", "/safety/cmd_vel_in")' in (
         supervised
+    )
+    assert 'declare_parameter("scan_topic", "/scan")' in supervised
+    assert (
+        'declare_parameter("scan_forward_angle_rad", math.pi)'
+        in supervised
     )
 
 
