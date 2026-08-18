@@ -18,16 +18,25 @@ class ManualControlNode(Node):
         super().__init__("manual_control", **kwargs)
         self._declare_parameters()
         self._timeout = float(self.get_parameter("command_timeout_sec").value)
+        self._session_start_timeout = float(
+            self.get_parameter("session_start_timeout_sec").value
+        )
         self._max_linear = float(self.get_parameter("max_linear_x").value)
         self._max_angular = float(self.get_parameter("max_angular_z").value)
         rate = float(self.get_parameter("publish_rate_hz").value)
         if self._timeout <= 0.0 or rate <= 0.0:
             raise ValueError("manual control timeout and rate must be positive")
+        if self._session_start_timeout < self._timeout:
+            raise ValueError(
+                "manual session start timeout must not be shorter than "
+                "the command timeout"
+            )
         if self._max_linear <= 0.0 or self._max_angular <= 0.0:
             raise ValueError("manual control velocity limits must be positive")
         self._lock = threading.RLock()
         self._session_id = ""
         self._last_command_at: Optional[float] = None
+        self._session_start_pending = False
         self._command = Twist()
         self._mode_request_pending = False
         self._desired_mode = SetMotionMode.Request.MODE_IDLE
@@ -60,6 +69,11 @@ class ManualControlNode(Node):
             "motion_mode_service", "/tb1/navigation/set_motion_mode"
         )
         self.declare_parameter("command_timeout_sec", 0.35)
+        # The browser creates a zero-command session and then sends its first
+        # deadman refresh in a second HTTP/ROS round trip.  Keep that harmless
+        # startup session alive long enough for a loaded TB1, while retaining
+        # the short command lease as soon as the first refresh arrives.
+        self.declare_parameter("session_start_timeout_sec", 2.0)
         self.declare_parameter("publish_rate_hz", 20.0)
         self.declare_parameter("max_linear_x", 0.05)
         self.declare_parameter("max_angular_z", 0.3)
@@ -104,6 +118,11 @@ class ManualControlNode(Node):
             new_session = not self._session_id
             self._session_id = session_id
             self._last_command_at = now
+            self._session_start_pending = (
+                new_session
+                and abs(values[0]) <= 1.0e-9
+                and abs(values[5]) <= 1.0e-9
+            )
             self._command = Twist()
             self._command.linear.x = max(
                 -self._max_linear,
@@ -128,10 +147,15 @@ class ManualControlNode(Node):
         self._publisher.publish(command)
 
     def _expire_locked(self, now: float) -> None:
+        timeout = (
+            self._session_start_timeout
+            if self._session_start_pending
+            else self._timeout
+        )
         if (
             self._session_id
             and self._last_command_at is not None
-            and now - self._last_command_at > self._timeout
+            and now - self._last_command_at > timeout
         ):
             self._stop_locked("Manual command lease expired")
 
@@ -139,6 +163,7 @@ class ManualControlNode(Node):
         had_session = bool(self._session_id)
         self._session_id = ""
         self._last_command_at = None
+        self._session_start_pending = False
         self._command = Twist()
         context_ok = self.context.ok()
         if context_ok:

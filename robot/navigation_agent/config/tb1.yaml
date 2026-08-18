@@ -48,6 +48,7 @@ manual_control:
     manual_output_topic: /motion/manual/cmd_vel
     motion_mode_service: /tb1/navigation/set_motion_mode
     command_timeout_sec: 0.35
+    session_start_timeout_sec: 2.0
     publish_rate_hz: 20.0
     max_linear_x: 0.05
     max_angular_z: 0.3

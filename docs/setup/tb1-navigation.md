@@ -119,12 +119,14 @@ ros2 topic echo /scan_normalized --once --field ranges | head
 ros2 topic info /cmd_vel --verbose
 ```
 
-잔류 키 입력을 막기 위해 일반 teleop 대신
-[보호 이동 기반 매핑 절차](tb1-supervised-mapping.md)의 dry-run, 5cm 직진과 30도 회전을
-반복한다. `supervised_motion`은 IDLE 프로필에서 `/safety/cmd_vel_in`을 단독 소유하고
-기존 watchdog을 거친다. 원본 `/scan`의 TB1 LDS-02 축 오프셋도 자체 보정하므로
-Nav2·SLAM용 scan normalizer가 꺼진 상태에서도 전방 여유를 올바르게 검사한다. 각 구간 뒤
-`/map`, pose graph, odom과 최종 e-stop을 확인한다.
+실차 하드웨어 인수 검사는
+[보호 이동 기반 매핑 절차](tb1-supervised-mapping.md)의 IDLE dry-run, 5cm 직진과 30도
+회전으로 먼저 통과한다. 실제 MAPPING 프로필에서는 웹의 deadman manual session만 사용하고
+W/A/S/D 또는 버튼을 누르는 동안에만 100ms마다 lease를 갱신한다. 브라우저의 session POST와
+첫 PUT은 서로 다른 HTTP/ROS 왕복이므로, 무동작 초기 session에만 2초 startup 유예를 준다.
+첫 갱신 뒤에는 0.35초 command lease가 즉시 적용되고, 키를 놓거나 창이 blur/pagehide 되면
+zero와 session DELETE를 전송한다. 각 구간 뒤 `/map`, pose graph, odom과 최종 e-stop을
+확인한다.
 `scan_queue_size=10`과 `minimum_travel_distance=0.05`는 실제 TB1에서 검증한 기준값이다.
 지도 loop closure가 안정된 뒤 저장한다.
 

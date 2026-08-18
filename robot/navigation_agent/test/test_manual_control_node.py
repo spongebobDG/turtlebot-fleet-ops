@@ -105,6 +105,64 @@ def test_manual_session_clamps_and_expires_to_idle_zero():
         rclpy.shutdown()
 
 
+def test_zero_session_gets_startup_grace_then_short_deadman_timeout():
+    rclpy.init()
+    arbiter = MotionArbiter(
+        parameter_overrides=[
+            Parameter("manual_input_topic", value="/test/startup/input"),
+            Parameter("navigation_input_topic", value="/test/startup/nav"),
+            Parameter("output_topic", value="/test/startup/output"),
+            Parameter("authorization_topic", value="/test/startup/auth"),
+            Parameter("mode_service", value="/test/startup/mode"),
+            Parameter("publish_rate_hz", value=50.0),
+        ]
+    )
+    manual = ManualControlNode(
+        parameter_overrides=[
+            Parameter("command_service", value="/test/startup/command"),
+            Parameter("manual_output_topic", value="/test/startup/input"),
+            Parameter("motion_mode_service", value="/test/startup/mode"),
+            Parameter("command_timeout_sec", value=0.2),
+            Parameter("session_start_timeout_sec", value=1.5),
+            Parameter("publish_rate_hz", value=50.0),
+        ]
+    )
+    probe = Node("manual_startup_grace_probe")
+    client = probe.create_client(ManualCommand, "/test/startup/command")
+    executor = SingleThreadedExecutor()
+    executor.add_node(arbiter)
+    executor.add_node(manual)
+    executor.add_node(probe)
+    try:
+        spin_until(executor, client.service_is_ready)
+        start = ManualCommand.Request()
+        start.session_id = "web-session"
+        started = client.call_async(start)
+        spin_until(executor, started.done)
+        assert started.result().success
+
+        grace_deadline = time.monotonic() + 0.35
+        while time.monotonic() < grace_deadline:
+            executor.spin_once(timeout_sec=0.02)
+        assert manual._session_id == "web-session"
+
+        refresh = ManualCommand.Request()
+        refresh.session_id = "web-session"
+        refreshed = client.call_async(refresh)
+        spin_until(executor, refreshed.done)
+        assert refreshed.result().success
+        spin_until(executor, lambda: manual._session_id == "", timeout=0.6)
+    finally:
+        executor.remove_node(probe)
+        executor.remove_node(manual)
+        executor.remove_node(arbiter)
+        probe.destroy_node()
+        manual.destroy_node()
+        arbiter.destroy_node()
+        executor.shutdown()
+        rclpy.shutdown()
+
+
 def test_destroy_after_context_shutdown_does_not_publish():
     rclpy.init()
     manual = ManualControlNode(

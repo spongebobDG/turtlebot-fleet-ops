@@ -46,6 +46,8 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "navigation_min_clearance_m: 0.16" in agent_config
     assert "nav2_lifecycle_service: /bt_navigator/get_state" in agent_config
     assert "authorization_timeout_sec: 0.5" in agent_config
+    assert "command_timeout_sec: 0.35" in agent_config
+    assert "session_start_timeout_sec: 2.0" in agent_config
     assert "navigation_input_topic: /motion/navigation/cmd_vel" in agent_config
     assert "output_topic: /safety/cmd_vel_in" in agent_config
     assert "mode_service: /tb1/navigation/set_motion_mode" in agent_config
