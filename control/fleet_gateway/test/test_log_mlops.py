@@ -872,6 +872,67 @@ def test_expected_initial_pose_spam_is_deprioritized():
     assert localization["occurrence_count"] == 1
 
 
+def test_expected_initial_pose_spam_does_not_raise_model_anomaly():
+    dataset = build_dataset(
+        healthy_training_records(),
+        created_at="2026-07-19T00:00:00+00:00",
+    )
+    model = train_model(
+        dataset,
+        trained_at="2026-07-19T00:01:00+00:00",
+    )
+    records = [
+        record(
+            100 + index,
+            "WARNING",
+            "AMCL cannot publish a pose. Please set the initial pose...",
+        )
+        for index in range(50)
+    ]
+
+    status = analyze_records(records, {**model, "stage": "production"})
+
+    assert status["state"] == "NORMAL"
+    assert status["score"] == 0.0
+    assert status["operational_signals"] == [
+        {"signal": "initial_pose_wait", "label": "초기 위치 대기", "count": 50}
+    ]
+
+
+def test_initial_pose_wait_filter_does_not_hide_concurrent_fault():
+    dataset = build_dataset(
+        healthy_training_records(),
+        created_at="2026-07-19T00:00:00+00:00",
+    )
+    model = train_model(
+        dataset,
+        trained_at="2026-07-19T00:01:00+00:00",
+    )
+    records = [
+        *[
+            record(
+                100 + index,
+                "WARNING",
+                "AMCL cannot publish a pose. Please set the initial pose...",
+            )
+            for index in range(50)
+        ],
+        *[
+            record(
+                200 + index,
+                "ERROR",
+                "navigation goal aborted after timeout",
+            )
+            for index in range(10)
+        ],
+    ]
+
+    status = analyze_records(records, {**model, "stage": "production"})
+
+    assert status["state"] == "ANOMALY"
+    assert status["score"] > status["threshold"]
+
+
 def test_diagnosis_separates_active_and_historical_evidence():
     diagnoses = diagnose_records(
         [

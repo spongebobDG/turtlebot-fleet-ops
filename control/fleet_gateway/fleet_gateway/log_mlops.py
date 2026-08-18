@@ -1886,6 +1886,38 @@ def train_model(
     return model
 
 
+def _is_expected_initial_pose_wait(record: LogRecord) -> bool:
+    """Identify AMCL's normal warning while no initial pose exists yet."""
+    return (
+        record.severity.upper() in {"WARNING", "WARN"}
+        and bool(
+            re.search(
+                r"AMCL cannot publish.*set the initial pose",
+                record.message,
+                re.I,
+            )
+        )
+    )
+
+
+def extract_scoring_features(
+    records: Sequence[LogRecord],
+    model: Mapping[str, Any],
+) -> Dict[str, float]:
+    """Exclude known startup chatter without hiding concurrent faults."""
+    actionable_records = [
+        record
+        for record in records
+        if not _is_expected_initial_pose_wait(record)
+    ]
+    if actionable_records:
+        return extract_features(actionable_records)
+    return {
+        feature: float(model.get("centers", {}).get(feature, 0.0))
+        for feature in model.get("feature_names", FEATURE_NAMES)
+    }
+
+
 def score_features(
     features: Mapping[str, Any],
     model: Mapping[str, Any],
@@ -1946,7 +1978,7 @@ def analyze_records(
             + (f" 현재 운영 신호: {signal_summary}." if signal_summary else "")
         )
         return status
-    features = extract_features(records)
+    features = extract_scoring_features(records, model)
     score = score_features(features, model)
     threshold = float(model["threshold"])
     state = "ANOMALY" if score["score"] > threshold else "NORMAL"
