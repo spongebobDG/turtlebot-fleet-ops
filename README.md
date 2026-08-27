@@ -10,6 +10,21 @@ TurtleBot3 Burger 한 대를 대상으로 **ROS 2 bringup → 센서 복구 → 
 
 전체 지원 포트폴리오: [ROS 2 Robot Systems Software Portfolio](https://github.com/spongebobDG/robotics-software-portfolio)
 
+| 구분 | 내용 |
+|---|---|
+| 기간 | 2026.07.13–2026.07.24 |
+| 구성 | 개인 프로젝트 |
+| 과정 | 대구가톨릭대학교 인공지능 부트캠프 PBL |
+| 성과 | 2026.08.27 우수상 |
+| 지원 직무 | ROBOTIS 휴머노이드 시스템 소프트웨어 엔지니어 |
+
+### 면접자가 먼저 볼 순서
+
+1. 아래 **60초 요약**에서 실기기·안전·운영 수치 확인
+2. [`/scan` 무수신 9단계 추적](docs/case-studies/lds02-scan-data-recovery.md)에서 Linux·UART·배선 디버깅 과정 확인
+3. [실차 데모 4개](#실차-데모-영상--총-3분-14초)에서 SLAM·Nav2·E-Stop·로그 진단 확인
+4. [ROBOTIS 지원 매핑](https://github.com/spongebobDG/robotics-software-portfolio/blob/main/applications/robotis-humanoid-system-sw.md)에서 보유 역량과 학습 공백 확인
+
 ## 60초 요약
 
 | 구분 | 내용 |
