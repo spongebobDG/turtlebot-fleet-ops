@@ -22,7 +22,6 @@ import yaml
 def generate_launch_description() -> LaunchDescription:
     """Use the Humble Burger baseline with watchdog-aligned velocity limits."""
     share_dir = Path(get_package_share_directory("navigation_agent"))
-    nav2_share = Path(get_package_share_directory("nav2_bringup"))
     tb3_share = Path(get_package_share_directory("turtlebot3_navigation2"))
     official_params = tb3_share / "param" / "humble" / "burger.yaml"
     agent_config = share_dir / "config" / "tb1.yaml"
@@ -34,6 +33,7 @@ def generate_launch_description() -> LaunchDescription:
         raise ValueError("TB1 Nav2 parameter rewrites must be a non-empty map")
     map_file = LaunchConfiguration("map")
     use_sim_time = LaunchConfiguration("use_sim_time")
+    lifecycle_bond_timeout = LaunchConfiguration("lifecycle_bond_timeout")
     configured_params = RewrittenYaml(
         source_file=str(official_params),
         root_key=None,
@@ -70,18 +70,47 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="false",
                 description="Use a simulator clock instead of system time",
             ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    str(nav2_share / "launch" / "localization_launch.py")
+            DeclareLaunchArgument(
+                "lifecycle_bond_timeout",
+                default_value="15.0",
+                description=(
+                    "Seconds lifecycle managers wait for bonds on resource-limited TB1"
                 ),
-                launch_arguments={
-                    "map": map_file,
-                    "params_file": configured_params,
-                    "use_sim_time": use_sim_time,
-                    "autostart": "true",
-                    "use_composition": "False",
-                    "use_respawn": "True",
-                }.items(),
+            ),
+            Node(
+                package="nav2_map_server",
+                executable="map_server",
+                name="map_server",
+                output="screen",
+                parameters=[
+                    configured_params,
+                    {"yaml_filename": map_file, "use_sim_time": use_sim_time},
+                ],
+                remappings=[("/tf", "tf"), ("/tf_static", "tf_static")],
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
+                package="nav2_amcl",
+                executable="amcl",
+                name="amcl",
+                output="screen",
+                parameters=[configured_params, {"use_sim_time": use_sim_time}],
+                remappings=[("/tf", "tf"), ("/tf_static", "tf_static")],
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
+                package="nav2_lifecycle_manager",
+                executable="lifecycle_manager",
+                name="lifecycle_manager_localization",
+                output="screen",
+                parameters=[
+                    {"use_sim_time": use_sim_time},
+                    {"autostart": True},
+                    {"node_names": ["map_server", "amcl"]},
+                    {"bond_timeout": lifecycle_bond_timeout},
+                ],
             ),
             Node(
                 package="navigation_agent",
@@ -113,6 +142,7 @@ def generate_launch_description() -> LaunchDescription:
                     "use_sim_time": use_sim_time,
                     "autostart": "true",
                     "use_respawn": "true",
+                    "lifecycle_bond_timeout": lifecycle_bond_timeout,
                 }.items(),
             ),
             Node(

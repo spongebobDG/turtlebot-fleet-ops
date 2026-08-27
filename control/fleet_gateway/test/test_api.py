@@ -520,6 +520,14 @@ class FakeMapAnnotationController:
             "annotation_count": len(annotations),
         }
 
+    def map_annotation_status(self, robot_id, annotations):
+        return {
+            "state": "APPLIED",
+            "applied": True,
+            "snapshot_id": "snapshot-1",
+            "blocked_cells": 42,
+        }
+
 
 def test_local_log_ai_status_and_on_demand_analysis_routes():
     analyzer = FakeLogAIAnalyzer()
@@ -652,6 +660,8 @@ def test_map_annotation_api_distributes_and_enforces_privacy_zone():
     assert created.status_code == 201
     assert created.json()["policy"]["data"] == "NO_CAPTURE_NO_STORAGE"
     assert listed.json()["hard_block_count"] == 1
+    assert listed.json()["application"]["applied"] is True
+    assert listed.json()["application"]["blocked_cells"] == 42
     assert blocked.status_code == 409
     assert "개인정보 보호구역" in blocked.json()["detail"]
     assert deleted.status_code == 202

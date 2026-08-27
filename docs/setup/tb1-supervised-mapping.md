@@ -4,6 +4,11 @@
 하고, 한 번에 짧은 거리나 각도만 실행하는 절차다. 잔류 텔레옵 명령 Incident 이후
 텔레옵은 이 매핑 절차에 사용하지 않는다.
 
+보호 이동은 IDLE 프로필에서 watchdog의 `/safety/cmd_vel_in`을 직접 단독 소유한다.
+`/motion/manual/cmd_vel`은 arbiter가 없는 IDLE에서 watchdog까지 전달되지 않으므로 사용하지
+않는다. 전방 여유는 항상 발행되는 원본 `/scan`에 TB1 LDS-02의 π rad 축 보정을 적용해
+검사하므로 `/scan_normalized`가 꺼져 있어도 동작한다.
+
 ## 역할 구분
 
 사용자가 현장에서 직접 확인할 항목:
@@ -155,6 +160,19 @@ ros2 run navigation_agent supervised_motion --ros-args \
 반대 방향 회전이 제한을 넘거나 odom·scan이 0.5초 이상 stale이면 실패한다.
 
 ## 6. 매 동작 뒤 증거
+
+모든 실험은 동작 전 관제 PC에서 CSV 수집을 먼저 시작한다. 기본 형식은 10Hz이며
+odom·scan·safety·Nav2·배터리·Wi-Fi·CPU·fault를 같은 행에 기록한다.
+
+```powershell
+.\scripts\control-pc\collect_tb1_experiment_csv.ps1 `
+  -ExperimentName "tb1-5cm-forward" `
+  -DurationSec 30
+```
+
+파일은 기본적으로 `artifacts/experiments/<UTC>-<experiment>.csv`에 기록한다. 수집기 시작
+메시지에서 파일 경로를 확인한 뒤에만 실제 동작을 시작하고, 종료 후 행 수와
+`collection_error` 열을 확인한다.
 
 ```bash
 ros2 topic echo \

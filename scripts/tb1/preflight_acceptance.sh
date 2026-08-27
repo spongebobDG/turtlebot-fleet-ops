@@ -105,6 +105,27 @@ if [[ -e /dev/serial0 ]]; then
 else
   fail "LDS-02 UART /dev/serial0 is missing"
 fi
+if command -v vcgencmd >/dev/null 2>&1; then
+  throttle_report="$(vcgencmd get_throttled 2>/dev/null || true)"
+  throttle_hex="${throttle_report#*=}"
+  if [[ "${throttle_hex}" =~ ^0x[0-9A-Fa-f]+$ ]]; then
+    throttle_flags=$((throttle_hex))
+    current_throttle=$((throttle_flags & 0xF))
+    historical_throttle=$(((throttle_flags >> 16) & 0xF))
+    if (( current_throttle != 0 )); then
+      fail "Raspberry Pi power/thermal throttle is active (${throttle_report})"
+    else
+      pass "Raspberry Pi has no active power/thermal throttle"
+    fi
+    if (( historical_throttle != 0 )); then
+      warn "Raspberry Pi throttle occurred since boot (${throttle_report})"
+    fi
+  else
+    warn "Raspberry Pi throttle state could not be parsed"
+  fi
+else
+  warn "vcgencmd unavailable; Raspberry Pi power state was not verified"
+fi
 if id -nG | tr ' ' '\n' | grep -qx dialout; then
   pass "user belongs to dialout"
 else
@@ -156,6 +177,24 @@ for unit in tb1-mapping.service tb1-navigation.service; do
     pass "${unit} inactive"
   fi
 done
+
+if systemctl --user is-active --quiet tb1-bringup.service \
+  && command -v ros2 >/dev/null 2>&1; then
+  scan_probe="$({
+    ROS_DOMAIN_ID=42 \
+    ROS_LOCALHOST_ONLY=0 \
+    RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+      timeout --signal=TERM --kill-after=2 12 \
+      ros2 topic echo /scan --once \
+      --qos-reliability best_effort --field header
+  } 2>&1)"
+  scan_probe_status=$?
+  if (( scan_probe_status == 0 )) && grep -q 'frame_id:' <<<"${scan_probe}"; then
+    pass "LDS-02 publishes live /scan data"
+  else
+    fail "LDS-02 /scan data unavailable (probe exit ${scan_probe_status})"
+  fi
+fi
 
 if [[ -r "${map_file}" ]]; then
   pass "saved map ${map_file}"

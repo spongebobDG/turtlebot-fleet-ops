@@ -110,6 +110,10 @@ jobs:
           ROS_DOMAIN_ID: "142"
         run: bash infra/navigation/run-robotless-operations-smoke.sh
 
+      - name: Run MLOps automation acceptance
+        shell: bash
+        run: bash scripts/control-pc/test_mlops_automation.sh
+
       - name: Run workspace tests
         shell: bash
         env:

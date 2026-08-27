@@ -27,6 +27,11 @@ run df -h "${HOME}"
 run timedatectl status
 run id
 run ls -l /dev/serial0
+if command -v vcgencmd >/dev/null 2>&1; then
+  run vcgencmd get_throttled
+  run vcgencmd measure_clock core
+  run vcgencmd measure_volts core
+fi
 if command -v pidstat >/dev/null 2>&1; then
   run pidstat -r -u 1 3
 fi
@@ -84,6 +89,9 @@ if [[ -r /opt/ros/humble/setup.bash ]]; then
   run timeout 10 ros2 topic info /cmd_vel --verbose
   run timeout 10 ros2 topic info /safety/cmd_vel_in --verbose
   run timeout 10 ros2 topic info /motion/navigation/cmd_vel --verbose
+  run timeout --signal=TERM --kill-after=2 12 \
+    ros2 topic echo /scan --once \
+    --qos-reliability best_effort --field header
   run timeout 10 ros2 topic echo /fleet/safety_status --once
   run timeout 10 ros2 topic echo /fleet/navigation_status --once
   run timeout 10 ros2 topic echo /fleet/robot_status --once

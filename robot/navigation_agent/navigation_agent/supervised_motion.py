@@ -99,10 +99,14 @@ class SupervisedMotion(Node):
             "max_checkpoint_yaw_rad",
             math.radians(5.0),
         )
-        self.declare_parameter("input_topic", "/motion/manual/cmd_vel")
+        self.declare_parameter("input_topic", "/safety/cmd_vel_in")
         self.declare_parameter("output_topic", "/cmd_vel")
         self.declare_parameter("odom_topic", "/odom")
-        self.declare_parameter("scan_topic", "/scan_normalized")
+        self.declare_parameter("scan_topic", "/scan")
+        # TB1's LDS-02 reports angle zero opposite base_link +X.  The
+        # supervised guard consumes the always-on raw scan so it also works
+        # in the IDLE profile, where the Nav2/SLAM normalizer is not running.
+        self.declare_parameter("scan_forward_angle_rad", math.pi)
         self.declare_parameter(
             "estop_status_topic",
             "/fleet/safety_status",
@@ -178,6 +182,9 @@ class SupervisedMotion(Node):
         )
         self._odom_topic = str(self.get_parameter("odom_topic").value)
         self._scan_topic = str(self.get_parameter("scan_topic").value)
+        self._scan_forward_angle = float(
+            self.get_parameter("scan_forward_angle_rad").value
+        )
         self._estop_status_topic = str(
             self.get_parameter("estop_status_topic").value
         )
@@ -379,7 +386,19 @@ class SupervisedMotion(Node):
                 and now - self._output_received_at < 0.5
             ):
                 return
-        raise RuntimeError("required odom, scan, or output data is stale")
+        now = time.monotonic()
+
+        def describe(message, received_at: float) -> str:
+            if message is None:
+                return "missing"
+            return f"age={now - received_at:.3f}s"
+
+        raise RuntimeError(
+            "required data is stale: "
+            f"odom={describe(self._odom, self._odom_received_at)}, "
+            f"scan={describe(self._scan, self._scan_received_at)}, "
+            f"output={describe(self._output, self._output_received_at)}"
+        )
 
     def _require_zero_output(self) -> None:
         if self._output is None:
@@ -476,7 +495,9 @@ class SupervisedMotion(Node):
     def _clearance(self) -> float:
         if self._scan is None:
             raise RuntimeError("scan is unavailable")
-        center = 0.0 if self._speed > 0.0 else math.pi
+        center = self._scan_forward_angle
+        if self._speed < 0.0:
+            center += math.pi
         clearance = sector_minimum(
             self._scan.ranges,
             self._scan.angle_min,
@@ -489,6 +510,18 @@ class SupervisedMotion(Node):
         if clearance is None:
             raise RuntimeError("no valid scan samples in travel direction")
         return clearance
+
+    def _require_initial_clearance(self) -> None:
+        if self._mode != "translate":
+            return
+        clearance = self._clearance()
+        if clearance < self._minimum_clearance_m:
+            raise RuntimeError(
+                f"clearance is only {clearance:.3f} m before e-stop release"
+            )
+        self.get_logger().info(
+            f"initial travel clearance accepted: {clearance:.3f} m"
+        )
 
     def _make_progress_tracker(self):
         if self._odom is None:
@@ -629,6 +662,7 @@ class SupervisedMotion(Node):
             self._publish_zero(5)
             self._preflight()
             self._check_pose_checkpoint()
+            self._require_initial_clearance()
             if self._dry_run:
                 self._publish_zero(5)
                 self._require_zero_output()

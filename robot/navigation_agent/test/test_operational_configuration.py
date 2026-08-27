@@ -46,6 +46,8 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert "navigation_min_clearance_m: 0.16" in agent_config
     assert "nav2_lifecycle_service: /bt_navigator/get_state" in agent_config
     assert "authorization_timeout_sec: 0.5" in agent_config
+    assert "command_timeout_sec: 0.35" in agent_config
+    assert "session_start_timeout_sec: 2.0" in agent_config
     assert "navigation_input_topic: /motion/navigation/cmd_vel" in agent_config
     assert "output_topic: /safety/cmd_vel_in" in agent_config
     assert "mode_service: /tb1/navigation/set_motion_mode" in agent_config
@@ -104,7 +106,16 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
     assert '"RotateToGoal"' not in nav2_launch
     assert '"GoalAlign"' not in nav2_launch
     assert '"tb1_nav2_rewrites.yaml"' in launch
-    assert '"localization_launch.py"' in launch
+    assert 'name="lifecycle_manager_localization"' in launch
+    assert 'default_value="15.0"' in launch
+    assert '{"bond_timeout": lifecycle_bond_timeout}' in launch
+    assert 'package="nav2_map_server"' in launch
+    assert 'package="nav2_amcl"' in launch
+
+    navigation_launch = (
+        PACKAGE_ROOT / "launch" / "tb1_nav2_navigation.launch.py"
+    ).read_text(encoding="utf-8")
+    assert '{"bond_timeout": lifecycle_bond_timeout}' in navigation_launch
     assert '"tb1_nav2_navigation.launch.py"' in launch
     assert "SetRemap" not in launch
     assert '"bringup_launch.py"' not in launch
@@ -122,10 +133,12 @@ def test_navigation_timeouts_topics_and_velocity_limits_are_pinned() -> None:
         "/tb1/map_annotations/filter_info"
     ) == 2
     assert 'executable="map_annotation_filter"' in launch
+    assert '"/tb1/map_annotations/status"' in (
+        PACKAGE_ROOT / "navigation_agent" / "map_annotation_filter.py"
+    ).read_text()
     assert 'LaunchConfiguration("use_sim_time")' in launch
     assert 'default_value="false"' in launch
-    assert '"use_composition": "False"' in launch
-    assert '"use_respawn": "True"' in launch
+    assert launch.count("respawn=True") >= 3
     assert '"tb1_scan_normalizer.yaml"' in launch
     assert 'executable="web_telemetry"' not in launch
     assert '"tb1_web_telemetry.yaml"' in robot_agent_launch
@@ -161,8 +174,13 @@ def test_mapping_supports_simulation_without_changing_real_default() -> None:
     assert "supervised_motion = navigation_agent.supervised_motion:main" in (
         setup
     )
-    assert 'declare_parameter("input_topic", "/motion/manual/cmd_vel")' in (
+    assert 'declare_parameter("input_topic", "/safety/cmd_vel_in")' in (
         supervised
+    )
+    assert 'declare_parameter("scan_topic", "/scan")' in supervised
+    assert (
+        'declare_parameter("scan_forward_angle_rad", math.pi)'
+        in supervised
     )
 
 
@@ -232,6 +250,28 @@ def test_tb1_acceptance_tests_are_serialized_and_scoped() -> None:
     assert "--executor sequential" in deploy
     assert '--test-result-base "build/${package}"' in deploy
     assert "Install all eight TB1 user units" in deploy
+    assert "DEBIAN_FRONTEND=noninteractive" in deploy
+    assert "NEEDRESTART_MODE=a" in deploy
+
+
+def test_tb1_acceptance_rejects_power_and_live_lidar_faults() -> None:
+    preflight = (
+        REPOSITORY_ROOT / "scripts" / "tb1" / "preflight_acceptance.sh"
+    ).read_text()
+    evidence = (
+        REPOSITORY_ROOT
+        / "scripts"
+        / "tb1"
+        / "collect_acceptance_evidence.sh"
+    ).read_text()
+
+    assert "vcgencmd get_throttled" in preflight
+    assert "current_throttle != 0" in preflight
+    assert "LDS-02 publishes live /scan data" in preflight
+    assert "ros2 topic echo /scan --once" in preflight
+    assert "--kill-after=2" in preflight
+    assert "vcgencmd measure_clock core" in evidence
+    assert "ros2 topic echo /scan --once" in evidence
 
 
 def test_process_recovery_preserves_fail_closed_motion_ownership() -> None:

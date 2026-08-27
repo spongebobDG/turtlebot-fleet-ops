@@ -4,7 +4,8 @@
 rollback을 수행한다. 원시 로그와 모델은 Git이 아닌 사용자 로컬 데이터 디렉터리에 저장한다.
 
 운영 보존 기준은 raw JSONL 30일이다. dataset, candidate model과 Production registry는 lineage
-감사를 위해 자동 삭제하지 않는다. 삭제 스크립트는 기본 dry-run이며 출력 경로를 검토한 뒤에만
+감사를 위해 자동 삭제하지 않는다. 제어 서비스 설치 뒤 `fleet-mlops-prune.timer`가 매일 raw
+정리를 적용한다. 삭제 스크립트의 수동 실행은 기본 dry-run이며 출력 경로를 검토한 뒤에만
 `--apply`를 사용한다.
 
 ```bash
@@ -19,6 +20,8 @@ systemctl --user is-active \
   fleet-control-zenoh.service \
   fleet-gateway.service \
   fleet-log-mlops.service
+systemctl --user list-timers \
+  fleet-mlops-evaluate.timer fleet-mlops-prune.timer
 
 ros2 topic info /fleet/rosout -v
 curl -sS http://localhost:8000/api/mlops/ros2-logs | jq
@@ -132,26 +135,29 @@ ros2 run fleet_gateway ros2_log_mlops \
 후보 파일에서 다음을 검토한다.
 
 ```bash
-jq '{model_id,dataset_hash,threshold,quality,centers,scales}' \
+jq '{model_id,dataset_hash,artifact_hash,threshold,quality,validation,promotion}' \
   ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/models/*.json
 ```
 
 ## 4. Production 승격
 
-정상 기준 구간과 품질 지표를 확인한 뒤 같은 pipeline을 `--promote`로 실행한다.
+정상 기준 구간과 품질 지표를 확인한 뒤 출력된 정확한 candidate 경로를 지정해 승격한다. 승격
+명령은 dataset을 다시 만들거나 재학습하지 않는다.
 
 ```bash
 bash scripts/control-pc/train_ros2_log_baseline.sh \
-  --since-epoch "$SINCE_EPOCH" \
-  --until-epoch "$UNTIL_EPOCH" \
-  --promote
+  --promote \
+  --candidate ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/models/REVIEWED_CANDIDATE.json \
+  --approved-by OPERATOR_ID
 curl -sS http://localhost:8000/api/mlops/ros2-logs | jq
 ```
 
-승격은 candidate의 `quality.gate_passed=true`일 때만 가능하지만 숫자 gate 통과만으로 승격하지
-않는다. timestamp 경고가 없고 Nav2·AMCL·robot agent logger와 정상 작업 상태가 기준 구간을
-대표하는지 검토한다. 승격 후 monitor service가 재시작되고 다음 15초 inference부터
-`model_stage=production`과 model ID가 표시되어야 한다.
+승격은 현재 pipeline version, candidate stage, artifact SHA-256, 품질 gate와 사람 확인 coverage를
+모두 검사한다. 사람 확인 정상 창 2개와 장애 상황 3종이 없거나 파일 내용이 학습 후 바뀌면
+승격을 거부한다. timestamp 경고가 없고 Nav2·AMCL·robot agent logger와 정상 작업 상태가 기준
+구간을 대표하는지 검토한다. 승격 후 monitor service가 재시작되고 다음 15초 inference부터
+`model_stage=production`과 model ID가 표시되어야 한다. 이전 Production은 `previous.json`과
+`registry/history/`에 보존된다.
 
 ## 5. 이상 판정 확인
 
@@ -191,19 +197,43 @@ ros2 run fleet_gateway ros2_log_mlops \
 
 ## 6. Rollback과 재학습
 
-Production 파일은 로컬 registry 한 개다. 잘못 승격한 경우 직전 검토 모델을 다시 promote한다.
+잘못 승격한 경우 registry의 직전 Production을 원자적으로 다시 활성화한다.
 
 ```bash
 ros2 run fleet_gateway ros2_log_mlops \
   --root ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs \
-  promote --input /path/to/previous-candidate.json
+  rollback --approved-by OPERATOR_ID
 systemctl --user restart fleet-log-mlops.service
 ```
 
 소프트웨어·Nav2 설정·센서가 바뀌거나 지속적인 false positive가 생기면 새 dataset hash와 모델
 ID로 재학습한다. 과거 모델 파일을 덮어쓰지 않고 candidate와 승격 시각을 학습 일지에 기록한다.
 
-## 7. 로컬 AI 사건 보고서
+## 7. 정기 자동 평가
+
+`fleet-mlops-evaluate.timer`는 매주 최근 7일 raw와 활성 annotation으로 scenario candidate를
+만들고 다음 보고서를 갱신한다.
+
+```text
+~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/reports/latest-candidate.json
+```
+
+보고서 상태는 `BLOCKED` 또는 `READY_FOR_MANUAL_REVIEW`다. timer는 Production registry와
+실시간 추론 상태를 바꾸지 않으며 `automatic_promotion=false`를 기록한다. 수동 실행과 다음 실행
+시각 확인은 다음과 같다.
+
+```bash
+systemctl --user start fleet-mlops-evaluate.service
+journalctl --user -u fleet-mlops-evaluate.service -n 100 --no-pager
+systemctl --user list-timers fleet-mlops-evaluate.timer fleet-mlops-prune.timer
+jq . ~/.local/share/turtlebot-fleet-ops/mlops/ros2-logs/reports/latest-candidate.json
+```
+
+평가 기간은 `control.env`의 `FLEET_LOG_MLOPS_EVALUATION_LOOKBACK_DAYS`로 조정한다. 자동 보고서가
+준비 상태여도 운영자가 raw 범위·annotation·오탐률과 장애별 탐지율을 검토하기 전에는 승격하지
+않는다.
+
+## 8. 로컬 AI 사건 보고서
 
 Production 통계 모델과 규칙 기반 원인 분석 위에 읽기 전용 Ollama 자문을 선택적으로 사용할 수
 있다. 이 기능은 사건을 자동 분석하지 않으며, Dashboard에서 한 사건의 `로컬 AI 분석` 버튼을

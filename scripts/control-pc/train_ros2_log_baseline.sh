@@ -7,6 +7,8 @@ window_sec=60
 since_epoch=""
 until_epoch=""
 promote=false
+candidate_to_promote=""
+approved_by=""
 scenario_labels=false
 
 while (($# > 0)); do
@@ -14,6 +16,14 @@ while (($# > 0)); do
     --promote)
       promote=true
       shift
+      ;;
+    --candidate)
+      candidate_to_promote="$2"
+      shift 2
+      ;;
+    --approved-by)
+      approved_by="$2"
+      shift 2
       ;;
     --scenario-labels)
       scenario_labels=true
@@ -42,6 +52,27 @@ set +u
 source /opt/ros/humble/setup.bash
 source "${repo_root}/install/setup.bash"
 set -u
+
+if [[ "${promote}" == "true" ]]; then
+  if [[ -z "${candidate_to_promote}" ]]; then
+    echo "ERROR: --promote requires the exact reviewed --candidate path" >&2
+    exit 2
+  fi
+  if [[ -z "${approved_by}" ]]; then
+    echo "ERROR: --promote requires --approved-by" >&2
+    exit 2
+  fi
+  ros2 run fleet_gateway ros2_log_mlops --root "${mlops_root}" promote \
+    --input "${candidate_to_promote}" \
+    --approved-by "${approved_by}"
+  systemctl --user restart fleet-log-mlops.service
+  echo "ROS2_LOG_MODEL_PROMOTED candidate=${candidate_to_promote}"
+  exit 0
+fi
+if [[ -n "${candidate_to_promote}" || -n "${approved_by}" ]]; then
+  echo "ERROR: --candidate and --approved-by are only valid with --promote" >&2
+  exit 2
+fi
 
 mapfile -t raw_files < <(
   find "${mlops_root}/raw" -maxdepth 1 -type f -name '*.jsonl' -print \
@@ -125,14 +156,15 @@ for label, metrics in validation.get("scenario_metrics", {}).items():
 print(f"QUALITY_REASON={quality['reason']}")
 for warning in quality.get("warnings", []):
     print(f"QUALITY_WARNING={warning}")
+promotion = model.get("promotion", {})
+print(
+    "PROMOTION_READINESS "
+    f"ready={str(promotion.get('ready', False)).lower()} "
+    f"manual_approval={str(promotion.get('requires_manual_approval', True)).lower()}"
+)
+for reason in promotion.get("reasons", []):
+    print(f"PROMOTION_BLOCKER={reason}")
 PY
 
-if [[ "${promote}" == "true" ]]; then
-  ros2 run fleet_gateway ros2_log_mlops --root "${mlops_root}" promote \
-    --input "${candidate_path}"
-  systemctl --user restart fleet-log-mlops.service
-  echo "ROS2_LOG_MODEL_PROMOTED candidate=${candidate_path}"
-else
-  echo "REVIEW_REQUIRED candidate=${candidate_path}"
-  echo "NEXT: bash scripts/control-pc/train_ros2_log_baseline.sh --promote"
-fi
+echo "REVIEW_REQUIRED candidate=${candidate_path}"
+echo "NEXT: bash scripts/control-pc/train_ros2_log_baseline.sh --promote --candidate '${candidate_path}' --approved-by OPERATOR_ID"

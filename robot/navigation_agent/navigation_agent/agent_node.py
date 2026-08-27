@@ -733,7 +733,14 @@ class NavigationAgent(Node):
     def _check_lease(self) -> None:
         now = time.monotonic()
         with self._lock:
-            if not self._active_command_id or self._lease_expired:
+            # A stop already revokes motion authorization and cancels Nav2.
+            # Do not let the lease timer overwrite the original terminal
+            # reason while the downstream cancel result is still in flight.
+            if (
+                not self._active_command_id
+                or self._lease_expired
+                or self._cancel_requested
+            ):
                 return
             if not self._safety_ready(now):
                 self._request_stop("Safety status became unavailable or stale")

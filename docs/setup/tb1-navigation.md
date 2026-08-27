@@ -119,10 +119,36 @@ ros2 topic echo /scan_normalized --once --field ranges | head
 ros2 topic info /cmd_vel --verbose
 ```
 
-잔류 키 입력을 막기 위해 일반 teleop 대신
-[보호 이동 기반 매핑 절차](tb1-supervised-mapping.md)의 dry-run, 5cm 직진과 30도 회전을
-반복한다. `supervised_motion`은 `/motion/manual/cmd_vel`만 발행하고 arbiter와 기존
-watchdog을 거친다. 각 구간 뒤 `/map`, pose graph, odom과 최종 e-stop을 확인한다.
+실차 하드웨어 인수 검사는
+[보호 이동 기반 매핑 절차](tb1-supervised-mapping.md)의 IDLE dry-run, 5cm 직진과 30도
+회전으로 먼저 통과한다. 실제 MAPPING 프로필에서는 웹의 deadman manual session만 사용하고
+W/A/S/D 또는 버튼을 누르는 동안에만 100ms마다 lease를 갱신한다. 브라우저의 session POST와
+첫 PUT은 서로 다른 HTTP/ROS 왕복이므로, 무동작 초기 session에만 2초 startup 유예를 준다.
+첫 갱신 뒤에는 0.35초 command lease가 즉시 적용되고, 키를 놓거나 창이 blur/pagehide 되면
+zero와 session DELETE를 전송한다. 각 구간 뒤 `/map`, pose graph, odom과 최종 e-stop을
+확인한다.
+
+반복 매핑 실험은 관제 PC 실행기를 사용한다. 실행기는 CSV 수집, scan·profile 사전 검사,
+odom 목표 제어, 예측 정지, session 정리, e-stop과 목표 오차 자동 채점을 하나의 fail-closed
+절차로 묶는다.
+
+```powershell
+.\scripts\control-pc\run_tb1_web_mapping_experiment.ps1 `
+  -ExperimentName "tb1-mapping-forward-05" `
+  -Mode translate `
+  -Target 0.05 `
+  -Speed 0.02
+
+.\scripts\control-pc\run_tb1_web_mapping_experiment.ps1 `
+  -ExperimentName "tb1-mapping-rotate-30" `
+  -Mode rotate `
+  -Target 0.5235987756 `
+  -Speed 0.10
+```
+
+성공 결과는 `TB1_MAPPING_RESULT`의 `passed=true`이며, 생성된 CSV에 odom·scan·safety·fault가
+10Hz로 남는다. 목표의 90% 미만, 허용 overshoot 초과, active fault 또는 최종 e-stop 검증
+실패는 프로세스 종료 코드 1로 처리한다.
 `scan_queue_size=10`과 `minimum_travel_distance=0.05`는 실제 TB1에서 검증한 기준값이다.
 지도 loop closure가 안정된 뒤 저장한다.
 

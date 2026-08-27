@@ -680,6 +680,18 @@ class OperationsStore:
         task = self.get_task(str(row["task_id"]))
         if task is None:
             return
+        # Action-result and status publications are independent ROS streams.
+        # A late ACTIVE sample can therefore arrive after the cancel endpoint
+        # has durably closed the task. Terminal task history must be monotonic;
+        # otherwise the canceled task is reopened and cannot be retried.
+        if task["state"] in TERMINAL_TASK_STATES:
+            with self._lock:
+                if (
+                    self._observed_navigation_commands.get(robot_id)
+                    == expected_command_id
+                ):
+                    self._observed_navigation_commands.pop(robot_id, None)
+            return
         if not command_id and not self._status_target_matches_task(
             status,
             task,

@@ -53,15 +53,22 @@ TB1에는 `map_annotation_filter` 노드를 추가했다. 이 노드는 제어 P
 
 - `/tb1/map_annotations/filter_mask`
 - `/tb1/map_annotations/filter_info`
+- `/tb1/map_annotations/status`
 
 전역·지역 Costmap 모두 `nav2_costmap_2d::KeepoutFilter`를 사용한다.
 따라서 로봇 패키지가 배포된 뒤에는 Nav2가 가상 벽을 실제 장애물처럼
 우회한다.
 
-## 이 PC에서 남은 배포 단계
+Gateway는 구역 목록과 로봇 ID의 정규화된 SHA-256 `snapshot_id`를 함께
+보낸다. TB1은 실제 mask를 발행한 뒤에만 같은 ID, `APPLIED` 상태와
+차단 셀 수를 status 토픽으로 회신한다. 웹은 이 ACK가 최신 스냅샷과
+일치할 때만 `TB1 Nav2 적용 확인`을 표시한다. 지도가 아직 없으면
+`WAITING_FOR_MAP`, 로봇 ACK가 없거나 이전 스냅샷이면 대기 상태를
+표시하므로 웹에 도형만 보이는 상태를 적용 완료로 오인하지 않는다.
 
-현재 제어 PC에는 TB1 전용 SSH 키가 없어 Gateway와 웹만 배포됐다.
-로봇 측 Keepout 필터를 활성화하려면 먼저 전용 키를 준비한다.
+## 배포와 확인
+
+TB1 전용 SSH 키를 준비하지 않았다면 먼저 생성·등록한다.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -84,7 +91,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 ros2 node list | grep map_annotation_filter
 ros2 topic echo --once /tb1/map_annotations/filter_info
 ros2 topic echo --once /tb1/map_annotations/filter_mask
+ros2 topic echo --once /tb1/map_annotations/status
 ```
+
+실제 주행 전에는 웹의 적용 상태가 `APPLIED`이고 `snapshot_id`가 최신
+정책과 일치하는지 확인한다. 그 다음 사람이 로봇 옆에서 e-stop에 즉시
+접근할 수 있는 상태로, 가상 벽 반대편 목적지에 대한 전역 경로 우회와
+경계 침범 방지를 저속으로 검증한다.
 
 ## 아직 구현하지 않은 항목
 

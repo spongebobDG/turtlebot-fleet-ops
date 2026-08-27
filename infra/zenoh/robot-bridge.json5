@@ -24,7 +24,8 @@
           "^/plan$",
           "^/local_plan$",
           "^/local_costmap/.*",
-          "^/global_costmap/.*"
+          "^/global_costmap/.*",
+          "^/tb1/map_annotations/status$"
         ],
         "subscribers": [
           "^/fleet/navigation_lease$",

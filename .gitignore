@@ -1,6 +1,7 @@
 # Local generated artifacts
 /tmp/
 /output/
+/artifacts/experiments/
 
 # ROS 2 / colcon build artifacts
 /build/

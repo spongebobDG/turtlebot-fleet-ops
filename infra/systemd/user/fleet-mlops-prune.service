@@ -1,0 +1,9 @@
+[Unit]
+Description=Apply ROS 2 raw log retention policy
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/turtlebot-fleet-ops/control.env
+ExecStart=/usr/bin/bash %h/turtlebot-fleet-ops/scripts/control-pc/prune_ros2_log_raw.sh --apply
+Nice=10
+IOSchedulingClass=idle

@@ -36,7 +36,8 @@
           "^/plan$",
           "^/local_plan$",
           "^/local_costmap/.*",
-          "^/global_costmap/.*"
+          "^/global_costmap/.*",
+          "^/tb1/map_annotations/status$"
         ],
         "service_servers": [],
         "service_clients": [

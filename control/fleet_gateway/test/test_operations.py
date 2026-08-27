@@ -233,6 +233,31 @@ def test_stale_terminal_status_cannot_close_the_next_task(tmp_path) -> None:
     assert store.get_task(second["task_id"])["state"] == "FAILED"
 
 
+def test_late_active_status_cannot_reopen_canceled_task(tmp_path) -> None:
+    """Keep durable cancellation terminal when ROS status arrives late."""
+    store = OperationsStore(tmp_path / "operations.sqlite3")
+    task = store.create_task("tb1", 1.0, 0.0, 0.0, False)
+    store.update_task(task["task_id"], "ACTIVE", "accepted", "goal-1")
+    store.register_navigation_command("tb1", "goal-1")
+    store.update_task(task["task_id"], "CANCELED", "operator canceled")
+
+    store.sync_navigation(
+        {
+            "robot_id": "tb1",
+            "state": "ACTIVE",
+            "active_command_id": "goal-1",
+            "message": "stale navigation sample",
+        }
+    )
+
+    canceled = store.get_task(task["task_id"])
+    assert canceled is not None
+    assert canceled["state"] == "CANCELED"
+    retry = store.retry_task(task["task_id"])
+    assert retry["state"] == "CREATED"
+    assert retry["attempt"] == 2
+
+
 def test_agent_restart_fails_persisted_active_task(tmp_path) -> None:
     path = tmp_path / "operations.sqlite3"
     store = OperationsStore(path)

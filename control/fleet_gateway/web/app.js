@@ -91,6 +91,7 @@ let currentMap = null;
 let currentScan = null;
 let currentMapRobot = "";
 let mapAnnotations = [];
+let mapPolicyApplication = { state: "UNAVAILABLE", applied: false };
 let annotationDraft = null;
 let annotationDragStart = null;
 let zoneEditorOpen = false;
@@ -526,9 +527,17 @@ const renderMapPolicy = () => {
   mapPolicyState.textContent = lowBattery
     ? `배터리 ${number(batteryPercent, 1, "%")} · 충전 필요`
     : `운영구역 ${enabled.length}개 · 강제 차단 ${hard.length}개`;
+  const applicationState = mapPolicyApplication?.state || "UNAVAILABLE";
+  const applicationDetail = mapPolicyApplication?.applied
+    ? `TB1 Nav2 적용 확인 · 차단 셀 ${Number(mapPolicyApplication.blocked_cells || 0).toLocaleString("ko-KR")}개`
+    : applicationState === "WAITING_FOR_MAP"
+      ? "Gateway 차단은 활성 · TB1 지도가 준비되면 Nav2 mask를 적용합니다."
+      : applicationState === "PENDING"
+        ? "Gateway 차단은 활성 · TB1이 최신 Nav2 mask를 적용하는 중입니다."
+        : "Gateway 차단은 활성 · TB1 Nav2 적용 확인을 기다립니다.";
   mapPolicyDetail.textContent = lowBattery
     ? charging ? "충전 위치로 이동한 뒤 사람이 충전기를 연결하세요." : "먼저 지도에서 충전 위치를 지정하세요."
-    : "목적지·웹 WASD는 강제 차단되며 TB1 필터 배포 후 Nav2 경로에도 적용됩니다.";
+    : applicationDetail;
   navigateCharging.textContent = charging ? "충전하러 가기" : "충전 위치 미지정";
   navigateCharging.disabled = !charging
     || !robot?.online
@@ -536,9 +545,13 @@ const renderMapPolicy = () => {
     || robot?.mapping?.profile !== "NAVIGATION";
 };
 
-const loadMapAnnotations = async (robotId = robotSelect.value) => {
+const loadMapAnnotations = async (
+  robotId = robotSelect.value,
+  { silent = false } = {},
+) => {
   if (!robotId) {
     mapAnnotations = [];
+    mapPolicyApplication = { state: "UNAVAILABLE", applied: false };
     renderZoneEditor();
     renderMapPolicy();
     return;
@@ -549,9 +562,11 @@ const loadMapAnnotations = async (robotId = robotSelect.value) => {
     if (!response.ok) throw new Error(body.detail || "운영구역을 불러오지 못했습니다.");
     if (robotSelect.value !== robotId) return;
     mapAnnotations = body.annotations || [];
+    mapPolicyApplication = body.application || { state: "UNAVAILABLE", applied: false };
   } catch (error) {
     mapAnnotations = [];
-    showToast(error.message, true);
+    mapPolicyApplication = { state: "UNAVAILABLE", applied: false };
+    if (!silent) showToast(error.message, true);
   }
   renderZoneEditor();
   renderMapPolicy();
@@ -1292,7 +1307,7 @@ saveZoneButton.addEventListener("click", async () => {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "운영구역 저장 실패");
     showToast(body.distribution?.success
-      ? `${annotationLabel(type)}을 저장하고 TB1 적용 채널로 배포했습니다.`
+      ? `${annotationLabel(type)}을 저장했습니다. TB1 실제 적용 확인을 기다립니다.`
       : `${annotationLabel(type)}은 저장했지만 TB1 배포 상태를 확인하세요.`);
     await loadMapAnnotations(robot.robot_id);
     resetAnnotationDraft(type);
@@ -2244,5 +2259,6 @@ const connect = () => {
 
 connect();
 window.setInterval(loadOperations, 3000);
+window.setInterval(() => loadMapAnnotations(undefined, { silent: true }), 3000);
 window.setInterval(loadScan, 400);
 window.setInterval(refreshLiveMap, 1000);
